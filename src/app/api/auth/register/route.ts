@@ -9,7 +9,6 @@ export async function POST(request: NextRequest) {
     const name = String(body.name || "").trim();
     const email = String(body.email || "").trim().toLowerCase();
     const password = String(body.password || "").trim();
-    const role = String(body.role || "student").trim();
 
     if (!name || !email || !password) {
       return NextResponse.json(
@@ -29,24 +28,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const allowedRoles = [
-      "super_admin",
-      "educator",
-      "student",
-    ];
-
-    if (!allowedRoles.includes(role)) {
-      return NextResponse.json(
-        {
-          error: "Tipo de usuário inválido.",
-        },
-        { status: 400 }
-      );
-    }
+    // O cadastro público NÃO pode criar superadministradores.
+    const role = "student";
 
     const client = await clientPromise;
     const db = client.db("supera_pontos");
-
     const users = db.collection("users");
 
     const existingUser = await users.findOne({ email });
