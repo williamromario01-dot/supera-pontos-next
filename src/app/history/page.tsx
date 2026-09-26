@@ -1,464 +1,516 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  ArrowLeft,
-  Brain,
-  History,
-  Search,
-  User,
-  Trophy,
-  CalendarDays,
-  Users,
-  Filter,
-  Sparkles,
+ArrowLeft,
+Brain,
+CalendarDays,
+ChevronLeft,
+ChevronRight,
+Filter,
+History,
+Loader2,
+Plus,
+Star,
+Target,
+TrendingDown,
+TrendingUp,
+User,
 } from "lucide-react";
 
-type Student = {
-  id: string;
-  name: string;
-  email: string;
-};
+interface UserData {
+id: string;
+name: string;
+email: string;
+role: string;
+points: number;
+}
 
-type Category = {
-  id: string;
-  name: string;
-  icon: string;
-  color: string;
-};
+interface Category {
+id: string;
+name: string;
+description?: string;
+icon?: string;
+color?: string;
+}
 
-type HistoryItem = {
-  id: string;
-  student: Student;
-  category: Category;
-  points: number;
-  educator: {
-    id: string;
-    name: string;
-    email: string;
-  };
-  createdAt: string;
-};
+interface PointEvent {
+id: string;
+studentId?: string;
+studentName?: string;
+categoryId?: string;
+categoryName?: string;
+category?: Category;
+points: number;
+reason?: string;
+description?: string;
+createdAt: string;
+createdBy?: string;
+}
+
+interface HistoryResponse {
+events?: PointEvent[];
+history?: PointEvent[];
+total?: number;
+}
 
 export default function HistoryPage() {
-  const router = useRouter();
+const router = useRouter();
 
-  const [history, setHistory] = useState<HistoryItem[]>([]);
-  const [students, setStudents] = useState<Student[]>([]);
-  const [categories, setCategories] = useState<Category[]>([]);
+const [user, setUser] = useState<UserData | null>(null);
+const [events, setEvents] = useState<PointEvent[]>([]);
+const [loading, setLoading] = useState(true);
+const [error, setError] = useState("");
 
-  const [studentId, setStudentId] = useState("");
-  const [categoryId, setCategoryId] = useState("");
+const [selectedCategory, setSelectedCategory] =
+useState("all");
 
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+const [currentPage, setCurrentPage] = useState(1);
+const itemsPerPage = 10;
 
-  const loadStudents = async () => {
-    try {
-      const response = await fetch("/api/students", {
-        credentials: "include",
-      });
+useEffect(() => {
+loadHistory();
+}, []);
 
-      if (response.status === 401 || response.status === 403) {
-        router.push("/");
-        return;
-      }
+async function loadHistory() {
+try {
+setLoading(true);
+setError("");
 
-      const data = await response.json();
+  const meResponse = await fetch("/api/auth/me", {
+    credentials: "include",
+  });
 
-      if (response.ok) {
-        setStudents(data.students || []);
-      }
-    } catch (error) {
-      console.error(error);
+  if (!meResponse.ok) {
+    router.push("/");
+    return;
+  }
+
+  const meData = await meResponse.json();
+
+  setUser(meData.user);
+
+  const response = await fetch(
+    `/api/points/history?studentId=${meData.user.id}`,
+    {
+      credentials: "include",
     }
-  };
-
-  const loadCategories = async () => {
-    try {
-      const response = await fetch("/api/categories", {
-        credentials: "include",
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        setCategories(data.categories || []);
-      }
-    } catch (error) {
-      console.error(error);
-    }
-  };
-
-  const loadHistory = async () => {
-    try {
-      setLoading(true);
-      setError("");
-
-      const params = new URLSearchParams();
-
-      if (studentId) {
-        params.set("studentId", studentId);
-      }
-
-      if (categoryId) {
-        params.set("categoryId", categoryId);
-      }
-
-      params.set("limit", "200");
-
-      const response = await fetch(
-        `/api/points/history?${params.toString()}`,
-        {
-          credentials: "include",
-        }
-      );
-
-      if (response.status === 401) {
-        router.push("/");
-        return;
-      }
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(
-          data.error || "Não foi possível carregar o histórico."
-        );
-      }
-
-      setHistory(data.history || []);
-    } catch (error) {
-      console.error(error);
-
-      setError(
-        error instanceof Error
-          ? error.message
-          : "Não foi possível carregar o histórico."
-      );
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    loadStudents();
-    loadCategories();
-  }, []);
-
-  useEffect(() => {
-    loadHistory();
-  }, [studentId, categoryId]);
-
-  const formatDate = (date: string) => {
-    return new Date(date).toLocaleString("pt-BR", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  };
-
-  const totalPoints = history.reduce(
-    (total, item) => total + Number(item.points || 0),
-    0
   );
 
-  return (
-    <main className="min-h-screen bg-slate-50">
-      <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/95 backdrop-blur">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4 sm:px-6 lg:px-8">
-          <button
-            onClick={() => router.push("/dashboard")}
-            className="flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-100 hover:text-slate-900"
-          >
-            <ArrowLeft className="h-5 w-5" />
-            <span>Dashboard</span>
-          </button>
+  if (!response.ok) {
+    throw new Error("Não foi possível carregar o histórico.");
+  }
 
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-orange-500 text-white shadow-md">
-              <Brain className="h-5 w-5" />
-            </div>
+  const data: HistoryResponse = await response.json();
 
-            <div className="hidden sm:block">
-              <p className="text-sm font-extrabold text-slate-900">
-                Supera Alunos
-              </p>
+  const history =
+    data.events ||
+    data.history ||
+    [];
 
-              <p className="text-xs text-slate-500">
-                Histórico de pontos
-              </p>
-            </div>
+  setEvents(history);
+} catch (err) {
+  console.error(err);
+
+  setError(
+    "Não foi possível carregar seu histórico de pontos."
+  );
+} finally {
+  setLoading(false);
+}
+
+}
+
+function formatDate(date: string) {
+const parsed = new Date(date);
+
+if (Number.isNaN(parsed.getTime())) {
+  return "-";
+}
+
+return parsed.toLocaleDateString("pt-BR", {
+  day: "2-digit",
+  month: "2-digit",
+  year: "numeric",
+});
+
+}
+
+function formatTime(date: string) {
+const parsed = new Date(date);
+
+if (Number.isNaN(parsed.getTime())) {
+  return "";
+}
+
+return parsed.toLocaleTimeString("pt-BR", {
+  hour: "2-digit",
+  minute: "2-digit",
+});
+
+}
+
+function getCategoryName(event: PointEvent) {
+return (
+event.categoryName ||
+event.category?.name ||
+"Sem categoria"
+);
+}
+
+function getCategoryIcon(event: PointEvent) {
+return event.category?.icon || "⭐";
+}
+
+function getCategoryColor(event: PointEvent) {
+return event.category?.color || "#f97316";
+}
+
+const categories = useMemo(() => {
+const unique = new Map<string, string>();
+
+events.forEach((event) => {
+  const name = getCategoryName(event);
+
+  unique.set(name, name);
+});
+
+return Array.from(unique.values());
+
+}, [events]);
+
+const filteredEvents = useMemo(() => {
+if (selectedCategory === "all") {
+return events;
+}
+
+return events.filter(
+  (event) =>
+    getCategoryName(event) === selectedCategory
+);
+}, [events, selectedCategory]);
+
+const totalPages = Math.max(
+1,
+Math.ceil(
+filteredEvents.length / itemsPerPage
+)
+);
+
+const paginatedEvents = filteredEvents.slice(
+(currentPage - 1) * itemsPerPage,
+currentPage * itemsPerPage
+);
+
+const totalPoints = filteredEvents.reduce(
+(total, event) => total + Number(event.points || 0),
+0
+);
+
+const positiveEvents = filteredEvents.filter(
+(event) => Number(event.points || 0) > 0
+).length;
+
+const negativeEvents = filteredEvents.filter(
+(event) => Number(event.points || 0) < 0
+).length;
+
+function handleCategoryChange(
+category: string
+) {
+setSelectedCategory(category);
+setCurrentPage(1);
+}
+
+if (loading) {
+return ( <div className="min-h-screen bg-slate-50 flex items-center justify-center"> <div className="text-center"> <div className="w-14 h-14 mx-auto rounded-2xl bg-orange-500 flex items-center justify-center shadow-lg animate-pulse"> <Brain className="w-7 h-7 text-white" /> </div>
+
+      <p className="mt-4 text-sm font-semibold text-slate-500">
+        Carregando seu histórico...
+      </p>
+
+      <Loader2 className="w-5 h-5 mx-auto mt-3 text-orange-500 animate-spin" />
+    </div>
+  </div>
+);
+
+}
+
+if (!user) {
+return null;
+}
+
+return ( <div className="min-h-screen bg-slate-50">
+{/* HEADER */} <header className="sticky top-0 z-30 bg-white/95 backdrop-blur border-b border-slate-200"> <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4"> <div className="flex items-center justify-between gap-4"> <div className="flex items-center gap-3">
+<button
+onClick={() => router.push("/dashboard")}
+className="w-10 h-10 rounded-xl bg-slate-100 hover:bg-orange-50 hover:text-orange-500 flex items-center justify-center transition"
+aria-label="Voltar para o dashboard"
+> <ArrowLeft className="w-5 h-5" /> </button>
+
+          <div className="w-11 h-11 rounded-xl bg-orange-500 flex items-center justify-center shadow-md">
+            <History className="w-6 h-6 text-white" />
           </div>
-        </div>
-      </header>
 
-      <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-        <section className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-orange-500 via-orange-500 to-orange-600 p-6 text-white shadow-xl sm:p-8">
-          <div className="absolute -right-20 -top-24 h-64 w-64 rounded-full bg-white/10" />
+          <div>
+            <h1 className="text-lg sm:text-xl font-black text-slate-800">
+              Histórico
+            </h1>
 
-          <div className="absolute -bottom-28 right-24 h-72 w-72 rounded-full bg-white/5" />
-
-          <div className="relative flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <div className="mb-4 flex items-center gap-2">
-                <div className="rounded-xl bg-white/15 p-2">
-                  <History className="h-5 w-5" />
-                </div>
-
-                <span className="text-sm font-bold uppercase tracking-wider text-orange-50">
-                  Acompanhamento
-                </span>
-              </div>
-
-              <h1 className="text-3xl font-black tracking-tight sm:text-4xl">
-                Histórico de Pontos
-              </h1>
-
-              <p className="mt-3 max-w-2xl text-sm leading-6 text-orange-50 sm:text-base">
-                Consulte todos os lançamentos realizados para acompanhar
-                a evolução dos alunos.
-              </p>
-            </div>
-
-            <div className="hidden rounded-3xl bg-white/10 p-6 lg:block">
-              <History className="h-16 w-16 text-white/90" />
-            </div>
-          </div>
-        </section>
-
-        <section className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs font-bold uppercase tracking-wide text-slate-400">
-                  Lançamentos
-                </p>
-
-                <p className="mt-2 text-3xl font-black text-slate-900">
-                  {history.length}
-                </p>
-              </div>
-
-              <div className="rounded-2xl bg-orange-100 p-3 text-orange-600">
-                <History className="h-6 w-6" />
-              </div>
-            </div>
-          </div>
-
-          <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs font-bold uppercase tracking-wide text-slate-400">
-                  Pontos exibidos
-                </p>
-
-                <p className="mt-2 text-3xl font-black text-slate-900">
-                  {totalPoints}
-                </p>
-              </div>
-
-              <div className="rounded-2xl bg-amber-100 p-3 text-amber-600">
-                <Trophy className="h-6 w-6" />
-              </div>
-            </div>
-          </div>
-
-          <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:col-span-2 lg:col-span-1">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs font-bold uppercase tracking-wide text-slate-400">
-                  Alunos disponíveis
-                </p>
-
-                <p className="mt-2 text-3xl font-black text-slate-900">
-                  {students.length}
-                </p>
-              </div>
-
-              <div className="rounded-2xl bg-blue-100 p-3 text-blue-600">
-                <Users className="h-6 w-6" />
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section className="mt-6 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
-          <div className="flex flex-col gap-1">
-            <div className="flex items-center gap-2">
-              <Filter className="h-5 w-5 text-orange-500" />
-
-              <h2 className="text-lg font-extrabold text-slate-900">
-                Filtrar histórico
-              </h2>
-            </div>
-
-            <p className="text-sm text-slate-500">
-              Selecione um aluno ou uma categoria para localizar
-              lançamentos específicos.
+            <p className="text-xs text-slate-500">
+              Acompanhe sua evolução
             </p>
           </div>
+        </div>
 
-          <div className="mt-5 grid gap-4 md:grid-cols-2">
-            <div>
-              <label className="mb-2 block text-sm font-bold text-slate-700">
-                Aluno
-              </label>
+        <button
+          onClick={() => router.push("/dashboard")}
+          className="hidden sm:flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold text-slate-600 hover:bg-slate-100 transition"
+        >
+          Dashboard
+        </button>
+      </div>
+    </div>
+  </header>
 
-              <select
-                value={studentId}
-                onChange={(e) => setStudentId(e.target.value)}
-                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm outline-none transition focus:border-orange-500 focus:ring-4 focus:ring-orange-100"
+  <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
+    {/* CABEÇALHO DA PÁGINA */}
+    <section className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-orange-500 via-orange-500 to-orange-600 p-6 sm:p-8 text-white shadow-lg">
+      <div className="absolute -right-12 -top-12 w-40 h-40 rounded-full bg-white/10" />
+
+      <div className="absolute right-20 -bottom-20 w-52 h-52 rounded-full bg-white/5" />
+
+      <div className="relative z-10">
+        <div className="flex items-center gap-2 mb-3">
+          <CalendarDays className="w-5 h-5" />
+
+          <span className="text-sm font-bold text-orange-50">
+            Registro de atividades
+          </span>
+        </div>
+
+        <h2 className="text-3xl sm:text-4xl font-black tracking-tight">
+          Seu histórico de pontos
+        </h2>
+
+        <p className="mt-3 text-orange-50 max-w-2xl text-sm sm:text-base">
+          Veja quando seus pontos foram lançados,
+          em quais categorias e como sua jornada
+          está evoluindo.
+        </p>
+      </div>
+    </section>
+
+    {/* ERRO */}
+    {error && (
+      <div className="mt-6 rounded-2xl border border-rose-200 bg-rose-50 px-5 py-4 text-sm text-rose-700">
+        {error}
+      </div>
+    )}
+
+    {/* RESUMO */}
+    <section className="grid grid-cols-2 lg:grid-cols-4 gap-4 mt-6">
+      <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
+        <div className="w-10 h-10 rounded-xl bg-orange-50 flex items-center justify-center">
+          <Star className="w-5 h-5 text-orange-500" />
+        </div>
+
+        <p className="mt-4 text-2xl sm:text-3xl font-black text-slate-800">
+          {user.points.toLocaleString("pt-BR")}
+        </p>
+
+        <p className="text-xs text-slate-500 mt-1">
+          pontos acumulados
+        </p>
+      </div>
+
+      <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
+        <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center">
+          <History className="w-5 h-5 text-blue-600" />
+        </div>
+
+        <p className="mt-4 text-2xl sm:text-3xl font-black text-slate-800">
+          {filteredEvents.length}
+        </p>
+
+        <p className="text-xs text-slate-500 mt-1">
+          lançamentos registrados
+        </p>
+      </div>
+
+      <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
+        <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center">
+          <TrendingUp className="w-5 h-5 text-emerald-600" />
+        </div>
+
+        <p className="mt-4 text-2xl sm:text-3xl font-black text-slate-800">
+          {positiveEvents}
+        </p>
+
+        <p className="text-xs text-slate-500 mt-1">
+          lançamentos positivos
+        </p>
+      </div>
+
+      <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
+        <div className="w-10 h-10 rounded-xl bg-purple-50 flex items-center justify-center">
+          <Target className="w-5 h-5 text-purple-600" />
+        </div>
+
+        <p className="mt-4 text-2xl sm:text-3xl font-black text-slate-800">
+          {totalPoints >= 0 ? "+" : ""}
+          {totalPoints.toLocaleString("pt-BR")}
+        </p>
+
+        <p className="text-xs text-slate-500 mt-1">
+          saldo do filtro atual
+        </p>
+      </div>
+    </section>
+
+    {/* FILTROS */}
+    <section className="mt-6 bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-2">
+            <Filter className="w-5 h-5 text-orange-500" />
+
+            <h2 className="font-black text-slate-800">
+              Filtrar histórico
+            </h2>
+          </div>
+
+          <p className="text-xs text-slate-500 mt-1">
+            Escolha uma categoria para visualizar
+            somente seus respectivos lançamentos.
+          </p>
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          <button
+            onClick={() =>
+              handleCategoryChange("all")
+            }
+            className={`px-4 py-2 rounded-xl text-sm font-bold border transition ${
+              selectedCategory === "all"
+                ? "bg-orange-500 border-orange-500 text-white shadow-sm"
+                : "bg-white border-slate-200 text-slate-600 hover:border-orange-300 hover:text-orange-500"
+            }`}
+          >
+            Todas
+          </button>
+
+          {categories.map((category) => (
+            <button
+              key={category}
+              onClick={() =>
+                handleCategoryChange(category)
+              }
+              className={`px-4 py-2 rounded-xl text-sm font-bold border transition ${
+                selectedCategory === category
+                  ? "bg-orange-500 border-orange-500 text-white shadow-sm"
+                  : "bg-white border-slate-200 text-slate-600 hover:border-orange-300 hover:text-orange-500"
+              }`}
+            >
+              {category}
+            </button>
+          ))}
+        </div>
+      </div>
+    </section>
+
+    {/* HISTÓRICO */}
+    <section className="mt-6 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+      <div className="px-5 sm:px-6 py-5 border-b border-slate-100">
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-wide text-orange-500">
+              Atividades
+            </p>
+
+            <h2 className="text-xl sm:text-2xl font-black text-slate-800">
+              Lançamentos de pontos
+            </h2>
+          </div>
+
+          <span className="hidden sm:inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-50 text-xs font-bold text-slate-500">
+            <User className="w-4 h-4" />
+            {user.name}
+          </span>
+        </div>
+      </div>
+
+      {paginatedEvents.length > 0 ? (
+        <div className="divide-y divide-slate-100">
+          {paginatedEvents.map((event) => {
+            const points = Number(event.points || 0);
+            const positive = points >= 0;
+            const color = getCategoryColor(event);
+
+            return (
+              <div
+                key={event.id}
+                className="px-5 sm:px-6 py-5 hover:bg-slate-50/70 transition"
               >
-                <option value="">Todos os alunos</option>
+                <div className="flex items-center gap-4">
+                  <div
+                    className="w-12 h-12 rounded-xl flex items-center justify-center text-xl shrink-0"
+                    style={{
+                      backgroundColor: `${color}18`,
+                    }}
+                  >
+                    {getCategoryIcon(event)}
+                  </div>
 
-                {students.map((student) => (
-                  <option key={student.id} value={student.id}>
-                    {student.name}
-                  </option>
-                ))}
-              </select>
-            </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3">
+                      <h3 className="font-black text-slate-800 truncate">
+                        {event.reason ||
+                          event.description ||
+                          "Lançamento de pontos"}
+                      </h3>
 
-            <div>
-              <label className="mb-2 block text-sm font-bold text-slate-700">
-                Categoria
-              </label>
-
-              <select
-                value={categoryId}
-                onChange={(e) => setCategoryId(e.target.value)}
-                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm outline-none transition focus:border-orange-500 focus:ring-4 focus:ring-orange-100"
-              >
-                <option value="">Todas as categorias</option>
-
-                {categories.map((category) => (
-                  <option key={category.id} value={category.id}>
-                    {category.icon} {category.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-        </section>
-
-        {error && (
-          <div className="mt-6 rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm font-medium text-red-700">
-            {error}
-          </div>
-        )}
-
-        <section className="mt-6">
-          <div className="mb-4 flex items-end justify-between gap-4">
-            <div>
-              <p className="text-sm font-semibold text-orange-500">
-                LANÇAMENTOS
-              </p>
-
-              <h2 className="mt-1 text-2xl font-black text-slate-900">
-                Atividades recentes
-              </h2>
-            </div>
-
-            <div className="hidden items-center gap-2 rounded-full bg-orange-100 px-3 py-1.5 text-xs font-bold text-orange-700 sm:flex">
-              <Sparkles className="h-3.5 w-3.5" />
-              Até 200 registros
-            </div>
-          </div>
-
-          {loading ? (
-            <div className="rounded-3xl border border-slate-200 bg-white p-12 text-center shadow-sm">
-              <div className="mx-auto h-10 w-10 animate-spin rounded-full border-4 border-orange-100 border-t-orange-500" />
-
-              <p className="mt-4 text-sm font-medium text-slate-500">
-                Carregando histórico...
-              </p>
-            </div>
-          ) : history.length === 0 ? (
-            <div className="rounded-3xl border border-dashed border-slate-300 bg-white p-12 text-center">
-              <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-orange-100 text-orange-500">
-                <Search className="h-8 w-8" />
-              </div>
-
-              <h3 className="mt-5 text-lg font-extrabold text-slate-900">
-                Nenhum lançamento encontrado
-              </h3>
-
-              <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-500">
-                Não existem registros para os filtros selecionados.
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {history.map((item) => (
-                <article
-                  key={item.id}
-                  className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm transition hover:shadow-md sm:p-5"
-                >
-                  <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                    <div className="flex min-w-0 items-center gap-4">
-                      <div
-                        className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl text-2xl"
-                        style={{
-                          backgroundColor: `${item.category.color || "#F97316"}18`,
-                        }}
-                      >
-                        {item.category.icon || "⭐"}
-                      </div>
-
-                      <div className="min-w-0">
-                        <h3 className="truncate text-base font-extrabold text-slate-900">
-                          {item.student.name}
-                        </h3>
-
-                        <div className="mt-1 flex flex-wrap items-center gap-2">
-                          <span
-                            className="rounded-full px-2.5 py-1 text-xs font-bold"
-                            style={{
-                              backgroundColor: `${item.category.color || "#F97316"}18`,
-                              color: item.category.color || "#F97316",
-                            }}
-                          >
-                            {item.category.name}
-                          </span>
-
-                          <span className="text-xs text-slate-400">
-                            •
-                          </span>
-
-                          <span className="flex items-center gap-1 text-xs text-slate-500">
-                            <User className="h-3.5 w-3.5" />
-                            {item.educator.name}
-                          </span>
-                        </div>
-                      </div>
+                      <span className="w-fit px-2 py-1 rounded-lg bg-slate-100 text-[10px] font-bold uppercase tracking-wide text-slate-500">
+                        {getCategoryName(event)}
+                      </span>
                     </div>
 
-                    <div className="flex items-center justify-between gap-4 border-t border-slate-100 pt-4 lg:min-w-[300px] lg:border-t-0 lg:pt-0">
-                      <div className="flex items-center gap-2 text-xs text-slate-500">
-                        <CalendarDays className="h-4 w-4" />
-                        {formatDate(item.createdAt)}
-                      </div>
+                    <div className="flex flex-wrap items-center gap-2 mt-2 text-xs text-slate-400">
+                      <span>
+                        {formatDate(event.createdAt)}
+                      </span>
 
-                      <div className="rounded-2xl bg-orange-50 px-4 py-2 text-right">
-                        <p className="text-xl font-black text-orange-600">
-                          +{item.points}
-                        </p>
+                      <span>•</span>
 
-                        <p className="text-[10px] font-bold uppercase tracking-wide text-orange-400">
-                          pontos
-                        </p>
-                      </div>
+                      <span>
+                        {formatTime(event.createdAt)}
+                      </span>
                     </div>
                   </div>
-                </article>
-              ))}
-            </div>
-          )}
-        </section>
-      </div>
-    </main>
-  );
-}
+
+                  <div
+                    className={`shrink-0 flex items-center gap-1 text-base sm:text-lg font-black ${
+                      positive
+                        ? "text-emerald-600"
+                        : "text-rose-600"
+                    }`}
+                  >
+                    {positive ? (
+                      <Plus className="w-4 h-4" />
+                    ) : (
+                      <TrendingDown className="w-4 h-4" />
+                    )}
+
+                    {Math.abs(points).toLocaleString(
+                      "pt-BR"
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="py-16 px-6 text-center">
+          <div className="w-16 h-
