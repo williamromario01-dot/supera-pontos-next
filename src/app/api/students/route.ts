@@ -2,33 +2,22 @@ import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import clientPromise from "@/lib/mongodb";
 
-const DB_NAME = "supera_pontos";
-
-const ALLOWED_ROLES = ["super_admin", "educator"];
-
 async function getAuthenticatedUser(request: NextRequest) {
-  const sessionToken = request.cookies.get("supera_session")?.value;
+  const token = request.cookies.get("supera_session")?.value;
 
-  if (!sessionToken) {
+  if (!token) {
     return null;
   }
 
   const client = await clientPromise;
-  const db = client.db(DB_NAME);
+  const db = client.db("supera_pontos");
 
   const session = await db.collection("sessions").findOne({
-    token: sessionToken,
+    token,
+    expiresAt: { $gt: new Date() },
   });
 
   if (!session) {
-    return null;
-  }
-
-  if (new Date(session.expiresAt) < new Date()) {
-    await db.collection("sessions").deleteOne({
-      _id: session._id,
-    });
-
     return null;
   }
 
@@ -36,11 +25,11 @@ async function getAuthenticatedUser(request: NextRequest) {
     _id: session.userId,
   });
 
-  return user || null;
-}
+  if (!user || user.active === false) {
+    return null;
+  }
 
-function isValidEmail(email: string) {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  return user;
 }
 
 export async function GET(request: NextRequest) {
@@ -49,55 +38,86 @@ export async function GET(request: NextRequest) {
 
     if (!user) {
       return NextResponse.json(
-        { error: "Não autenticado." },
+        { error: "Não autorizado." },
         { status: 401 }
       );
     }
 
-    if (!ALLOWED_ROLES.includes(user.role)) {
+    if (
+      user.role !== "super_admin" &&
+      user.role !== "admin" &&
+      user.role !== "educator"
+    ) {
       return NextResponse.json(
         {
-          error: "Você não tem permissão para acessar os alunos.",
+          error:
+            "Você não tem permissão para acessar os alunos.",
         },
         { status: 403 }
       );
     }
 
     const client = await clientPromise;
-    const db = client.db(DB_NAME);
+    const db = client.db("supera_pontos");
+
+    const query: Record<string, unknown> = {
+      role: "student",
+    };
+
+    /*
+     * SUPORTE:
+     * Pode visualizar todos os alunos do sistema,
+     * inclusive alunos que ainda não possuem escola.
+     */
+    if (user.role === "super_admin") {
+      // Nenhum filtro adicional.
+    } else {
+      /*
+       * ADMINISTRADOR E EDUCADOR:
+       * Só podem visualizar alunos da própria escola.
+       */
+      if (!user.schoolId) {
+        return NextResponse.json(
+          {
+            error:
+              "Seu usuário não está vinculado a uma escola.",
+          },
+          { status: 403 }
+        );
+      }
+
+      query.schoolId = user.schoolId;
+    }
 
     const students = await db
       .collection("users")
-      .find(
-        { role: "student" },
-        {
-          projection: {
-            name: 1,
-            email: 1,
-            points: 1,
-            createdAt: 1,
-          },
-        }
-      )
+      .find(query)
+      .project({
+        passwordHash: 0,
+      })
       .sort({ name: 1 })
       .toArray();
 
-    const formattedStudents = students.map((student) => ({
-      id: student._id.toString(),
-      name: student.name,
-      email: student.email,
-      points: student.points || 0,
-      createdAt: student.createdAt,
-    }));
-
     return NextResponse.json({
-      students: formattedStudents,
+      students: students.map((student) => ({
+        id: student._id.toString(),
+        name: student.name,
+        email: student.email,
+        points: student.points || 0,
+        schoolId: student.schoolId
+          ? String(student.schoolId)
+          : null,
+        createdAt: student.createdAt || null,
+      })),
     });
   } catch (error) {
-    console.error("Erro ao buscar alunos:", error);
+    console.error("Erro ao carregar alunos:", error);
 
     return NextResponse.json(
-      { error: "Erro interno ao buscar alunos." },
+      {
+        error:
+          "Erro interno ao carregar os alunos.",
+      },
       { status: 500 }
     );
   }
@@ -109,97 +129,100 @@ export async function POST(request: NextRequest) {
 
     if (!user) {
       return NextResponse.json(
-        { error: "Não autenticado." },
+        { error: "Não autorizado." },
         { status: 401 }
       );
     }
 
-    if (!ALLOWED_ROLES.includes(user.role)) {
+    /*
+     * Somente Administrador e Educador cadastram alunos
+     * dentro da própria escola.
+     *
+     * O Suporte não cadastra alunos diretamente por esta tela.
+     */
+    if (
+      user.role !== "admin" &&
+      user.role !== "educator"
+    ) {
       return NextResponse.json(
         {
-          error: "Você não tem permissão para cadastrar alunos.",
+          error:
+            "Somente Administrador e Educador podem cadastrar alunos.",
         },
         { status: 403 }
       );
     }
 
-    let body;
-
-    try {
-      body = await request.json();
-    } catch {
+    if (!user.schoolId) {
       return NextResponse.json(
-        { error: "Dados inválidos." },
-        { status: 400 }
+        {
+          error:
+            "Seu usuário não está vinculado a uma escola.",
+        },
+        { status: 403 }
       );
     }
+
+    const body = await request.json();
 
     const name = String(body.name || "").trim();
-    const email = String(body.email || "").trim().toLowerCase();
+    const email = String(body.email || "")
+      .trim()
+      .toLowerCase();
     const password = String(body.password || "");
 
-    if (!name) {
+    if (!name || !email || !password) {
       return NextResponse.json(
-        { error: "O nome do aluno é obrigatório." },
-        { status: 400 }
-      );
-    }
-
-    if (name.length < 2 || name.length > 100) {
-      return NextResponse.json(
-        { error: "O nome deve ter entre 2 e 100 caracteres." },
-        { status: 400 }
-      );
-    }
-
-    if (!email || !isValidEmail(email)) {
-      return NextResponse.json(
-        { error: "Informe um e-mail válido." },
+        {
+          error:
+            "Nome, e-mail e senha são obrigatórios.",
+        },
         { status: 400 }
       );
     }
 
     if (password.length < 6) {
       return NextResponse.json(
-        { error: "A senha deve ter pelo menos 6 caracteres." },
-        { status: 400 }
-      );
-    }
-
-    if (password.length > 100) {
-      return NextResponse.json(
-        { error: "A senha é muito longa." },
+        {
+          error:
+            "A senha deve ter pelo menos 6 caracteres.",
+        },
         { status: 400 }
       );
     }
 
     const client = await clientPromise;
-    const db = client.db(DB_NAME);
-    const users = db.collection("users");
+    const db = client.db("supera_pontos");
 
-    const existingUser = await users.findOne({
-      email,
-    });
+    const existingUser = await db
+      .collection("users")
+      .findOne({ email });
 
     if (existingUser) {
       return NextResponse.json(
-        { error: "Já existe um usuário cadastrado com este e-mail." },
+        {
+          error:
+            "Já existe um usuário cadastrado com este e-mail.",
+        },
         { status: 409 }
       );
     }
 
-    const passwordHash = await bcrypt.hash(password, 12);
+    const passwordHash = await bcrypt.hash(
+      password,
+      12
+    );
 
-    const now = new Date();
-
-    const result = await users.insertOne({
+    const result = await db.collection("users").insertOne({
       name,
       email,
       passwordHash,
       role: "student",
+      schoolId: user.schoolId,
       points: 0,
-      createdAt: now,
-      updatedAt: now,
+      active: true,
+      createdAt: new Date(),
+      updatedAt: new Date(),
     });
 
     return NextResponse.json(
@@ -210,8 +233,7 @@ export async function POST(request: NextRequest) {
           name,
           email,
           points: 0,
-          role: "student",
-          createdAt: now,
+          schoolId: String(user.schoolId),
         },
       },
       { status: 201 }
@@ -220,7 +242,10 @@ export async function POST(request: NextRequest) {
     console.error("Erro ao cadastrar aluno:", error);
 
     return NextResponse.json(
-      { error: "Erro interno ao cadastrar aluno." },
+      {
+        error:
+          "Erro interno ao cadastrar o aluno.",
+      },
       { status: 500 }
     );
   }
