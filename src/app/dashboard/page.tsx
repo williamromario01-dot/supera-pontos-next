@@ -1,4 +1,4 @@
-```tsx
+tsx
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -942,4 +942,3 @@ export default function DashboardPage() {
         <section className="grid grid-cols-1 md:grid-cols-3 gap-4">
 
           <div className="bg-white rounded-2xl border border-slate-200 p-5 flex item
-```
