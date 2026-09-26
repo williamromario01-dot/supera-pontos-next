@@ -6,6 +6,8 @@ const DB_NAME = "supera_pontos";
 
 const ALLOWED_ROLES = ["super_admin", "educator"];
 
+const MAX_POINTS_PER_LAUNCH = 100000;
+
 async function getAuthenticatedUser(request: NextRequest) {
   const sessionToken = request.cookies.get("supera_session")?.value;
 
@@ -24,7 +26,10 @@ async function getAuthenticatedUser(request: NextRequest) {
     return null;
   }
 
-  if (new Date(session.expiresAt) < new Date()) {
+  if (
+    !session.expiresAt ||
+    new Date(session.expiresAt) < new Date()
+  ) {
     await db.collection("sessions").deleteOne({
       _id: session._id,
     });
@@ -36,7 +41,11 @@ async function getAuthenticatedUser(request: NextRequest) {
     _id: session.userId,
   });
 
-  return user || null;
+  if (!user) {
+    return null;
+  }
+
+  return user;
 }
 
 function getObjectId(id: string) {
@@ -70,13 +79,23 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const body = await request.json();
+    // 3. Ler dados enviados
+    let body: Record<string, unknown>;
+
+    try {
+      body = await request.json();
+    } catch {
+      return NextResponse.json(
+        { error: "Dados enviados em formato inválido." },
+        { status: 400 }
+      );
+    }
 
     const studentId = String(body.studentId || "").trim();
     const categoryId = String(body.categoryId || "").trim();
     const points = Number(body.points);
 
-    // 3. Validar dados básicos
+    // 4. Validar aluno
     if (!studentId) {
       return NextResponse.json(
         { error: "O aluno é obrigatório." },
@@ -84,6 +103,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // 5. Validar categoria
     if (!categoryId) {
       return NextResponse.json(
         { error: "A categoria é obrigatória." },
@@ -91,6 +111,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // 6. Validar pontos
     if (!Number.isFinite(points) || points <= 0) {
       return NextResponse.json(
         {
@@ -101,16 +122,27 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Evita pontuação com casas decimais
     if (!Number.isInteger(points)) {
       return NextResponse.json(
         {
-          error: "A quantidade de pontos deve ser um número inteiro.",
+          error:
+            "A quantidade de pontos deve ser um número inteiro.",
         },
         { status: 400 }
       );
     }
 
+    if (points > MAX_POINTS_PER_LAUNCH) {
+      return NextResponse.json(
+        {
+          error:
+            `O máximo permitido por lançamento é ${MAX_POINTS_PER_LAUNCH} pontos.`,
+        },
+        { status: 400 }
+      );
+    }
+
+    // 7. Validar IDs
     const studentObjectId = getObjectId(studentId);
     const categoryObjectId = getObjectId(categoryId);
 
@@ -135,7 +167,7 @@ export async function POST(request: NextRequest) {
     const categories = db.collection("categories");
     const pointEvents = db.collection("pointEvents");
 
-    // 4. Verificar aluno
+    // 8. Verificar aluno
     const student = await users.findOne({
       _id: studentObjectId,
     });
@@ -147,7 +179,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Impede lançar pontos para outro educador/admin
     if (student.role !== "student") {
       return NextResponse.json(
         {
@@ -158,7 +189,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 5. Verificar categoria
+    // 9. Verificar categoria
     const category = await categories.findOne({
       _id: categoryObjectId,
     });
@@ -170,37 +201,55 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 6. Criar evento de pontos
     const now = new Date();
 
-    const pointEvent = {
-      studentId: studentObjectId,
-      categoryId: categoryObjectId,
-      educatorId: user._id,
-      points,
-      createdAt: now,
-    };
+    // 10. Criar evento e atualizar saldo
+    // em uma única transação.
+    const session = client.startSession();
 
-    const result = await pointEvents.insertOne(pointEvent);
-
-    // 7. Atualizar total geral do aluno
-    await users.updateOne(
-      { _id: studentObjectId },
-      {
-        $inc: {
+    try {
+      await session.withTransaction(async () => {
+        const pointEvent = {
+          studentId: studentObjectId,
+          categoryId: categoryObjectId,
+          educatorId: user._id,
           points,
-        },
-        $set: {
-          updatedAt: now,
-        },
-      }
-    );
+          createdAt: now,
+        };
 
+        await pointEvents.insertOne(
+          pointEvent,
+          { session }
+        );
+
+        const updateResult = await users.updateOne(
+          { _id: studentObjectId },
+          {
+            $inc: {
+              points,
+            },
+            $set: {
+              updatedAt: now,
+            },
+          },
+          { session }
+        );
+
+        if (updateResult.matchedCount !== 1) {
+          throw new Error(
+            "Não foi possível atualizar o saldo do aluno."
+          );
+        }
+      });
+    } finally {
+      await session.endSession();
+    }
+
+    // 11. Resposta
     return NextResponse.json(
       {
         message: "Pontos lançados com sucesso.",
         pointEvent: {
-          id: result.insertedId.toString(),
           studentId: studentObjectId.toString(),
           studentName: student.name,
           categoryId: categoryObjectId.toString(),
