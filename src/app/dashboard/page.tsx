@@ -27,7 +27,6 @@ credentials: 'include',
 cache: 'no-store',
 });
 
-```
     if (!response.ok) {
       router.replace('/');
       return;
@@ -50,7 +49,6 @@ cache: 'no-store',
 }
 
 loadUser();
-```
 
 }, [router]);
 
@@ -64,9 +62,7 @@ credentials: 'include',
 console.error(error);
 }
 
-```
 router.replace('/');
-```
 
 }
 
@@ -82,7 +78,6 @@ return null;
 
 return ( <main className="min-h-screen bg-slate-100">
 
-```
   <header className="bg-white border-b border-slate-200 px-6 py-5">
     <div className="max-w-6xl mx-auto flex items-center justify-between">
 
@@ -144,7 +139,6 @@ return ( <main className="min-h-screen bg-slate-100">
   </section>
 
 </main>
-```
 
 );
 }
