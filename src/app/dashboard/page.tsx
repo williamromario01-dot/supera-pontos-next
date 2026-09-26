@@ -24,6 +24,7 @@ import {
   X,
   Users,
   UserPlus,
+  School,
 } from "lucide-react";
 
 interface User {
@@ -233,6 +234,10 @@ export default function DashboardPage() {
       return "Super Administrador";
     }
 
+    if (role === "admin") {
+      return "Administrador";
+    }
+
     if (role === "educator") {
       return "Educador";
     }
@@ -240,12 +245,21 @@ export default function DashboardPage() {
     return "Aluno";
   }
 
+  const canManageSchools =
+    user?.role === "super_admin";
+
   const canManageStudents =
     user?.role === "super_admin" ||
+    user?.role === "admin" ||
     user?.role === "educator";
+
+  const canManageEducators =
+    user?.role === "super_admin" ||
+    user?.role === "admin";
 
   const canManageCategories =
     user?.role === "super_admin" ||
+    user?.role === "admin" ||
     user?.role === "educator";
 
   if (loading) {
@@ -327,6 +341,16 @@ export default function DashboardPage() {
                 Dashboard
               </button>
 
+              {canManageSchools && (
+                <button
+                  onClick={() => router.push("/schools")}
+                  className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-slate-500 hover:bg-slate-100 text-sm font-bold transition"
+                >
+                  <School size={17} />
+                  Escolas
+                </button>
+              )}
+
               <button
                 onClick={() => router.push("/history")}
                 className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-slate-500 hover:bg-slate-100 text-sm font-bold transition"
@@ -350,6 +374,16 @@ export default function DashboardPage() {
                 >
                   <Users size={17} />
                   Alunos
+                </button>
+              )}
+
+              {canManageEducators && (
+                <button
+                  onClick={() => router.push("/educators")}
+                  className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-slate-500 hover:bg-slate-100 text-sm font-bold transition"
+                >
+                  <UserPlus size={17} />
+                  Educadores
                 </button>
               )}
 
@@ -429,6 +463,19 @@ export default function DashboardPage() {
                   Dashboard
                 </button>
 
+                {canManageSchools && (
+                  <button
+                    onClick={() => {
+                      setMenuOpen(false);
+                      router.push("/schools");
+                    }}
+                    className="flex items-center gap-3 px-4 py-3 rounded-xl text-slate-600 hover:bg-slate-100 font-bold text-sm"
+                  >
+                    <School size={18} />
+                    Escolas
+                  </button>
+                )}
+
                 <button
                   onClick={() => {
                     setMenuOpen(false);
@@ -461,6 +508,19 @@ export default function DashboardPage() {
                   >
                     <Users size={18} />
                     Alunos
+                  </button>
+                )}
+
+                {canManageEducators && (
+                  <button
+                    onClick={() => {
+                      setMenuOpen(false);
+                      router.push("/educators");
+                    }}
+                    className="flex items-center gap-3 px-4 py-3 rounded-xl text-slate-600 hover:bg-slate-100 font-bold text-sm"
+                  >
+                    <UserPlus size={18} />
+                    Educadores
                   </button>
                 )}
 
@@ -1221,6 +1281,58 @@ export default function DashboardPage() {
 
                 <p className="text-xs text-slate-400 mt-1">
                   Cadastre alunos e acompanhe seus pontos.
+                </p>
+
+                <div className="mt-4 flex items-center gap-1 text-xs font-bold text-orange-500">
+                  Acessar
+                  <ChevronRight size={14} />
+                </div>
+
+              </button>
+            )}
+
+            {canManageEducators && (
+              <button
+                onClick={() => router.push("/educators")}
+                className="group bg-white border border-slate-200 rounded-2xl p-5 text-left hover:border-orange-200 hover:shadow-md transition"
+              >
+
+                <div className="w-11 h-11 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center mb-4">
+                  <UserPlus size={21} />
+                </div>
+
+                <h3 className="font-black text-slate-800">
+                  Educadores
+                </h3>
+
+                <p className="text-xs text-slate-400 mt-1">
+                  Gerencie os educadores da escola.
+                </p>
+
+                <div className="mt-4 flex items-center gap-1 text-xs font-bold text-orange-500">
+                  Acessar
+                  <ChevronRight size={14} />
+                </div>
+
+              </button>
+            )}
+
+            {canManageSchools && (
+              <button
+                onClick={() => router.push("/schools")}
+                className="group bg-white border border-slate-200 rounded-2xl p-5 text-left hover:border-orange-200 hover:shadow-md transition"
+              >
+
+                <div className="w-11 h-11 rounded-xl bg-orange-50 text-orange-600 flex items-center justify-center mb-4">
+                  <School size={21} />
+                </div>
+
+                <h3 className="font-black text-slate-800">
+                  Escolas
+                </h3>
+
+                <p className="text-xs text-slate-400 mt-1">
+                  Cadastre e gerencie as escolas do sistema.
                 </p>
 
                 <div className="mt-4 flex items-center gap-1 text-xs font-bold text-orange-500">
