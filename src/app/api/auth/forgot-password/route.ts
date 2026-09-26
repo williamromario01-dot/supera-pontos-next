@@ -5,8 +5,6 @@ import { Resend } from "resend";
 
 const DB_NAME = "supera_pontos";
 
-const resend = new Resend(process.env.RESEND_API_KEY);
-
 export async function POST(request: NextRequest) {
   try {
     let body;
@@ -31,6 +29,26 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    if (!process.env.RESEND_API_KEY) {
+      return NextResponse.json(
+        {
+          error:
+            "Diagnóstico: RESEND_API_KEY não está disponível nesta implantação do Vercel.",
+        },
+        { status: 500 }
+      );
+    }
+
+    if (!process.env.RESEND_FROM_EMAIL) {
+      return NextResponse.json(
+        {
+          error:
+            "Diagnóstico: RESEND_FROM_EMAIL não está disponível nesta implantação do Vercel.",
+        },
+        { status: 500 }
+      );
+    }
+
     const client = await clientPromise;
     const db = client.db(DB_NAME);
 
@@ -38,10 +56,6 @@ export async function POST(request: NextRequest) {
       email,
     });
 
-    /*
-     * Por segurança, não informamos se o e-mail
-     * existe ou não no sistema.
-     */
     if (!user) {
       return NextResponse.json({
         message:
@@ -49,21 +63,12 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    /*
-     * Remove tokens anteriores desse usuário.
-     */
     await db.collection("passwordResetTokens").deleteMany({
       userId: user._id,
     });
 
-    /*
-     * Cria um token criptograficamente seguro.
-     */
     const token = crypto.randomBytes(32).toString("hex");
 
-    /*
-     * O link será válido por 30 minutos.
-     */
     const expiresAt = new Date(
       Date.now() + 30 * 60 * 1000
     );
@@ -80,206 +85,85 @@ export async function POST(request: NextRequest) {
       process.env.APP_URL ||
       "https://superapontos.gfars.com.br";
 
-    const resetUrl = `${appUrl}/reset-password?token=${token}`;
+    const resetUrl =
+      `${appUrl}/reset-password?token=${token}`;
+
+    const resend = new Resend(
+      process.env.RESEND_API_KEY
+    );
 
     const fromEmail =
-      process.env.RESEND_FROM_EMAIL ||
-      "Supera Pontos <noreply@gfars.com.br>";
+      process.env.RESEND_FROM_EMAIL;
 
     const userName = user.name || "Usuário";
 
-    const { error: resendError } = await resend.emails.send({
+    const { data, error } = await resend.emails.send({
       from: fromEmail,
       to: [email],
       subject: "Redefinição de senha — Supera Pontos",
       html: `
-        <!DOCTYPE html>
-        <html lang="pt-BR">
-          <head>
-            <meta charset="UTF-8" />
-            <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-            <title>Redefinição de senha</title>
-          </head>
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 30px;">
+          <h1 style="color: #f97316;">Supera Pontos</h1>
 
-          <body
-            style="
-              margin: 0;
-              padding: 0;
-              background-color: #f8fafc;
-              font-family: Arial, Helvetica, sans-serif;
-              color: #0f172a;
-            "
-          >
-            <div
+          <p>Olá, ${userName}!</p>
+
+          <p>
+            Recebemos uma solicitação para redefinir sua senha.
+          </p>
+
+          <p>
+            Clique no botão abaixo para criar uma nova senha:
+          </p>
+
+          <p style="margin: 30px 0;">
+            <a
+              href="${resetUrl}"
               style="
-                max-width: 600px;
-                margin: 0 auto;
-                padding: 40px 20px;
+                background:#f97316;
+                color:white;
+                padding:14px 24px;
+                text-decoration:none;
+                border-radius:8px;
+                display:inline-block;
+                font-weight:bold;
               "
             >
-              <div
-                style="
-                  background-color: #ffffff;
-                  border-radius: 20px;
-                  padding: 40px 30px;
-                  border: 1px solid #e2e8f0;
-                "
-              >
-                <div
-                  style="
-                    text-align: center;
-                    margin-bottom: 30px;
-                  "
-                >
-                  <div
-                    style="
-                      display: inline-block;
-                      background-color: #fff7ed;
-                      color: #f97316;
-                      padding: 12px 18px;
-                      border-radius: 14px;
-                      font-size: 24px;
-                      font-weight: bold;
-                    "
-                  >
-                    SUPERA
-                  </div>
-                </div>
+              Redefinir minha senha
+            </a>
+          </p>
 
-                <h1
-                  style="
-                    margin: 0 0 15px;
-                    font-size: 26px;
-                    line-height: 1.3;
-                  "
-                >
-                  Redefinição de senha
-                </h1>
+          <p>
+            Este link é válido por <strong>30 minutos</strong>.
+          </p>
 
-                <p
-                  style="
-                    font-size: 16px;
-                    line-height: 1.6;
-                    margin: 0 0 20px;
-                    color: #475569;
-                  "
-                >
-                  Olá, ${userName}!
-                </p>
+          <p>
+            Se você não solicitou a redefinição da senha,
+            pode ignorar este e-mail.
+          </p>
 
-                <p
-                  style="
-                    font-size: 16px;
-                    line-height: 1.6;
-                    margin: 0 0 25px;
-                    color: #475569;
-                  "
-                >
-                  Recebemos uma solicitação para redefinir a senha da sua
-                  conta no <strong>Supera Pontos</strong>.
-                </p>
-
-                <div style="text-align: center; margin: 30px 0;">
-                  <a
-                    href="${resetUrl}"
-                    style="
-                      display: inline-block;
-                      background-color: #f97316;
-                      color: #ffffff;
-                      text-decoration: none;
-                      padding: 15px 28px;
-                      border-radius: 12px;
-                      font-size: 16px;
-                      font-weight: bold;
-                    "
-                  >
-                    Redefinir minha senha
-                  </a>
-                </div>
-
-                <p
-                  style="
-                    font-size: 14px;
-                    line-height: 1.6;
-                    color: #64748b;
-                    margin: 25px 0 10px;
-                  "
-                >
-                  Este link ficará disponível por <strong>30 minutos</strong>.
-                </p>
-
-                <p
-                  style="
-                    font-size: 14px;
-                    line-height: 1.6;
-                    color: #64748b;
-                    margin: 0 0 25px;
-                  "
-                >
-                  Se você não solicitou a redefinição da senha, pode ignorar
-                  este e-mail.
-                </p>
-
-                <div
-                  style="
-                    border-top: 1px solid #e2e8f0;
-                    padding-top: 20px;
-                    margin-top: 25px;
-                  "
-                >
-                  <p
-                    style="
-                      font-size: 12px;
-                      line-height: 1.5;
-                      color: #94a3b8;
-                      margin: 0;
-                    "
-                  >
-                    Este é um e-mail automático do sistema Supera Pontos.
-                    Não responda a esta mensagem.
-                  </p>
-                </div>
-              </div>
-
-              <p
-                style="
-                  text-align: center;
-                  font-size: 12px;
-                  color: #94a3b8;
-                  margin-top: 20px;
-                "
-              >
-                Supera Pontos
-              </p>
-            </div>
-          </body>
-        </html>
+          <p style="margin-top:30px;color:#666;">
+            Supera Pontos
+          </p>
+        </div>
       `,
     });
 
-    if (resendError) {
-      console.error(
-        "Erro do Resend:",
-        resendError
-      );
+    if (error) {
+      console.error("ERRO COMPLETO DO RESEND:", error);
 
-      /*
-       * Remove o token se o e-mail não puder
-       * ser enviado, evitando deixar um token
-       * inutilizável no banco.
-       */
       await db.collection("passwordResetTokens").deleteOne({
         token,
       });
 
       return NextResponse.json(
         {
-          error:
-            "Não foi possível enviar o e-mail de recuperação.",
+          error: `Resend recusou o envio: ${error.message || JSON.stringify(error)}`,
         },
         { status: 500 }
       );
     }
+
+    console.log("E-mail enviado pelo Resend:", data);
 
     return NextResponse.json({
       message:
@@ -287,14 +171,16 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     console.error(
-      "Erro na recuperação de senha:",
+      "ERRO COMPLETO NA RECUPERAÇÃO:",
       error
     );
 
     return NextResponse.json(
       {
         error:
-          "Não foi possível iniciar a recuperação de senha.",
+          error instanceof Error
+            ? `Erro interno: ${error.message}`
+            : "Erro interno ao iniciar a recuperação de senha.",
       },
       { status: 500 }
     );
