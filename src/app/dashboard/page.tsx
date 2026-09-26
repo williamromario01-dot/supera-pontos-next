@@ -22,7 +22,8 @@ import {
   Tags,
   Menu,
   X,
-  User,
+  Users,
+  UserPlus,
 } from "lucide-react";
 
 interface User {
@@ -131,18 +132,14 @@ export default function DashboardPage() {
 
       setUser(meData.user);
 
-      const [rankingResponse, weeklyResponse] =
-        await Promise.all([
-          fetch("/api/rankings", {
-            credentials: "include",
-          }),
-          fetch(
-            `/api/weekly?studentId=${meData.user.id}`,
-            {
-              credentials: "include",
-            }
-          ),
-        ]);
+      const [rankingResponse, weeklyResponse] = await Promise.all([
+        fetch("/api/rankings", {
+          credentials: "include",
+        }),
+        fetch(`/api/weekly?studentId=${meData.user.id}`, {
+          credentials: "include",
+        }),
+      ]);
 
       const rankingData = await rankingResponse.json();
       const weeklyData = await weeklyResponse.json();
@@ -243,6 +240,14 @@ export default function DashboardPage() {
     return "Aluno";
   }
 
+  const canManageStudents =
+    user?.role === "super_admin" ||
+    user?.role === "educator";
+
+  const canManageCategories =
+    user?.role === "super_admin" ||
+    user?.role === "educator";
+
   if (loading) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center">
@@ -338,7 +343,17 @@ export default function DashboardPage() {
                 Ranking
               </button>
 
-              {user.role === "super_admin" && (
+              {canManageStudents && (
+                <button
+                  onClick={() => router.push("/students")}
+                  className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-slate-500 hover:bg-slate-100 text-sm font-bold transition"
+                >
+                  <Users size={17} />
+                  Alunos
+                </button>
+              )}
+
+              {canManageCategories && (
                 <button
                   onClick={() => router.push("/categories")}
                   className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-slate-500 hover:bg-slate-100 text-sm font-bold transition"
@@ -436,7 +451,20 @@ export default function DashboardPage() {
                   Ranking
                 </button>
 
-                {user.role === "super_admin" && (
+                {canManageStudents && (
+                  <button
+                    onClick={() => {
+                      setMenuOpen(false);
+                      router.push("/students");
+                    }}
+                    className="flex items-center gap-3 px-4 py-3 rounded-xl text-slate-600 hover:bg-slate-100 font-bold text-sm"
+                  >
+                    <Users size={18} />
+                    Alunos
+                  </button>
+                )}
+
+                {canManageCategories && (
                   <button
                     onClick={() => {
                       setMenuOpen(false);
@@ -569,8 +597,6 @@ export default function DashboardPage() {
 
         <section className="grid grid-cols-2 lg:grid-cols-4 gap-4 mt-6">
 
-          {/* TOTAL */}
-
           <div className="group bg-white rounded-2xl border border-slate-200 p-5 shadow-sm hover:shadow-md transition">
 
             <div className="flex items-center justify-between">
@@ -594,8 +620,6 @@ export default function DashboardPage() {
             </p>
 
           </div>
-
-          {/* SEMANA */}
 
           <div className="group bg-white rounded-2xl border border-slate-200 p-5 shadow-sm hover:shadow-md transition">
 
@@ -621,8 +645,6 @@ export default function DashboardPage() {
 
           </div>
 
-          {/* EVOLUÇÃO */}
-
           <div className="group bg-white rounded-2xl border border-slate-200 p-5 shadow-sm hover:shadow-md transition">
 
             <div className="flex items-center justify-between">
@@ -647,8 +669,6 @@ export default function DashboardPage() {
             </p>
 
           </div>
-
-          {/* RECOMPENSA */}
 
           <div className="group bg-white rounded-2xl border border-slate-200 p-5 shadow-sm hover:shadow-md transition">
 
@@ -727,9 +747,7 @@ export default function DashboardPage() {
 
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 mt-6">
 
-          {/* =====================================
-              CATEGORIAS
-          ===================================== */}
+          {/* CATEGORIAS */}
 
           <section className="xl:col-span-2">
 
@@ -923,9 +941,7 @@ export default function DashboardPage() {
 
           </section>
 
-          {/* =====================================
-              RANKINGS
-          ===================================== */}
+          {/* RANKINGS */}
 
           <section>
 
@@ -1133,7 +1149,13 @@ export default function DashboardPage() {
 
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div
+            className={`grid grid-cols-1 ${
+              canManageStudents
+                ? "sm:grid-cols-2 lg:grid-cols-4"
+                : "sm:grid-cols-3"
+            } gap-4`}
+          >
 
             <button
               onClick={() => router.push("/history")}
@@ -1183,29 +1205,57 @@ export default function DashboardPage() {
 
             </button>
 
-            <button
-              onClick={() => router.push("/categories")}
-              className="group bg-white border border-slate-200 rounded-2xl p-5 text-left hover:border-orange-200 hover:shadow-md transition"
-            >
+            {canManageStudents && (
+              <button
+                onClick={() => router.push("/students")}
+                className="group bg-white border border-slate-200 rounded-2xl p-5 text-left hover:border-orange-200 hover:shadow-md transition"
+              >
 
-              <div className="w-11 h-11 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center mb-4">
-                <Tags size={21} />
-              </div>
+                <div className="w-11 h-11 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center mb-4">
+                  <Users size={21} />
+                </div>
 
-              <h3 className="font-black text-slate-800">
-                Categorias
-              </h3>
+                <h3 className="font-black text-slate-800">
+                  Alunos
+                </h3>
 
-              <p className="text-xs text-slate-400 mt-1">
-                Consulte as categorias de pontuação.
-              </p>
+                <p className="text-xs text-slate-400 mt-1">
+                  Cadastre alunos e acompanhe seus pontos.
+                </p>
 
-              <div className="mt-4 flex items-center gap-1 text-xs font-bold text-orange-500">
-                Acessar
-                <ChevronRight size={14} />
-              </div>
+                <div className="mt-4 flex items-center gap-1 text-xs font-bold text-orange-500">
+                  Acessar
+                  <ChevronRight size={14} />
+                </div>
 
-            </button>
+              </button>
+            )}
+
+            {canManageCategories && (
+              <button
+                onClick={() => router.push("/categories")}
+                className="group bg-white border border-slate-200 rounded-2xl p-5 text-left hover:border-orange-200 hover:shadow-md transition"
+              >
+
+                <div className="w-11 h-11 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center mb-4">
+                  <Tags size={21} />
+                </div>
+
+                <h3 className="font-black text-slate-800">
+                  Categorias
+                </h3>
+
+                <p className="text-xs text-slate-400 mt-1">
+                  Consulte e gerencie as categorias de pontuação.
+                </p>
+
+                <div className="mt-4 flex items-center gap-1 text-xs font-bold text-orange-500">
+                  Acessar
+                  <ChevronRight size={14} />
+                </div>
+
+              </button>
+            )}
 
           </div>
 
