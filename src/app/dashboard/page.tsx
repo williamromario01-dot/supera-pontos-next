@@ -26,6 +26,8 @@ import {
   School,
   UserCircle,
   UserPlus,
+  ShoppingBag,
+  ShoppingCart,
 } from "lucide-react";
 
 interface User {
@@ -277,8 +279,6 @@ export default function DashboardPage() {
   const canManageSchools =
     user?.role === "super_admin";
 
-  // SUPERADM NÃO GERENCIA ALUNOS DIRETAMENTE PELA TELA INICIAL.
-  // Alunos serão gerenciados dentro de cada escola.
   const canManageStudents =
     user?.role === "admin" ||
     user?.role === "educator";
@@ -288,9 +288,19 @@ export default function DashboardPage() {
     user?.role === "admin" ||
     user?.role === "educator";
 
-  // INDICAÇÕES
-  // Todos os perfis autenticados podem acessar a aba.
   const canAccessReferrals =
+    user?.role === "student" ||
+    user?.role === "educator" ||
+    user?.role === "admin" ||
+    user?.role === "super_admin";
+
+  const canAccessPointStore =
+    user?.role === "student" ||
+    user?.role === "educator" ||
+    user?.role === "admin" ||
+    user?.role === "super_admin";
+
+  const canAccessSuperaProducts =
     user?.role === "student" ||
     user?.role === "educator" ||
     user?.role === "admin" ||
@@ -428,6 +438,26 @@ export default function DashboardPage() {
                 >
                   <UserPlus size={17} />
                   Indicações
+                </button>
+              )}
+
+              {canAccessPointStore && (
+                <button
+                  onClick={() => router.push("/point-store")}
+                  className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-slate-500 hover:bg-slate-100 text-sm font-bold transition"
+                >
+                  <ShoppingBag size={17} />
+                  Loja de Pontos
+                </button>
+              )}
+
+              {canAccessSuperaProducts && (
+                <button
+                  onClick={() => router.push("/products-supera")}
+                  className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-slate-500 hover:bg-slate-100 text-sm font-bold transition"
+                >
+                  <ShoppingCart size={17} />
+                  Produtos Supera
                 </button>
               )}
 
@@ -594,6 +624,32 @@ export default function DashboardPage() {
                   </button>
                 )}
 
+                {canAccessPointStore && (
+                  <button
+                    onClick={() => {
+                      setMenuOpen(false);
+                      router.push("/point-store");
+                    }}
+                    className="flex items-center gap-3 px-4 py-3 rounded-xl text-slate-600 hover:bg-slate-100 font-bold text-sm"
+                  >
+                    <ShoppingBag size={18} />
+                    Loja de Pontos
+                  </button>
+                )}
+
+                {canAccessSuperaProducts && (
+                  <button
+                    onClick={() => {
+                      setMenuOpen(false);
+                      router.push("/products-supera");
+                    }}
+                    className="flex items-center gap-3 px-4 py-3 rounded-xl text-slate-600 hover:bg-slate-100 font-bold text-sm"
+                  >
+                    <ShoppingCart size={18} />
+                    Produtos Supera
+                  </button>
+                )}
+
                 <div className="border-t border-slate-100 mt-2 pt-3 flex items-center justify-between">
 
                   <button
@@ -640,8 +696,6 @@ export default function DashboardPage() {
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
 
-        {/* ERRO */}
-
         {error && (
           <div className="mb-6 rounded-2xl border border-rose-200 bg-rose-50 px-5 py-4 text-sm text-rose-700 flex items-center gap-3">
             <span className="w-2 h-2 rounded-full bg-rose-500" />
@@ -684,8 +738,6 @@ export default function DashboardPage() {
               </p>
 
             </div>
-
-            {/* PONTOS HERO */}
 
             <div className="bg-white/10 backdrop-blur-sm border border-white/15 rounded-2xl p-5 min-w-[210px]">
 
@@ -1268,13 +1320,9 @@ export default function DashboardPage() {
 
           </div>
 
-          <div
-            className={`grid grid-cols-1 ${
-              canManageStudents
-                ? "sm:grid-cols-2 lg:grid-cols-3"
-                : "sm:grid-cols-2"
-            } gap-4`}
-          >
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+
+            {/* HISTÓRICO */}
 
             <button
               onClick={() => router.push("/history")}
@@ -1300,6 +1348,8 @@ export default function DashboardPage() {
 
             </button>
 
+            {/* RANKING */}
+
             <button
               onClick={() => router.push("/ranking")}
               className="group bg-white border border-slate-200 rounded-2xl p-5 text-left hover:border-orange-200 hover:shadow-md transition"
@@ -1324,6 +1374,8 @@ export default function DashboardPage() {
 
             </button>
 
+            {/* PERFIL */}
+
             <button
               onClick={() => router.push("/profile")}
               className="group bg-white border border-slate-200 rounded-2xl p-5 text-left hover:border-orange-200 hover:shadow-md transition"
@@ -1347,6 +1399,8 @@ export default function DashboardPage() {
               </div>
 
             </button>
+
+            {/* ALUNOS */}
 
             {canManageStudents && (
               <button
@@ -1374,6 +1428,8 @@ export default function DashboardPage() {
               </button>
             )}
 
+            {/* ESCOLAS */}
+
             {canManageSchools && (
               <button
                 onClick={() => router.push("/schools")}
@@ -1399,6 +1455,8 @@ export default function DashboardPage() {
 
               </button>
             )}
+
+            {/* CATEGORIAS */}
 
             {canManageCategories && (
               <button
@@ -1426,6 +1484,8 @@ export default function DashboardPage() {
               </button>
             )}
 
+            {/* INDICAÇÕES */}
+
             {canAccessReferrals && (
               <button
                 onClick={() => router.push("/referrals")}
@@ -1442,6 +1502,62 @@ export default function DashboardPage() {
 
                 <p className="text-xs text-slate-400 mt-1">
                   Envie indicações e acompanhe as aprovações.
+                </p>
+
+                <div className="mt-4 flex items-center gap-1 text-xs font-bold text-orange-500">
+                  Acessar
+                  <ChevronRight size={14} />
+                </div>
+
+              </button>
+            )}
+
+            {/* LOJA DE PONTOS */}
+
+            {canAccessPointStore && (
+              <button
+                onClick={() => router.push("/point-store")}
+                className="group bg-white border border-slate-200 rounded-2xl p-5 text-left hover:border-orange-200 hover:shadow-md transition"
+              >
+
+                <div className="w-11 h-11 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center mb-4">
+                  <ShoppingBag size={21} />
+                </div>
+
+                <h3 className="font-black text-slate-800">
+                  Loja de Pontos
+                </h3>
+
+                <p className="text-xs text-slate-400 mt-1">
+                  Troque seus pontos por recompensas.
+                </p>
+
+                <div className="mt-4 flex items-center gap-1 text-xs font-bold text-orange-500">
+                  Acessar
+                  <ChevronRight size={14} />
+                </div>
+
+              </button>
+            )}
+
+            {/* PRODUTOS SUPERA */}
+
+            {canAccessSuperaProducts && (
+              <button
+                onClick={() => router.push("/products-supera")}
+                className="group bg-white border border-slate-200 rounded-2xl p-5 text-left hover:border-orange-200 hover:shadow-md transition"
+              >
+
+                <div className="w-11 h-11 rounded-xl bg-sky-50 text-sky-600 flex items-center justify-center mb-4">
+                  <ShoppingCart size={21} />
+                </div>
+
+                <h3 className="font-black text-slate-800">
+                  Produtos Supera
+                </h3>
+
+                <p className="text-xs text-slate-400 mt-1">
+                  Conheça produtos da Supera e solicite sua compra.
                 </p>
 
                 <div className="mt-4 flex items-center gap-1 text-xs font-bold text-orange-500">
