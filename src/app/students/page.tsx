@@ -49,6 +49,7 @@ export default function StudentsPage() {
   const [error, setError] = useState("");
 
   const canDeleteStudents =
+    user?.role === "super_admin" ||
     user?.role === "admin" ||
     user?.role === "educator";
 
@@ -78,6 +79,7 @@ export default function StudentsPage() {
       }
 
       setUser(data.user);
+
       return data.user as CurrentUser;
     } catch (err) {
       setError(
@@ -291,7 +293,9 @@ export default function StudentsPage() {
       const text =
         `${student.name} ${student.email}`.toLowerCase();
 
-      return text.includes(search.toLowerCase());
+      return text.includes(
+        search.toLowerCase()
+      );
     }
   );
 
@@ -304,7 +308,6 @@ export default function StudentsPage() {
   return (
     <main className="min-h-screen bg-slate-50">
       <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
-        {/* Cabeçalho */}
         <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <Link
@@ -336,7 +339,6 @@ export default function StudentsPage() {
           </div>
         </div>
 
-        {/* Mensagens gerais */}
         {error && (
           <div className="mb-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
             {error}
@@ -349,7 +351,6 @@ export default function StudentsPage() {
           </div>
         )}
 
-        {/* Resumo */}
         <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
             <div className="flex items-center justify-between">
@@ -391,7 +392,6 @@ export default function StudentsPage() {
         </div>
 
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-[380px_1fr]">
-          {/* Cadastro */}
           <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
             <div className="mb-6">
               <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-2xl bg-orange-100 text-orange-600">
@@ -532,7 +532,6 @@ export default function StudentsPage() {
             </form>
           </section>
 
-          {/* Lista */}
           <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
             <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div>
@@ -660,6 +659,7 @@ export default function StudentsPage() {
                               student.id
                             }
                             title="Excluir aluno"
+                            aria-label={`Excluir aluno ${student.name}`}
                             className="flex h-11 w-11 items-center justify-center rounded-xl border border-red-200 bg-white text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
                           >
                             {deletingId ===
