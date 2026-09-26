@@ -46,14 +46,17 @@ export async function DELETE(
       );
     }
 
+    // Apenas usuários administrativos/pedagógicos
+    // podem excluir alunos.
     if (
+      user.role !== "super_admin" &&
       user.role !== "admin" &&
       user.role !== "educator"
     ) {
       return NextResponse.json(
         {
           error:
-            "Apenas o administrador ou educador pode excluir alunos.",
+            "Você não tem permissão para excluir alunos.",
         },
         { status: 403 }
       );
@@ -65,16 +68,6 @@ export async function DELETE(
       return NextResponse.json(
         { error: "Aluno inválido." },
         { status: 400 }
-      );
-    }
-
-    if (!user.schoolId) {
-      return NextResponse.json(
-        {
-          error:
-            "Seu usuário não está vinculado a uma escola.",
-        },
-        { status: 403 }
       );
     }
 
@@ -93,25 +86,43 @@ export async function DELETE(
       );
     }
 
-    if (
-      !student.schoolId ||
-      String(student.schoolId) !== String(user.schoolId)
-    ) {
-      return NextResponse.json(
-        {
-          error:
-            "Você só pode excluir alunos da sua própria escola.",
-        },
-        { status: 403 }
-      );
+    /*
+     * O Suporte pode excluir alunos de qualquer escola.
+     *
+     * Administrador e Educador só podem excluir
+     * alunos da própria escola.
+     */
+    if (user.role !== "super_admin") {
+      if (!user.schoolId) {
+        return NextResponse.json(
+          {
+            error:
+              "Seu usuário não está vinculado a uma escola.",
+          },
+          { status: 403 }
+        );
+      }
+
+      if (
+        !student.schoolId ||
+        String(student.schoolId) !== String(user.schoolId)
+      ) {
+        return NextResponse.json(
+          {
+            error:
+              "Você só pode excluir alunos da sua própria escola.",
+          },
+          { status: 403 }
+        );
+      }
     }
 
     await db.collection("users").deleteOne({
       _id: new ObjectId(studentId),
       role: "student",
-      schoolId: user.schoolId,
     });
 
+    // Encerra todas as sessões do aluno excluído.
     await db.collection("sessions").deleteMany({
       userId: new ObjectId(studentId),
     });
