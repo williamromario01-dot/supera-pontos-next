@@ -3,8 +3,63 @@ import clientPromise from "@/lib/mongodb";
 
 const DB_NAME = "supera_pontos";
 
-export async function GET() {
+const ALLOWED_ROLES = ["super_admin", "educator"];
+
+async function getAuthenticatedUser(request: NextRequest) {
+  const sessionToken = request.cookies.get("supera_session")?.value;
+
+  if (!sessionToken) {
+    return null;
+  }
+
+  const client = await clientPromise;
+  const db = client.db(DB_NAME);
+
+  const session = await db.collection("sessions").findOne({
+    token: sessionToken,
+  });
+
+  if (!session) {
+    return null;
+  }
+
+  if (new Date(session.expiresAt) < new Date()) {
+    await db.collection("sessions").deleteOne({
+      _id: session._id,
+    });
+
+    return null;
+  }
+
+  const user = await db.collection("users").findOne({
+    _id: session.userId,
+  });
+
+  if (!user) {
+    return null;
+  }
+
+  return user;
+}
+
+export async function GET(request: NextRequest) {
   try {
+    const user = await getAuthenticatedUser(request);
+
+    if (!user) {
+      return NextResponse.json(
+        { error: "Não autenticado." },
+        { status: 401 }
+      );
+    }
+
+    if (!ALLOWED_ROLES.includes(user.role)) {
+      return NextResponse.json(
+        { error: "Você não tem permissão para acessar as categorias." },
+        { status: 403 }
+      );
+    }
+
     const client = await clientPromise;
     const db = client.db(DB_NAME);
 
@@ -34,18 +89,30 @@ export async function GET() {
     console.error("Erro ao buscar categorias:", error);
 
     return NextResponse.json(
-      {
-        error: "Erro interno ao buscar categorias.",
-      },
-      {
-        status: 500,
-      }
+      { error: "Erro interno ao buscar categorias." },
+      { status: 500 }
     );
   }
 }
 
 export async function POST(request: NextRequest) {
   try {
+    const user = await getAuthenticatedUser(request);
+
+    if (!user) {
+      return NextResponse.json(
+        { error: "Não autenticado." },
+        { status: 401 }
+      );
+    }
+
+    if (!ALLOWED_ROLES.includes(user.role)) {
+      return NextResponse.json(
+        { error: "Você não tem permissão para criar categorias." },
+        { status: 403 }
+      );
+    }
+
     const body = await request.json();
 
     const name = String(body.name || "").trim();
@@ -61,34 +128,22 @@ export async function POST(request: NextRequest) {
 
     if (!name) {
       return NextResponse.json(
-        {
-          error: "O nome da categoria é obrigatório.",
-        },
-        {
-          status: 400,
-        }
+        { error: "O nome da categoria é obrigatório." },
+        { status: 400 }
       );
     }
 
     if (!Number.isFinite(weeklyGoal) || weeklyGoal <= 0) {
       return NextResponse.json(
-        {
-          error: "A meta semanal deve ser maior que zero.",
-        },
-        {
-          status: 400,
-        }
+        { error: "A meta semanal deve ser maior que zero." },
+        { status: 400 }
       );
     }
 
     if (!Number.isFinite(defaultPoints) || defaultPoints <= 0) {
       return NextResponse.json(
-        {
-          error: "A pontuação padrão deve ser maior que zero.",
-        },
-        {
-          status: 400,
-        }
+        { error: "A pontuação padrão deve ser maior que zero." },
+        { status: 400 }
       );
     }
 
@@ -106,12 +161,8 @@ export async function POST(request: NextRequest) {
 
     if (existingCategory) {
       return NextResponse.json(
-        {
-          error: "Já existe uma categoria com esse nome.",
-        },
-        {
-          status: 409,
-        }
+        { error: "Já existe uma categoria com esse nome." },
+        { status: 409 }
       );
     }
 
@@ -139,20 +190,14 @@ export async function POST(request: NextRequest) {
           ...newCategory,
         },
       },
-      {
-        status: 201,
-      }
+      { status: 201 }
     );
   } catch (error) {
     console.error("Erro ao criar categoria:", error);
 
     return NextResponse.json(
-      {
-        error: "Erro interno ao criar categoria.",
-      },
-      {
-        status: 500,
-      }
+      { error: "Erro interno ao criar categoria." },
+      { status: 500 }
     );
   }
 }
