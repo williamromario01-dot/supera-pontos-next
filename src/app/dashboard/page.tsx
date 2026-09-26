@@ -24,6 +24,7 @@ import {
   X,
   Users,
   School,
+  UserCircle,
 } from "lucide-react";
 
 interface User {
@@ -32,6 +33,7 @@ interface User {
   email: string;
   role: string;
   points: number;
+  avatar: string | null;
 }
 
 interface Category {
@@ -230,7 +232,7 @@ export default function DashboardPage() {
 
   function getRoleName(role: string) {
     if (role === "super_admin") {
-      return "Super Administrador";
+      return "Suporte";
     }
 
     if (role === "admin") {
@@ -242,6 +244,33 @@ export default function DashboardPage() {
     }
 
     return "Aluno";
+  }
+
+  function ProfileAvatar({
+    size = "normal",
+  }: {
+    size?: "small" | "normal";
+  }) {
+    const sizeClass =
+      size === "small"
+        ? "w-9 h-9 text-xs"
+        : "w-10 h-10 text-sm";
+
+    return (
+      <div
+        className={`${sizeClass} rounded-xl bg-slate-900 text-white flex items-center justify-center font-black overflow-hidden flex-shrink-0`}
+      >
+        {user?.avatar ? (
+          <img
+            src={user.avatar}
+            alt={`Foto de perfil de ${user.name}`}
+            className="w-full h-full object-cover"
+          />
+        ) : (
+          getInitials(user?.name || "")
+        )}
+      </div>
+    );
   }
 
   const canManageSchools =
@@ -389,19 +418,31 @@ export default function DashboardPage() {
 
             <div className="hidden sm:flex items-center gap-3">
 
-              <div className="text-right">
-                <p className="text-sm font-black text-slate-700">
-                  {getFirstName(user.name)}
-                </p>
+              <button
+                onClick={() => router.push("/profile")}
+                className="flex items-center gap-3 rounded-xl px-2 py-1.5 hover:bg-slate-50 transition text-right"
+                title="Meu perfil"
+              >
+                <div>
+                  <p className="text-sm font-black text-slate-700">
+                    {getFirstName(user.name)}
+                  </p>
 
-                <p className="text-[11px] text-slate-400">
-                  {getRoleName(user.role)}
-                </p>
-              </div>
+                  <p className="text-[11px] text-slate-400">
+                    {getRoleName(user.role)}
+                  </p>
+                </div>
 
-              <div className="w-10 h-10 rounded-xl bg-slate-900 text-white flex items-center justify-center font-black text-sm">
-                {getInitials(user.name)}
-              </div>
+                <ProfileAvatar />
+              </button>
+
+              <button
+                onClick={() => router.push("/profile")}
+                title="Meu perfil"
+                className="w-10 h-10 rounded-xl flex items-center justify-center text-slate-400 hover:text-orange-500 hover:bg-orange-50 transition"
+              >
+                <UserCircle size={20} />
+              </button>
 
               <button
                 onClick={handleLogout}
@@ -447,6 +488,17 @@ export default function DashboardPage() {
                 >
                   <LayoutDashboard size={18} />
                   Dashboard
+                </button>
+
+                <button
+                  onClick={() => {
+                    setMenuOpen(false);
+                    router.push("/profile");
+                  }}
+                  className="flex items-center gap-3 px-4 py-3 rounded-xl text-slate-600 hover:bg-slate-100 font-bold text-sm"
+                >
+                  <UserCircle size={18} />
+                  Meu perfil
                 </button>
 
                 {canManageSchools && (
@@ -512,11 +564,14 @@ export default function DashboardPage() {
 
                 <div className="border-t border-slate-100 mt-2 pt-3 flex items-center justify-between">
 
-                  <div className="flex items-center gap-3">
-
-                    <div className="w-9 h-9 rounded-xl bg-slate-900 text-white flex items-center justify-center font-black text-xs">
-                      {getInitials(user.name)}
-                    </div>
+                  <button
+                    onClick={() => {
+                      setMenuOpen(false);
+                      router.push("/profile");
+                    }}
+                    className="flex items-center gap-3 text-left"
+                  >
+                    <ProfileAvatar size="small" />
 
                     <div>
                       <p className="text-sm font-black text-slate-700">
@@ -527,8 +582,7 @@ export default function DashboardPage() {
                         {getRoleName(user.role)}
                       </p>
                     </div>
-
-                  </div>
+                  </button>
 
                   <button
                     onClick={handleLogout}
@@ -1229,6 +1283,30 @@ export default function DashboardPage() {
 
               <p className="text-xs text-slate-400 mt-1">
                 Veja sua posição e acompanhe os demais alunos.
+              </p>
+
+              <div className="mt-4 flex items-center gap-1 text-xs font-bold text-orange-500">
+                Acessar
+                <ChevronRight size={14} />
+              </div>
+
+            </button>
+
+            <button
+              onClick={() => router.push("/profile")}
+              className="group bg-white border border-slate-200 rounded-2xl p-5 text-left hover:border-orange-200 hover:shadow-md transition"
+            >
+
+              <div className="w-11 h-11 rounded-xl bg-orange-50 text-orange-600 flex items-center justify-center mb-4">
+                <UserCircle size={21} />
+              </div>
+
+              <h3 className="font-black text-slate-800">
+                Meu perfil
+              </h3>
+
+              <p className="text-xs text-slate-400 mt-1">
+                Altere sua foto e sua senha de acesso.
               </p>
 
               <div className="mt-4 flex items-center gap-1 text-xs font-bold text-orange-500">
