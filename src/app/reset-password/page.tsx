@@ -1,34 +1,49 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import {
+  FormEvent,
+  Suspense,
+  useState,
+} from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { LockKeyhole, CheckCircle2, AlertCircle } from "lucide-react";
+import {
+  LockKeyhole,
+  CheckCircle2,
+  AlertCircle,
+} from "lucide-react";
 
-export default function ResetPasswordPage() {
+function ResetPasswordForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
   const token = searchParams.get("token");
 
   const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] =
+    useState("");
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState("");
 
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(
+    event: FormEvent<HTMLFormElement>
+  ) {
     event.preventDefault();
 
     setError("");
 
     if (!token) {
-      setError("Link de recuperação inválido ou incompleto.");
+      setError(
+        "Link de recuperação inválido ou incompleto."
+      );
       return;
     }
 
     if (password.length < 6) {
-      setError("A nova senha deve ter pelo menos 6 caracteres.");
+      setError(
+        "A nova senha deve ter pelo menos 6 caracteres."
+      );
       return;
     }
 
@@ -40,16 +55,19 @@ export default function ResetPasswordPage() {
     try {
       setLoading(true);
 
-      const response = await fetch("/api/auth/reset-password", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          token,
-          password,
-        }),
-      });
+      const response = await fetch(
+        "/api/auth/reset-password",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            token,
+            password,
+          }),
+        }
+      );
 
       const data = await response.json();
 
@@ -74,7 +92,7 @@ export default function ResetPasswordPage() {
   if (success) {
     return (
       <main className="min-h-screen bg-gradient-to-br from-orange-50 via-white to-orange-100 flex items-center justify-center px-4">
-        <div className="w-full max-w-md rounded-3xl bg-white p-8 shadow-xl text-center">
+        <div className="w-full max-w-md rounded-3xl bg-white p-8 text-center shadow-xl">
           <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-full bg-green-100">
             <CheckCircle2 className="h-9 w-9 text-green-600" />
           </div>
@@ -99,7 +117,7 @@ export default function ResetPasswordPage() {
   }
 
   return (
-    <main className="min-h-screen bg-gradient-to-br from-orange-50 via-white to-orange-100 flex items-center justify-center px-4 py-8">
+    <main className="flex min-h-screen items-center justify-center bg-gradient-to-br from-orange-50 via-white to-orange-100 px-4 py-8">
       <div className="w-full max-w-md">
         <div className="rounded-3xl bg-white p-7 shadow-xl sm:p-9">
           <div className="mb-7 text-center">
@@ -193,5 +211,21 @@ export default function ResetPasswordPage() {
         </div>
       </div>
     </main>
+  );
+}
+
+export default function ResetPasswordPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="flex min-h-screen items-center justify-center bg-orange-50">
+          <p className="text-gray-600">
+            Carregando...
+          </p>
+        </main>
+      }
+    >
+      <ResetPasswordForm />
+    </Suspense>
   );
 }
