@@ -77,6 +77,7 @@ export async function POST(request: NextRequest) {
       sameSite: "lax",
       path: "/",
       expires: expiresAt,
+      maxAge: 7 * 24 * 60 * 60,
     });
 
     return response;
