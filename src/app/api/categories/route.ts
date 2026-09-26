@@ -25,9 +25,7 @@ await db.collection('sessions').deleteOne({
 _id: session._id,
 });
 
-```
 return null;
-```
 
 }
 
@@ -42,7 +40,6 @@ export async function GET(request: NextRequest) {
 try {
 const user = await getAuthenticatedUser(request);
 
-```
 if (!user) {
   return NextResponse.json(
     { error: 'Não autenticado.' },
@@ -71,17 +68,14 @@ return NextResponse.json({
     active: category.active !== false,
   })),
 });
-```
 
 } catch (error) {
 console.error('Erro ao buscar categorias:', error);
 
-```
 return NextResponse.json(
   { error: 'Erro interno ao buscar categorias.' },
   { status: 500 }
 );
-```
 
 }
 }
@@ -90,7 +84,6 @@ export async function POST(request: NextRequest) {
 try {
 const user = await getAuthenticatedUser(request);
 
-```
 if (!user) {
   return NextResponse.json(
     { error: 'Não autenticado.' },
@@ -179,17 +172,14 @@ return NextResponse.json(
   },
   { status: 201 }
 );
-```
 
 } catch (error) {
 console.error('Erro ao criar categoria:', error);
 
-```
 return NextResponse.json(
   { error: 'Erro interno ao criar categoria.' },
   { status: 500 }
 );
-```
 
 }
 }
