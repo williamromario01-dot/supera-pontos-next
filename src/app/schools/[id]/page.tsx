@@ -21,6 +21,7 @@ import {
   Trash2,
   Power,
   KeyRound,
+  Home,
 } from "lucide-react";
 
 interface School {
@@ -103,6 +104,9 @@ export default function SchoolDetailsPage() {
     showEditEducatorPassword,
     setShowEditEducatorPassword,
   ] = useState(false);
+
+  const [editEducatorFormId, setEditEducatorFormId] =
+    useState<string | null>(null);
 
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
@@ -458,9 +462,11 @@ export default function SchoolDetailsPage() {
     setShowEditAdminForm(true);
   }
 
-  function openEditEducator(
+  function startEditEducator(
     educator: Educator
   ) {
+    setEditEducatorFormId(educator.id);
+
     setEditEducatorForm({
       name: educator.name,
       email: educator.email,
@@ -550,6 +556,7 @@ export default function SchoolDetailsPage() {
       );
 
       setShowEditAdminForm(false);
+
       setEditAdminForm({
         name: "",
         email: "",
@@ -572,10 +579,7 @@ export default function SchoolDetailsPage() {
   ) {
     event.preventDefault();
 
-    const educatorId =
-      editEducatorFormId;
-
-    if (!educatorId) return;
+    if (!editEducatorFormId) return;
 
     setError("");
     setMessage("");
@@ -624,7 +628,7 @@ export default function SchoolDetailsPage() {
       }
 
       const response = await fetch(
-        `/api/educators/${educatorId}`,
+        `/api/educators/${editEducatorFormId}`,
         {
           method: "PATCH",
           headers: {
@@ -666,28 +670,6 @@ export default function SchoolDetailsPage() {
     } finally {
       setSaving(false);
     }
-  }
-
-  const [
-    editEducatorFormId,
-    setEditEducatorFormId,
-  ] = useState<string | null>(null);
-
-  function startEditEducator(
-    educator: Educator
-  ) {
-    setEditEducatorFormId(educator.id);
-
-    setEditEducatorForm({
-      name: educator.name,
-      email: educator.email,
-      password: "",
-    });
-
-    setShowEditEducatorPassword(false);
-    setError("");
-    setMessage("");
-    setShowEditEducatorForm(true);
   }
 
   async function toggleAdmin() {
@@ -959,15 +941,27 @@ export default function SchoolDetailsPage() {
     <main className="min-h-screen bg-slate-50">
       <header className="border-b border-slate-200 bg-white">
         <div className="mx-auto max-w-7xl px-4 py-5 sm:px-6 lg:px-8">
-          <button
-            onClick={() =>
-              router.push("/schools")
-            }
-            className="mb-5 flex items-center gap-2 text-sm font-semibold text-slate-500 transition hover:text-orange-600"
-          >
-            <ArrowLeft size={18} />
-            Voltar para escolas
-          </button>
+          <div className="mb-5 flex flex-wrap items-center gap-3">
+            <button
+              onClick={() =>
+                router.push("/dashboard")
+              }
+              className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-600 shadow-sm transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-600"
+            >
+              <Home size={17} />
+              Home
+            </button>
+
+            <button
+              onClick={() =>
+                router.push("/schools")
+              }
+              className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-600 shadow-sm transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-600"
+            >
+              <ArrowLeft size={17} />
+              Voltar para escolas
+            </button>
+          </div>
 
           <div className="flex items-center gap-4">
             <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-orange-500 text-white shadow-lg shadow-orange-500/20">
@@ -1141,10 +1135,6 @@ export default function SchoolDetailsPage() {
           </div>
         </section>
 
-        {/* =====================================================
-            ADMINISTRADOR
-            ===================================================== */}
-
         <section className="rounded-3xl border border-slate-200 bg-white shadow-sm">
           <div className="flex flex-col gap-4 border-b border-slate-100 p-6 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-3">
@@ -1297,10 +1287,6 @@ export default function SchoolDetailsPage() {
             )}
           </div>
         </section>
-
-        {/* =====================================================
-            EDUCADORES
-            ===================================================== */}
 
         <section className="mt-6 rounded-3xl border border-slate-200 bg-white shadow-sm">
           <div className="flex flex-col gap-4 border-b border-slate-100 p-6 sm:flex-row sm:items-center sm:justify-between">
@@ -1491,10 +1477,6 @@ export default function SchoolDetailsPage() {
           </div>
         </section>
 
-        {/* =====================================================
-            ALUNOS
-            ===================================================== */}
-
         <section className="mt-6 rounded-3xl border border-slate-200 bg-white shadow-sm">
           <div className="flex items-center justify-between border-b border-slate-100 p-6">
             <div className="flex items-center gap-3">
@@ -1537,10 +1519,6 @@ export default function SchoolDetailsPage() {
           </div>
         </section>
       </div>
-
-      {/* =====================================================
-          MODAL — NOVO ADMINISTRADOR
-          ===================================================== */}
 
       {showAdminForm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4">
@@ -1687,10 +1665,6 @@ export default function SchoolDetailsPage() {
         </div>
       )}
 
-      {/* =====================================================
-          MODAL — NOVO EDUCADOR
-          ===================================================== */}
-
       {showEducatorForm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4">
           <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-3xl bg-white shadow-2xl">
@@ -1836,10 +1810,6 @@ export default function SchoolDetailsPage() {
           </div>
         </div>
       )}
-
-      {/* =====================================================
-          MODAL — EDITAR ADMINISTRADOR
-          ===================================================== */}
 
       {showEditAdminForm && admin && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4">
@@ -1992,10 +1962,6 @@ export default function SchoolDetailsPage() {
           </div>
         </div>
       )}
-
-      {/* =====================================================
-          MODAL — EDITAR EDUCADOR
-          ===================================================== */}
 
       {showEditEducatorForm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4">
