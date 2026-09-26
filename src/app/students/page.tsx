@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import {
-  ArrowLeft,
+  Home,
   GraduationCap,
   Mail,
   Lock,
@@ -144,10 +144,12 @@ export default function StudentsPage() {
           <div>
             <Link
               href="/dashboard"
+              aria-label="Ir para Home"
+              title="Home"
               className="mb-4 inline-flex items-center gap-2 text-sm font-medium text-slate-500 transition hover:text-orange-600"
             >
-              <ArrowLeft size={18} />
-              Voltar ao Dashboard
+              <Home size={18} />
+              HOME
             </Link>
 
             <div className="flex items-center gap-3">
@@ -406,9 +408,7 @@ export default function StudentsPage() {
                   >
                     <div className="flex min-w-0 items-center gap-3">
                       <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-orange-500 font-bold text-white">
-                        {student.name
-                          .charAt(0)
-                          .toUpperCase()}
+                        {student.name.charAt(0).toUpperCase()}
                       </div>
 
                       <div className="min-w-0">
