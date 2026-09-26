@@ -294,17 +294,12 @@ export default function DashboardPage() {
     user?.role === "admin" ||
     user?.role === "super_admin";
 
-  const canAccessPointStore =
+  // As lojas aparecem somente para Aluno, Educador e Administrador.
+  // O perfil Suporte (super_admin) não vê as lojas no Dashboard.
+  const canAccessStores =
     user?.role === "student" ||
     user?.role === "educator" ||
-    user?.role === "admin" ||
-    user?.role === "super_admin";
-
-  const canAccessSuperaProducts =
-    user?.role === "student" ||
-    user?.role === "educator" ||
-    user?.role === "admin" ||
-    user?.role === "super_admin";
+    user?.role === "admin";
 
   if (loading) {
     return (
@@ -441,24 +436,24 @@ export default function DashboardPage() {
                 </button>
               )}
 
-              {canAccessPointStore && (
-                <button
-                  onClick={() => router.push("/point-store")}
-                  className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-slate-500 hover:bg-slate-100 text-sm font-bold transition"
-                >
-                  <ShoppingBag size={17} />
-                  Loja de Pontos
-                </button>
-              )}
+              {canAccessStores && (
+                <>
+                  <button
+                    onClick={() => router.push("/point-store")}
+                    className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-slate-500 hover:bg-slate-100 text-sm font-bold transition"
+                  >
+                    <ShoppingBag size={17} />
+                    Loja de Pontos
+                  </button>
 
-              {canAccessSuperaProducts && (
-                <button
-                  onClick={() => router.push("/products-supera")}
-                  className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-slate-500 hover:bg-slate-100 text-sm font-bold transition"
-                >
-                  <ShoppingCart size={17} />
-                  Produtos Supera
-                </button>
+                  <button
+                    onClick={() => router.push("/products-supera")}
+                    className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-slate-500 hover:bg-slate-100 text-sm font-bold transition"
+                  >
+                    <ShoppingCart size={17} />
+                    Produtos Supera
+                  </button>
+                </>
               )}
 
             </nav>
@@ -624,30 +619,30 @@ export default function DashboardPage() {
                   </button>
                 )}
 
-                {canAccessPointStore && (
-                  <button
-                    onClick={() => {
-                      setMenuOpen(false);
-                      router.push("/point-store");
-                    }}
-                    className="flex items-center gap-3 px-4 py-3 rounded-xl text-slate-600 hover:bg-slate-100 font-bold text-sm"
-                  >
-                    <ShoppingBag size={18} />
-                    Loja de Pontos
-                  </button>
-                )}
+                {canAccessStores && (
+                  <>
+                    <button
+                      onClick={() => {
+                        setMenuOpen(false);
+                        router.push("/point-store");
+                      }}
+                      className="flex items-center gap-3 px-4 py-3 rounded-xl text-slate-600 hover:bg-slate-100 font-bold text-sm"
+                    >
+                      <ShoppingBag size={18} />
+                      Loja de Pontos
+                    </button>
 
-                {canAccessSuperaProducts && (
-                  <button
-                    onClick={() => {
-                      setMenuOpen(false);
-                      router.push("/products-supera");
-                    }}
-                    className="flex items-center gap-3 px-4 py-3 rounded-xl text-slate-600 hover:bg-slate-100 font-bold text-sm"
-                  >
-                    <ShoppingCart size={18} />
-                    Produtos Supera
-                  </button>
+                    <button
+                      onClick={() => {
+                        setMenuOpen(false);
+                        router.push("/products-supera");
+                      }}
+                      className="flex items-center gap-3 px-4 py-3 rounded-xl text-slate-600 hover:bg-slate-100 font-bold text-sm"
+                    >
+                      <ShoppingCart size={18} />
+                      Produtos Supera
+                    </button>
+                  </>
                 )}
 
                 <div className="border-t border-slate-100 mt-2 pt-3 flex items-center justify-between">
@@ -1514,7 +1509,7 @@ export default function DashboardPage() {
 
             {/* LOJA DE PONTOS */}
 
-            {canAccessPointStore && (
+            {canAccessStores && (
               <button
                 onClick={() => router.push("/point-store")}
                 className="group bg-white border border-slate-200 rounded-2xl p-5 text-left hover:border-orange-200 hover:shadow-md transition"
@@ -1542,7 +1537,7 @@ export default function DashboardPage() {
 
             {/* PRODUTOS SUPERA */}
 
-            {canAccessSuperaProducts && (
+            {canAccessStores && (
               <button
                 onClick={() => router.push("/products-supera")}
                 className="group bg-white border border-slate-200 rounded-2xl p-5 text-left hover:border-orange-200 hover:shadow-md transition"
