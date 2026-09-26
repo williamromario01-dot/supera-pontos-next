@@ -16,6 +16,7 @@ import {
   X,
   Eye,
   EyeOff,
+  Trash2,
 } from "lucide-react";
 
 interface School {
@@ -32,6 +33,17 @@ interface School {
   createdAt: string;
 }
 
+interface Admin {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  schoolId: string;
+  points?: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export default function SchoolDetailsPage() {
   const params = useParams();
   const router = useRouter();
@@ -39,8 +51,13 @@ export default function SchoolDetailsPage() {
   const schoolId = String(params.id);
 
   const [school, setSchool] = useState<School | null>(null);
+  const [admin, setAdmin] = useState<Admin | null>(null);
+
   const [loading, setLoading] = useState(true);
+  const [adminLoading, setAdminLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [deletingAdmin, setDeletingAdmin] = useState(false);
+
   const [showAdminForm, setShowAdminForm] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
@@ -65,7 +82,9 @@ export default function SchoolDetailsPage() {
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.error || "Erro ao carregar escolas.");
+        throw new Error(
+          data.error || "Erro ao carregar escolas."
+        );
       }
 
       const foundSchool = (data.schools || []).find(
@@ -84,8 +103,44 @@ export default function SchoolDetailsPage() {
     }
   }
 
+  async function loadAdmin() {
+    try {
+      setAdminLoading(true);
+
+      const response = await fetch(
+        `/api/schools/${schoolId}/admin`,
+        {
+          credentials: "include",
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          data.error || "Erro ao carregar administrador."
+        );
+      }
+
+      setAdmin(data.admin || null);
+    } catch (err: any) {
+      setError(
+        err.message || "Erro ao carregar administrador."
+      );
+    } finally {
+      setAdminLoading(false);
+    }
+  }
+
+  async function loadData() {
+    await Promise.all([
+      loadSchool(),
+      loadAdmin(),
+    ]);
+  }
+
   useEffect(() => {
-    loadSchool();
+    loadData();
   }, [schoolId]);
 
   function updateAdminField(
@@ -117,7 +172,9 @@ export default function SchoolDetailsPage() {
     }
 
     if (adminForm.password.length < 6) {
-      setError("A senha deve ter pelo menos 6 caracteres.");
+      setError(
+        "A senha deve ter pelo menos 6 caracteres."
+      );
       return;
     }
 
@@ -144,7 +201,9 @@ export default function SchoolDetailsPage() {
         );
       }
 
-      setMessage("Administrador criado com sucesso.");
+      setMessage(
+        "Administrador criado com sucesso."
+      );
 
       setAdminForm({
         name: "",
@@ -155,13 +214,63 @@ export default function SchoolDetailsPage() {
       setShowAdminForm(false);
       setShowPassword(false);
 
-      await loadSchool();
+      await loadData();
     } catch (err: any) {
       setError(
         err.message || "Erro ao criar administrador."
       );
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleDeleteAdmin() {
+    if (!admin) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Tem certeza que deseja excluir o administrador "${admin.name}"?\n\nO acesso dele ao sistema será removido.`
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      setDeletingAdmin(true);
+      setError("");
+      setMessage("");
+
+      const response = await fetch(
+        `/api/schools/${schoolId}/admin`,
+        {
+          method: "DELETE",
+          credentials: "include",
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          data.error || "Erro ao excluir administrador."
+        );
+      }
+
+      setAdmin(null);
+
+      setMessage(
+        "Administrador excluído com sucesso."
+      );
+
+      await loadSchool();
+    } catch (err: any) {
+      setError(
+        err.message || "Erro ao excluir administrador."
+      );
+    } finally {
+      setDeletingAdmin(false);
     }
   }
 
@@ -205,6 +314,8 @@ export default function SchoolDetailsPage() {
   if (!school) {
     return null;
   }
+
+  const hasAdmin = Boolean(admin);
 
   return (
     <main className="min-h-screen bg-slate-50">
@@ -278,10 +389,12 @@ export default function SchoolDetailsPage() {
                     size={19}
                     className="mt-0.5 shrink-0 text-orange-500"
                   />
+
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
                       Endereço
                     </p>
+
                     <p className="mt-1 text-sm text-slate-700">
                       {school.address}
                     </p>
@@ -295,10 +408,12 @@ export default function SchoolDetailsPage() {
                     size={19}
                     className="mt-0.5 shrink-0 text-orange-500"
                   />
+
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
                       Telefone
                     </p>
+
                     <p className="mt-1 text-sm text-slate-700">
                       {school.phone}
                     </p>
@@ -312,10 +427,12 @@ export default function SchoolDetailsPage() {
                     size={19}
                     className="mt-0.5 shrink-0 text-orange-500"
                   />
+
                   <div className="min-w-0">
                     <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
                       E-mail
                     </p>
+
                     <p className="mt-1 break-all text-sm text-slate-700">
                       {school.email}
                     </p>
@@ -337,8 +454,9 @@ export default function SchoolDetailsPage() {
                 <p className="text-sm text-slate-500">
                   Administradores
                 </p>
+
                 <p className="text-2xl font-bold text-slate-900">
-                  {school.administrators}
+                  {hasAdmin ? 1 : 0}
                 </p>
               </div>
             </div>
@@ -354,6 +472,7 @@ export default function SchoolDetailsPage() {
                 <p className="text-sm text-slate-500">
                   Educadores
                 </p>
+
                 <p className="text-2xl font-bold text-slate-900">
                   {school.educators}
                 </p>
@@ -371,6 +490,7 @@ export default function SchoolDetailsPage() {
                 <p className="text-sm text-slate-500">
                   Alunos
                 </p>
+
                 <p className="text-2xl font-bold text-slate-900">
                   {school.students}
                 </p>
@@ -397,7 +517,7 @@ export default function SchoolDetailsPage() {
               </div>
             </div>
 
-            {school.administrators === 0 && (
+            {!adminLoading && !hasAdmin && (
               <button
                 onClick={() => {
                   setShowAdminForm(true);
@@ -413,7 +533,72 @@ export default function SchoolDetailsPage() {
           </div>
 
           <div className="p-6">
-            {school.administrators === 0 ? (
+            {adminLoading ? (
+              <div className="flex items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 p-10">
+                <Loader2
+                  size={28}
+                  className="animate-spin text-orange-500"
+                />
+              </div>
+            ) : hasAdmin ? (
+              <div className="rounded-2xl border border-blue-200 bg-blue-50 p-5">
+                <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex items-center gap-4">
+                    <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-blue-600 text-lg font-bold text-white">
+                      {admin.name
+                        .split(" ")
+                        .slice(0, 2)
+                        .map((part) =>
+                          part.charAt(0).toUpperCase()
+                        )
+                        .join("")}
+                    </div>
+
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="font-bold text-slate-900">
+                          {admin.name}
+                        </p>
+
+                        <span className="rounded-full bg-green-100 px-2.5 py-1 text-xs font-bold text-green-700">
+                          Ativo
+                        </span>
+                      </div>
+
+                      <p className="mt-1 flex items-center gap-2 text-sm text-slate-600">
+                        <Mail size={15} />
+                        <span className="break-all">
+                          {admin.email}
+                        </span>
+                      </p>
+
+                      <p className="mt-1 text-xs font-medium text-slate-500">
+                        Administrador • Diretor da unidade
+                      </p>
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={handleDeleteAdmin}
+                    disabled={deletingAdmin}
+                    className="flex items-center justify-center gap-2 rounded-xl border border-red-200 bg-white px-4 py-3 text-sm font-semibold text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {deletingAdmin ? (
+                      <Loader2
+                        size={17}
+                        className="animate-spin"
+                      />
+                    ) : (
+                      <Trash2 size={17} />
+                    )}
+
+                    {deletingAdmin
+                      ? "Excluindo..."
+                      : "Excluir administrador"}
+                  </button>
+                </div>
+              </div>
+            ) : (
               <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-8 text-center">
                 <ShieldCheck
                   size={32}
@@ -429,25 +614,6 @@ export default function SchoolDetailsPage() {
                   Ele poderá administrar educadores e alunos da
                   própria unidade.
                 </p>
-              </div>
-            ) : (
-              <div className="rounded-2xl border border-blue-100 bg-blue-50 p-5">
-                <div className="flex items-center gap-3">
-                  <div className="flex h-11 w-11 items-center justify-center rounded-full bg-blue-600 text-white">
-                    <ShieldCheck size={21} />
-                  </div>
-
-                  <div>
-                    <p className="font-bold text-slate-900">
-                      Administrador cadastrado
-                    </p>
-
-                    <p className="text-sm text-slate-600">
-                      O diretor desta escola já está cadastrado no
-                      sistema.
-                    </p>
-                  </div>
-                </div>
               </div>
             )}
           </div>
