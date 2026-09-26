@@ -39,7 +39,7 @@ icon: Building2,
 },
 {
 id: "super_admin" as Profile,
-title: "Super Administrador",
+title: "Suporte",
 description: "Gestão completa do sistema",
 icon: ShieldCheck,
 },
@@ -288,5 +288,220 @@ return ( <main className="login-page"> <div className="login-container">
                 onChange={(event) =>
                   setPassword(event.target.value)
                 }
-                placeholder="Digite
+                placeholder="Digite sua senha"
+                autoComplete="current-password"
+                required
+                className="login-input"
+                style={{
+                  paddingLeft: "46px",
+                  paddingRight: "48px",
+                }}
+              />
+
+              <button
+                type="button"
+                onClick={() =>
+                  setShowPassword(
+                    (current) => !current
+                  )
+                }
+                aria-label={
+                  showPassword
+                    ? "Ocultar senha"
+                    : "Mostrar senha"
+                }
+                style={{
+                  position: "absolute",
+                  right: "7px",
+                  top: "50%",
+                  transform: "translateY(-50%)",
+                  width: "38px",
+                  height: "38px",
+                  border: 0,
+                  background: "transparent",
+                  color: "#94a3b8",
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                {showPassword ? (
+                  <EyeOff size={19} />
+                ) : (
+                  <Eye size={19} />
+                )}
+              </button>
+            </div>
+          </div>
+
+          {/* BOTÃO */}
+          <button
+            type="submit"
+            disabled={loading}
+            className="login-button"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: "8px",
+              opacity: loading ? 0.65 : 1,
+            }}
+          >
+            {loading ? (
+              <>
+                <span
+                  style={{
+                    width: "18px",
+                    height: "18px",
+                    border: "2px solid rgba(255,255,255,.4)",
+                    borderTopColor: "#fff",
+                    borderRadius: "50%",
+                    display: "inline-block",
+                    animation: "spin 0.8s linear infinite",
+                  }}
+                />
+
+                Entrando...
+              </>
+            ) : (
+              <>
+                Entrar no Sistema
+                <ArrowRight size={19} />
+              </>
+            )}
+          </button>
+        </form>
+
+        {/* DIVISOR */}
+        <div className="login-divider">
+          <span>Acesso ao sistema</span>
+        </div>
+
+        {/* PERFIS */}
+        <div className="profile-list">
+
+          {profiles.map((profile) => {
+            const Icon = profile.icon;
+            const selected =
+              selectedProfile === profile.id;
+
+            return (
+              <button
+                key={profile.id}
+                type="button"
+                onClick={() =>
+                  setSelectedProfile(profile.id)
+                }
+                className="profile-card"
+                style={{
+                  borderColor: selected
+                    ? "#fb923c"
+                    : "#e2e8f0",
+                  background: selected
+                    ? "#fff7ed"
+                    : "#ffffff",
+                  boxShadow: selected
+                    ? "0 0 0 3px rgba(249,115,22,.10)"
+                    : "none",
+                }}
+              >
+
+                <div
+                  className="profile-icon"
+                  style={{
+                    background: selected
+                      ? "#f97316"
+                      : "#f1f5f9",
+                    color: selected
+                      ? "#ffffff"
+                      : "#64748b",
+                  }}
+                >
+                  <Icon size={21} />
+                </div>
+
+                <div className="profile-info">
+
+                  <p
+                    className="profile-name"
+                    style={{
+                      color: selected
+                        ? "#c2410c"
+                        : "#1e293b",
+                    }}
+                  >
+                    {profile.title}
+                  </p>
+
+                  <p className="profile-description">
+                    {profile.description}
+                  </p>
+
+                </div>
+
+                <div
+                  style={{
+                    width: "20px",
+                    height: "20px",
+                    borderRadius: "50%",
+                    border: selected
+                      ? "2px solid #f97316"
+                      : "2px solid #cbd5e1",
+                    background: selected
+                      ? "#f97316"
+                      : "transparent",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    flexShrink: 0,
+                  }}
+                >
+                  {selected && (
+                    <div
+                      style={{
+                        width: "7px",
+                        height: "7px",
+                        borderRadius: "50%",
+                        background: "#ffffff",
+                      }}
+                    />
+                  )}
+                </div>
+
+              </button>
+            );
+          })}
+
+        </div>
+
+      </div>
+    </section>
+
+    {/* RODAPÉ */}
+    <div className="login-footer">
+      <div>Supera Pontos</div>
+
+      <div style={{ marginTop: "4px" }}>
+        Estimulação cognitiva • Aprendizagem • Conquistas
+      </div>
+    </div>
+
+  </div>
+
+  <style jsx>{`
+    @keyframes spin {
+      from {
+        transform: rotate(0deg);
+      }
+
+      to {
+        transform: rotate(360deg);
+      }
+    }
+  `}</style>
+</main>
 ```
+
+);
+}
