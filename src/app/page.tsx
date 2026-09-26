@@ -71,9 +71,7 @@ export default function LoginPage() {
       const data = await response.json();
 
       if (!response.ok) {
-        setError(
-          data?.error || "E-mail ou senha incorretos."
-        );
+        setError(data?.error || "E-mail ou senha incorretos.");
         return;
       }
 
@@ -94,6 +92,7 @@ export default function LoginPage() {
       router.refresh();
     } catch (error) {
       console.error("Erro ao realizar login:", error);
+
       setError(
         "Não foi possível conectar ao sistema. Tente novamente."
       );
@@ -103,78 +102,126 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="min-h-screen bg-gradient-to-br from-orange-50 via-white to-slate-100 flex items-center justify-center px-4 py-8">
-      <div className="w-full max-w-md">
-        {/* LOGO / MARCA */}
-        <div className="text-center mb-6">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-orange-500 shadow-lg shadow-orange-200 mb-4">
-            <Brain className="w-9 h-9 text-white" strokeWidth={2.2} />
+    <main className="login-page">
+      <div className="login-container">
+
+        {/* CABEÇALHO */}
+        <div className="login-header">
+
+          <div className="login-logo">
+            <Brain size={34} strokeWidth={2.2} />
           </div>
 
-          <div className="flex items-center justify-center gap-2">
-            <h1 className="text-3xl sm:text-4xl font-black tracking-tight text-slate-900">
-              Supera
-            </h1>
+          <h1 className="login-title">
+            Supera <span>Pontos</span>
+          </h1>
 
-            <span className="text-3xl sm:text-4xl font-black tracking-tight text-orange-500">
-              Pontos
-            </span>
-          </div>
-
-          <p className="mt-2 text-sm sm:text-base text-slate-500">
+          <p className="login-subtitle">
             Acesse sua conta para acompanhar seus pontos e conquistas
           </p>
         </div>
 
-        {/* CARD PRINCIPAL */}
-        <section className="bg-white rounded-3xl shadow-xl shadow-slate-200/70 border border-slate-100 overflow-hidden">
-          {/* BARRA SUPERIOR */}
-          <div className="h-1.5 bg-gradient-to-r from-orange-400 via-orange-500 to-orange-600" />
+        {/* CARD */}
+        <section className="login-card">
 
-          <div className="p-6 sm:p-8">
-            {/* CABEÇALHO */}
-            <div className="mb-6">
-              <div className="flex items-center gap-2 mb-2">
-                <div className="w-8 h-8 rounded-lg bg-orange-100 flex items-center justify-center">
-                  <Sparkles className="w-4 h-4 text-orange-500" />
+          <div className="login-card-top" />
+
+          <div className="login-card-content">
+
+            {/* TÍTULO */}
+            <div>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  marginBottom: "10px",
+                }}
+              >
+                <div
+                  style={{
+                    width: "32px",
+                    height: "32px",
+                    borderRadius: "9px",
+                    background: "#ffedd5",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    color: "#f97316",
+                  }}
+                >
+                  <Sparkles size={17} />
                 </div>
 
-                <span className="text-xs font-extrabold uppercase tracking-wider text-orange-500">
+                <span
+                  style={{
+                    color: "#f97316",
+                    fontSize: "11px",
+                    fontWeight: 800,
+                    textTransform: "uppercase",
+                    letterSpacing: "1px",
+                  }}
+                >
                   Área de acesso
                 </span>
               </div>
 
-              <h2 className="text-2xl font-black text-slate-900">
+              <h2 className="login-section-title">
                 Entre no sistema
               </h2>
 
-              <p className="text-sm text-slate-500 mt-1">
+              <p className="login-section-text">
                 Informe seus dados para continuar.
               </p>
             </div>
 
             {/* ERRO */}
             {error && (
-              <div className="mb-5 rounded-2xl border border-red-200 bg-red-50 px-4 py-3">
-                <p className="text-sm font-semibold text-red-600">
-                  {error}
-                </p>
+              <div
+                style={{
+                  marginBottom: "20px",
+                  padding: "12px 14px",
+                  borderRadius: "12px",
+                  border: "1px solid #fecaca",
+                  background: "#fef2f2",
+                  color: "#dc2626",
+                  fontSize: "13px",
+                  fontWeight: 600,
+                }}
+              >
+                {error}
               </div>
             )}
 
             {/* FORMULÁRIO */}
-            <form onSubmit={handleLogin} className="space-y-5">
+            <form onSubmit={handleLogin}>
+
               {/* E-MAIL */}
-              <div>
+              <div className="login-field">
+
                 <label
                   htmlFor="email"
-                  className="block text-sm font-bold text-slate-700 mb-2"
+                  className="login-label"
                 >
                   E-mail
                 </label>
 
-                <div className="relative">
-                  <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400 pointer-events-none" />
+                <div
+                  style={{
+                    position: "relative",
+                  }}
+                >
+                  <Mail
+                    size={19}
+                    style={{
+                      position: "absolute",
+                      left: "15px",
+                      top: "50%",
+                      transform: "translateY(-50%)",
+                      color: "#94a3b8",
+                      pointerEvents: "none",
+                    }}
+                  />
 
                   <input
                     id="email"
@@ -186,26 +233,48 @@ export default function LoginPage() {
                     placeholder="seu.email@supera.com"
                     autoComplete="email"
                     required
-                    className="w-full h-13 rounded-2xl border border-slate-200 bg-slate-50 pl-12 pr-4 text-slate-900 placeholder:text-slate-400 outline-none transition-all focus:border-orange-400 focus:bg-white focus:ring-4 focus:ring-orange-100"
+                    className="login-input"
+                    style={{
+                      paddingLeft: "46px",
+                    }}
                   />
                 </div>
               </div>
 
               {/* SENHA */}
-              <div>
+              <div className="login-field">
+
                 <label
                   htmlFor="password"
-                  className="block text-sm font-bold text-slate-700 mb-2"
+                  className="login-label"
                 >
                   Senha
                 </label>
 
-                <div className="relative">
-                  <LockKeyhole className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400 pointer-events-none" />
+                <div
+                  style={{
+                    position: "relative",
+                  }}
+                >
+                  <LockKeyhole
+                    size={19}
+                    style={{
+                      position: "absolute",
+                      left: "15px",
+                      top: "50%",
+                      transform: "translateY(-50%)",
+                      color: "#94a3b8",
+                      pointerEvents: "none",
+                    }}
+                  />
 
                   <input
                     id="password"
-                    type={showPassword ? "text" : "password"}
+                    type={
+                      showPassword
+                        ? "text"
+                        : "password"
+                    }
                     value={password}
                     onChange={(event) =>
                       setPassword(event.target.value)
@@ -213,25 +282,45 @@ export default function LoginPage() {
                     placeholder="Digite sua senha"
                     autoComplete="current-password"
                     required
-                    className="w-full h-13 rounded-2xl border border-slate-200 bg-slate-50 pl-12 pr-12 text-slate-900 placeholder:text-slate-400 outline-none transition-all focus:border-orange-400 focus:bg-white focus:ring-4 focus:ring-orange-100"
+                    className="login-input"
+                    style={{
+                      paddingLeft: "46px",
+                      paddingRight: "48px",
+                    }}
                   />
 
                   <button
                     type="button"
                     onClick={() =>
-                      setShowPassword((current) => !current)
+                      setShowPassword(
+                        (current) => !current
+                      )
                     }
-                    className="absolute right-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-xl flex items-center justify-center text-slate-400 hover:text-orange-500 hover:bg-orange-50 transition-colors"
                     aria-label={
                       showPassword
                         ? "Ocultar senha"
                         : "Mostrar senha"
                     }
+                    style={{
+                      position: "absolute",
+                      right: "7px",
+                      top: "50%",
+                      transform: "translateY(-50%)",
+                      width: "38px",
+                      height: "38px",
+                      border: 0,
+                      background: "transparent",
+                      color: "#94a3b8",
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
                   >
                     {showPassword ? (
-                      <EyeOff className="w-5 h-5" />
+                      <EyeOff size={19} />
                     ) : (
-                      <Eye className="w-5 h-5" />
+                      <Eye size={19} />
                     )}
                   </button>
                 </div>
@@ -241,33 +330,48 @@ export default function LoginPage() {
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full h-13 rounded-2xl bg-orange-500 hover:bg-orange-600 active:bg-orange-700 text-white font-extrabold flex items-center justify-center gap-2 shadow-lg shadow-orange-200 transition-all disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:bg-orange-500"
+                className="login-button"
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: "8px",
+                  opacity: loading ? 0.65 : 1,
+                }}
               >
                 {loading ? (
                   <>
-                    <span className="w-5 h-5 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                    <span
+                      style={{
+                        width: "18px",
+                        height: "18px",
+                        border: "2px solid rgba(255,255,255,.4)",
+                        borderTopColor: "#fff",
+                        borderRadius: "50%",
+                        display: "inline-block",
+                        animation: "spin 0.8s linear infinite",
+                      }}
+                    />
+
                     Entrando...
                   </>
                 ) : (
                   <>
                     Entrar no Sistema
-                    <ArrowRight className="w-5 h-5" />
+                    <ArrowRight size={19} />
                   </>
                 )}
               </button>
             </form>
 
             {/* DIVISOR */}
-            <div className="flex items-center gap-3 my-7">
-              <div className="flex-1 h-px bg-slate-200" />
-              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-                Acesso ao sistema
-              </span>
-              <div className="flex-1 h-px bg-slate-200" />
+            <div className="login-divider">
+              <span>Acesso ao sistema</span>
             </div>
 
             {/* PERFIS */}
-            <div className="space-y-3">
+            <div className="profile-list">
+
               {profiles.map((profile) => {
                 const Icon = profile.icon;
                 const selected =
@@ -280,67 +384,113 @@ export default function LoginPage() {
                     onClick={() =>
                       setSelectedProfile(profile.id)
                     }
-                    className={`w-full flex items-center gap-3 p-3.5 rounded-2xl border text-left transition-all ${
-                      selected
-                        ? "border-orange-400 bg-orange-50 ring-2 ring-orange-100"
-                        : "border-slate-200 bg-white hover:border-orange-200 hover:bg-orange-50/40"
-                    }`}
+                    className="profile-card"
+                    style={{
+                      borderColor: selected
+                        ? "#fb923c"
+                        : "#e2e8f0",
+                      background: selected
+                        ? "#fff7ed"
+                        : "#ffffff",
+                      boxShadow: selected
+                        ? "0 0 0 3px rgba(249,115,22,.10)"
+                        : "none",
+                    }}
                   >
+
                     <div
-                      className={`w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0 ${
-                        selected
-                          ? "bg-orange-500 text-white"
-                          : "bg-slate-100 text-slate-500"
-                      }`}
+                      className="profile-icon"
+                      style={{
+                        background: selected
+                          ? "#f97316"
+                          : "#f1f5f9",
+                        color: selected
+                          ? "#ffffff"
+                          : "#64748b",
+                      }}
                     >
-                      <Icon className="w-5 h-5" />
+                      <Icon size={21} />
                     </div>
 
-                    <div className="min-w-0 flex-1">
+                    <div className="profile-info">
+
                       <p
-                        className={`font-extrabold text-sm ${
-                          selected
-                            ? "text-orange-700"
-                            : "text-slate-800"
-                        }`}
+                        className="profile-name"
+                        style={{
+                          color: selected
+                            ? "#c2410c"
+                            : "#1e293b",
+                        }}
                       >
                         {profile.title}
                       </p>
 
-                      <p className="text-xs text-slate-500 mt-0.5">
+                      <p className="profile-description">
                         {profile.description}
                       </p>
+
                     </div>
 
                     <div
-                      className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${
-                        selected
-                          ? "border-orange-500 bg-orange-500"
-                          : "border-slate-300"
-                      }`}
+                      style={{
+                        width: "20px",
+                        height: "20px",
+                        borderRadius: "50%",
+                        border: selected
+                          ? "2px solid #f97316"
+                          : "2px solid #cbd5e1",
+                        background: selected
+                          ? "#f97316"
+                          : "transparent",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        flexShrink: 0,
+                      }}
                     >
                       {selected && (
-                        <div className="w-2 h-2 rounded-full bg-white" />
+                        <div
+                          style={{
+                            width: "7px",
+                            height: "7px",
+                            borderRadius: "50%",
+                            background: "#ffffff",
+                          }}
+                        />
                       )}
                     </div>
+
                   </button>
                 );
               })}
+
             </div>
+
           </div>
         </section>
 
         {/* RODAPÉ */}
-        <div className="text-center mt-6">
-          <p className="text-xs text-slate-400">
-            Supera Pontos
-          </p>
+        <div className="login-footer">
+          <div>Supera Pontos</div>
 
-          <p className="text-xs text-slate-400 mt-1">
+          <div style={{ marginTop: "4px" }}>
             Estimulação cognitiva • Aprendizagem • Conquistas
-          </p>
+          </div>
         </div>
+
       </div>
+
+      <style jsx>{`
+        @keyframes spin {
+          from {
+            transform: rotate(0deg);
+          }
+
+          to {
+            transform: rotate(360deg);
+          }
+        }
+      `}</style>
     </main>
   );
 }
