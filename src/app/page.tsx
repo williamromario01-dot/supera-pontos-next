@@ -13,9 +13,14 @@ import {
   LockKeyhole,
   ArrowRight,
   Sparkles,
+  Building2,
 } from "lucide-react";
 
-type Profile = "super_admin" | "educator" | "student";
+type Profile =
+  | "super_admin"
+  | "admin"
+  | "educator"
+  | "student";
 
 const profiles = [
   {
@@ -23,6 +28,12 @@ const profiles = [
     title: "Super Administrador",
     description: "Gestão completa do sistema",
     icon: ShieldCheck,
+  },
+  {
+    id: "admin" as Profile,
+    title: "Administrador",
+    description: "Gestão da sua escola",
+    icon: Building2,
   },
   {
     id: "educator" as Profile,
