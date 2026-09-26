@@ -230,7 +230,7 @@ export default function SchoolDetailsPage() {
     }
 
     const confirmed = window.confirm(
-      `Tem certeza que deseja excluir o administrador "${admin.name}"?\n\nO acesso dele ao sistema será removido.`
+      `Tem certeza que deseja excluir o administrador "${admin?.name}"?\n\nO acesso dele ao sistema será removido.`
     );
 
     if (!confirmed) {
