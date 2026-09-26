@@ -3,908 +3,1046 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
-  LogOut,
-  PlusCircle,
-  Trophy,
-  Target,
-  TrendingUp,
-  TrendingDown,
-  Minus,
-  Users,
-  Award,
-  ChevronRight,
+LogOut,
+PlusCircle,
+ShoppingBag,
+MessageSquare,
+Users,
+Award,
+CheckCircle2,
+AlertCircle,
+Loader2,
+Trophy,
+TrendingUp,
+TrendingDown,
+Minus,
 } from 'lucide-react';
 
-interface Category {
-  _id?: string;
-  id?: string;
-  name: string;
-  description?: string;
-  icon?: string;
-  color?: string;
-  defaultPoints?: number;
-  ranking?: boolean;
-}
-
 interface Student {
-  _id?: string;
-  id?: string;
-  name: string;
-  email?: string;
-  points?: number;
+id: string;
+name: string;
+email: string;
+points: number;
 }
 
-interface WeeklyPoint {
-  categoryId: string;
-  categoryName: string;
-  points: number;
-  previousPoints?: number;
-  goal?: number;
-}
+const CATEGORIES = [
+{
+name: 'Ábaco',
+icon: '🧮',
+color: 'emerald',
+},
+{
+name: 'Abrindo Horizontes',
+icon: '🌎',
+color: 'blue',
+},
+{
+name: 'Desafios',
+icon: '🧩',
+color: 'amber',
+},
+{
+name: 'Supera Online',
+icon: '💻',
+color: 'rose',
+},
+];
 
-interface DashboardData {
-  currentWeekPoints: number;
-  previousWeekPoints: number;
-  weeklyPoints: WeeklyPoint[];
-}
+const BADGES = [
+{
+name: 'Bronze',
+threshold: 500,
+icon: '🥉',
+color: '#B45309',
+},
+{
+name: 'Prata',
+threshold: 1000,
+icon: '🥈',
+color: '#64748B',
+},
+{
+name: 'Ouro',
+threshold: 2500,
+icon: '🥇',
+color: '#D97706',
+},
+{
+name: 'Diamante',
+threshold: 5000,
+icon: '💎',
+color: '#0EA5E9',
+},
+];
 
-const DEFAULT_CATEGORIES: Category[] = [
-  {
-    id: 'abaco',
-    name: 'Ábaco',
-    description: 'Treino com ábaco',
-    icon: '🧮',
-    color: '#10B981',
-    defaultPoints: 50,
-    ranking: true,
-  },
-  {
-    id: 'horizontes',
-    name: 'Abrindo Horizontes',
-    description: 'Atividades Abrindo Horizontes',
-    icon: '🌎',
-    color: '#3B82F6',
-    defaultPoints: 50,
-    ranking: true,
-  },
-  {
-    id: 'desafio',
-    name: 'Desafios',
-    description: 'Desafios cognitivos',
-    icon: '🎯',
-    color: '#F59E0B',
-    defaultPoints: 50,
-    ranking: true,
-  },
-  {
-    id: 'supera-online',
-    name: 'Supera Online',
-    description: 'Atividades realizadas no Supera Online',
-    icon: '💻',
-    color: '#EF4444',
-    defaultPoints: 50,
-    ranking: true,
-  },
+const MOTIVATIONAL_MESSAGES = [
+'🧠 Seu cérebro está em movimento. Continue treinando!',
+'🚀 Cada desafio vencido é um passo a mais!',
+'💪 Continue! Seu esforço está construindo resultados.',
+'🌟 Pequenos avanços também são grandes conquistas!',
+'🎯 Mantenha o foco e continue evoluindo!',
 ];
 
 export default function DashboardPage() {
-  const router = useRouter();
+const router = useRouter();
 
-  const [role, setRole] = useState('student');
-  const [name, setName] = useState('Usuário');
-  const [points, setPoints] = useState(0);
+const [role, setRole] = useState('student');
+const [name, setName] = useState('Usuário');
+const [points, setPoints] = useState(0);
 
-  const [categories, setCategories] =
-    useState<Category[]>(DEFAULT_CATEGORIES);
+const [students, setStudents] = useState<Student[]>([]);
+const [studentId, setStudentId] = useState('');
+const [category, setCategory] = useState('');
+const [weeklyGoal, setWeeklyGoal] = useState('10');
+const [completed, setCompleted] = useState('');
 
-  const [students, setStudents] = useState<Student[]>([]);
-  const [selectedStudent, setSelectedStudent] = useState('');
+const [loadingStudents, setLoadingStudents] = useState(false);
+const [saving, setSaving] = useState(false);
 
-  const [selectedCategory, setSelectedCategory] = useState('');
-  const [activityAmount, setActivityAmount] = useState('');
-  const [loading, setLoading] = useState(true);
-  const [savingPoints, setSavingPoints] = useState(false);
+const [message, setMessage] = useState('');
+const [error, setError] = useState('');
 
-  const [message, setMessage] = useState('');
-  const [error, setError] = useState('');
+const [previousWeekPoints, setPreviousWeekPoints] = useState(0);
 
-  const [weeklyData, setWeeklyData] = useState<DashboardData>({
-    currentWeekPoints: 0,
-    previousWeekPoints: 0,
-    weeklyPoints: [],
+useEffect(() => {
+loadUser();
+}, []);
+
+useEffect(() => {
+if (role === 'educator' || role === 'super_admin') {
+loadStudents();
+}
+}, [role]);
+
+async function loadUser() {
+try {
+const response = await fetch('/api/auth/me');
+
+  if (!response.ok) {
+    router.push('/');
+    return;
+  }
+
+  const data = await response.json();
+
+  const user = data.user || data;
+
+  setName(user.name || 'Usuário');
+  setRole(user.role || 'student');
+  setPoints(Number(user.points || 0));
+
+  if (user.previousWeekPoints !== undefined) {
+    setPreviousWeekPoints(Number(user.previousWeekPoints || 0));
+  }
+} catch (err) {
+  console.error('Erro ao carregar usuário:', err);
+
+  const savedRole =
+    localStorage.getItem('user_role') || 'student';
+
+  const savedName =
+    localStorage.getItem('user_name') || 'Usuário';
+
+  const savedPoints = parseInt(
+    localStorage.getItem('user_points') || '0',
+    10
+  );
+
+  setRole(savedRole);
+  setName(savedName);
+  setPoints(savedPoints);
+}
+
+}
+
+async function loadStudents() {
+try {
+setLoadingStudents(true);
+setError('');
+
+  const response = await fetch('/api/points');
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(
+      data.error || 'Não foi possível carregar os alunos.'
+    );
+  }
+
+  setStudents(data.students || []);
+} catch (err) {
+  console.error(err);
+
+  setError(
+    err instanceof Error
+      ? err.message
+      : 'Erro ao carregar os alunos.'
+  );
+} finally {
+  setLoadingStudents(false);
+}
+
+}
+
+async function handleLaunchPoints(
+event: React.FormEvent<HTMLFormElement>
+) {
+event.preventDefault();
+
+setMessage('');
+setError('');
+
+if (!studentId) {
+  setError('Selecione um aluno.');
+  return;
+}
+
+if (!category) {
+  setError('Selecione uma categoria.');
+  return;
+}
+
+const completedNumber = Number(completed);
+const goalNumber = Number(weeklyGoal);
+
+if (!Number.isFinite(completedNumber) || completedNumber < 0) {
+  setError('Informe uma quantidade válida.');
+  return;
+}
+
+if (!Number.isFinite(goalNumber) || goalNumber <= 0) {
+  setError('A meta semanal precisa ser maior que zero.');
+  return;
+}
+
+try {
+  setSaving(true);
+
+  const response = await fetch('/api/points', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      studentId,
+      category,
+      completed: completedNumber,
+      weeklyGoal: goalNumber,
+    }),
   });
 
-  useEffect(() => {
-    loadUser();
-  }, []);
+  const data = await response.json();
 
-  async function loadUser() {
-    try {
-      const response = await fetch('/api/auth/me', {
-        method: 'GET',
-        credentials: 'include',
-      });
-
-      if (!response.ok) {
-        router.push('/');
-        return;
-      }
-
-      const data = await response.json();
-
-      const user = data.user || data;
-
-      const userRole = user.role || 'student';
-      const userName = user.name || 'Usuário';
-      const userPoints = Number(user.points || 0);
-
-      setRole(userRole);
-      setName(userName);
-      setPoints(userPoints);
-
-      if (userRole === 'educator' || userRole === 'super_admin') {
-        await loadStudents();
-      }
-
-      await loadCategories();
-
-      if (userRole === 'student') {
-        await loadWeeklyData(user.id || user._id);
-      }
-    } catch (err) {
-      console.error(err);
-
-      const savedRole =
-        localStorage.getItem('user_role') || 'student';
-
-      const savedName =
-        localStorage.getItem('user_name') || 'Usuário';
-
-      const savedPoints = Number(
-        localStorage.getItem('user_points') || 0
-      );
-
-      setRole(savedRole);
-      setName(savedName);
-      setPoints(savedPoints);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function loadCategories() {
-    try {
-      const response = await fetch('/api/categories', {
-        credentials: 'include',
-      });
-
-      if (!response.ok) {
-        return;
-      }
-
-      const data = await response.json();
-
-      if (Array.isArray(data.categories)) {
-        setCategories(data.categories);
-      }
-    } catch (err) {
-      console.error('Erro ao carregar categorias:', err);
-    }
-  }
-
-  async function loadStudents() {
-    try {
-      const response = await fetch('/api/users?role=student', {
-        credentials: 'include',
-      });
-
-      if (!response.ok) {
-        return;
-      }
-
-      const data = await response.json();
-
-      if (Array.isArray(data.users)) {
-        setStudents(data.users);
-      }
-    } catch (err) {
-      console.error('Erro ao carregar alunos:', err);
-    }
-  }
-
-  async function loadWeeklyData(userId: string) {
-    if (!userId) return;
-
-    try {
-      const response = await fetch(
-        `/api/points?userId=${encodeURIComponent(userId)}`,
-        {
-          credentials: 'include',
-        }
-      );
-
-      if (!response.ok) {
-        return;
-      }
-
-      const data = await response.json();
-
-      setWeeklyData({
-        currentWeekPoints: Number(data.currentWeekPoints || 0),
-        previousWeekPoints: Number(data.previousWeekPoints || 0),
-        weeklyPoints: Array.isArray(data.weeklyPoints)
-          ? data.weeklyPoints
-          : [],
-      });
-    } catch (err) {
-      console.error('Erro ao carregar desempenho semanal:', err);
-    }
-  }
-
-  async function handleLogout() {
-    try {
-      await fetch('/api/auth/logout', {
-        method: 'POST',
-        credentials: 'include',
-      });
-    } catch (err) {
-      console.error(err);
-    }
-
-    localStorage.clear();
-    router.push('/');
-  }
-
-  async function handleAddPoints() {
-    setMessage('');
-    setError('');
-
-    if (!selectedStudent) {
-      setError('Selecione um aluno.');
-      return;
-    }
-
-    if (!selectedCategory) {
-      setError('Selecione uma categoria.');
-      return;
-    }
-
-    const amount = Number(activityAmount);
-
-    if (!amount || amount <= 0) {
-      setError('Informe uma quantidade válida de atividades.');
-      return;
-    }
-
-    setSavingPoints(true);
-
-    try {
-      const response = await fetch('/api/points', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-        body: JSON.stringify({
-          userId: selectedStudent,
-          categoryId: selectedCategory,
-          activities: amount,
-        }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        setError(data.error || 'Não foi possível lançar os pontos.');
-        return;
-      }
-
-      setMessage(
-        `Pontuação lançada com sucesso! +${data.pointsAwarded || 0} pontos.`
-      );
-
-      setActivityAmount('');
-
-      await loadStudents();
-    } catch (err) {
-      console.error(err);
-      setError('Erro ao comunicar com o servidor.');
-    } finally {
-      setSavingPoints(false);
-    }
-  }
-
-  function getPerformance() {
-    const current = weeklyData.currentWeekPoints;
-    const previous = weeklyData.previousWeekPoints;
-
-    if (previous === 0 && current > 0) {
-      return {
-        emoji: '🤩',
-        title: 'Uau! Você está evoluindo!',
-        text: 'Você começou a semana com muita energia.',
-        type: 'up',
-      };
-    }
-
-    if (current === previous) {
-      return {
-        emoji: '😄',
-        title: 'Você manteve seu ritmo!',
-        text: 'Continue mantendo essa constância.',
-        type: 'same',
-      };
-    }
-
-    if (current > previous) {
-      const difference = current - previous;
-      const percentage =
-        previous > 0 ? (difference / previous) * 100 : 100;
-
-      if (percentage >= 30) {
-        return {
-          emoji: '🤩',
-          title: 'Uau! Você está evoluindo!',
-          text: 'Seu desempenho aumentou bastante.',
-          type: 'up',
-        };
-      }
-
-      return {
-        emoji: '😊',
-        title: 'Muito bem! Você melhorou!',
-        text: 'Seu desempenho aumentou em relação à semana anterior.',
-        type: 'up',
-      };
-    }
-
-    const difference = previous - current;
-    const percentage =
-      previous > 0 ? (difference / previous) * 100 : 0;
-
-    if (percentage >= 30) {
-      return {
-        emoji: '💪',
-        title: 'Não desanime! Vamos recuperar esta semana!',
-        text: 'Você pode voltar ao seu ritmo.',
-        type: 'down',
-      };
-    }
-
-    return {
-      emoji: '🙂',
-      title: 'Que tal tentar um pouquinho mais?',
-      text: 'Pequenos esforços fazem diferença.',
-      type: 'down',
-    };
-  }
-
-  function getCategoryProgress(category: Category) {
-    const item = weeklyData.weeklyPoints.find(
-      (entry) =>
-        entry.categoryId === category.id ||
-        entry.categoryId === category._id
+  if (!response.ok) {
+    throw new Error(
+      data.error || 'Não foi possível lançar a pontuação.'
     );
-
-    return {
-      points: item?.points || 0,
-      goal: item?.goal || 10,
-    };
   }
 
-  function getCategoryRanking(category: Category) {
-    const ranking = [...students].sort(
-      (a, b) => Number(b.points || 0) - Number(a.points || 0)
-    );
+  setMessage(
+    `Pontuação lançada com sucesso! +${data.pointsAwarded || 0} pontos.`
+  );
 
-    return ranking.slice(0, 5);
-  }
+  setCompleted('');
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-100">
-        <div className="text-center">
-          <div className="text-5xl mb-4">🧠</div>
-          <p className="font-semibold text-slate-600">
-            Carregando Supera Alunos...
-          </p>
-        </div>
+  await loadStudents();
+} catch (err) {
+  console.error(err);
+
+  setError(
+    err instanceof Error
+      ? err.message
+      : 'Erro ao lançar pontuação.'
+  );
+} finally {
+  setSaving(false);
+}
+
+}
+
+async function handleLogout() {
+try {
+await fetch('/api/auth/logout', {
+method: 'POST',
+});
+} catch (err) {
+console.error('Erro no logout:', err);
+}
+
+localStorage.clear();
+router.push('/');
+
+}
+
+const selectedStudent = students.find(
+(student) => student.id === studentId
+);
+
+const completedNumber = Number(completed) || 0;
+const goalNumber = Number(weeklyGoal) || 0;
+
+let previewPoints = 0;
+
+if (completedNumber > 0 && goalNumber > 0) {
+if (completedNumber > goalNumber) {
+previewPoints = 60;
+} else if (completedNumber >= goalNumber) {
+previewPoints = 50;
+} else if (completedNumber >= goalNumber / 2) {
+previewPoints = 25;
+} else {
+previewPoints = 5;
+}
+}
+
+const currentBadge =
+[...BADGES]
+.reverse()
+.find((badge) => points >= badge.threshold) || {
+name: 'Iniciante',
+threshold: 0,
+icon: '🌱',
+color: '#94A3B8',
+};
+
+const difference = points - previousWeekPoints;
+
+let comparisonIcon = <Minus className="w-7 h-7" />;
+let comparisonEmoji = '😄';
+let comparisonTitle = 'Você manteve seu ritmo!';
+let comparisonText = 'Continue mantendo a constância.';
+
+if (previousWeekPoints > 0) {
+const percentage =
+((points - previousWeekPoints) / previousWeekPoints) * 100;
+
+if (percentage >= 20) {
+  comparisonIcon = <TrendingUp className="w-7 h-7" />;
+  comparisonEmoji = '🤩';
+  comparisonTitle = 'Uau! Você está evoluindo!';
+  comparisonText = `Você aumentou ${Math.round(
+    percentage
+  )}% em relação à semana anterior.`;
+} else if (percentage > 0) {
+  comparisonIcon = <TrendingUp className="w-7 h-7" />;
+  comparisonEmoji = '😊';
+  comparisonTitle = 'Muito bem! Você melhorou!';
+  comparisonText = `Você fez ${difference} pontos a mais.`;
+} else if (percentage <= -20) {
+  comparisonIcon = <TrendingDown className="w-7 h-7" />;
+  comparisonEmoji = '💪';
+  comparisonTitle = 'Não desanime!';
+  comparisonText =
+    'Vamos recuperar essa semana. Você consegue!';
+} else if (percentage < 0) {
+  comparisonIcon = <TrendingDown className="w-7 h-7" />;
+  comparisonEmoji = '🙂';
+  comparisonTitle = 'Que tal tentar um pouquinho mais?';
+  comparisonText = `Você fez ${Math.abs(
+    difference
+  )} pontos a menos.`;
+}
+
+}
+
+const motivationalMessage =
+MOTIVATIONAL_MESSAGES[
+new Date().getDate() % MOTIVATIONAL_MESSAGES.length
+];
+
+return ( <div className="min-h-screen bg-slate-100">
+
+  {/* HEADER */}
+  <header className="sticky top-0 z-30 bg-white border-b border-slate-200 shadow-sm">
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between">
+
+      <div>
+        <h1 className="text-2xl font-black text-blue-600">
+          Supera Pontos
+        </h1>
+
+        <p className="text-xs text-slate-500 mt-1">
+          Olá, {name}! 👋
+        </p>
       </div>
-    );
-  }
 
-  const performance = getPerformance();
+      <button
+        onClick={handleLogout}
+        className="flex items-center gap-2 text-sm font-semibold text-rose-600 hover:text-rose-800"
+      >
+        <LogOut className="w-4 h-4" />
+        Sair
+      </button>
 
-  return (
-    <div className="min-h-screen bg-slate-100">
-      <header className="sticky top-0 z-30 bg-white border-b border-slate-200 shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-black text-blue-600">
-              Supera Alunos
-            </h1>
+    </div>
+  </header>
 
-            <p className="text-sm text-slate-500">
-              Olá, <strong>{name}</strong> 👋
-            </p>
-          </div>
+  <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-6">
 
-          <button
-            onClick={handleLogout}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold text-rose-600 hover:bg-rose-50 transition"
-          >
-            <LogOut className="w-4 h-4" />
-            Sair
-          </button>
-        </div>
-      </header>
+    {/* FRASE MOTIVACIONAL */}
+    <section className="bg-gradient-to-r from-blue-600 to-indigo-700 rounded-2xl p-6 text-white shadow-lg">
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 py-8 space-y-8">
-        {role === 'student' && (
-          <>
-            <section className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              <div className="lg:col-span-2 rounded-3xl p-7 text-white bg-gradient-to-br from-blue-600 to-indigo-700 shadow-xl">
-                <p className="text-blue-100 text-sm font-bold uppercase tracking-wider">
-                  Continue treinando seu cérebro
+      <p className="text-sm text-blue-100 mb-2">
+        Continue treinando seu cérebro.
+      </p>
+
+      <h2 className="text-xl sm:text-2xl font-bold">
+        {motivationalMessage}
+      </h2>
+
+    </section>
+
+    {/* DASHBOARD DO ALUNO */}
+    {role === 'student' && (
+      <>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+
+          {/* PONTOS */}
+          <section className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm">
+
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wide text-slate-400">
+                  Seus pontos
                 </p>
 
-                <h2 className="text-4xl font-black mt-3">
-                  {points.toLocaleString('pt-BR')}
-                </h2>
+                <p className="text-5xl font-black text-blue-600 mt-2">
+                  {points}
+                </p>
 
-                <p className="text-blue-100 mt-1">
+                <p className="text-sm text-slate-500 mt-1">
                   pontos acumulados
                 </p>
-
-                <div className="mt-7 pt-5 border-t border-white/20">
-                  <p className="text-lg font-bold">
-                    🧠 O poder está no seu cérebro!
-                  </p>
-                </div>
               </div>
 
-              <div className="bg-white rounded-3xl p-6 shadow-md border border-slate-200">
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-2xl bg-amber-100 flex items-center justify-center text-2xl">
-                    🏆
-                  </div>
+              <div className="text-5xl">
+                🏆
+              </div>
+            </div>
+
+          </section>
+
+          {/* CONQUISTA */}
+          <section className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm">
+
+            <p className="text-xs font-bold uppercase tracking-wide text-slate-400">
+              Sua conquista atual
+            </p>
+
+            <div className="flex items-center gap-4 mt-4">
+
+              <span className="text-5xl">
+                {currentBadge.icon}
+              </span>
+
+              <div>
+                <h2
+                  className="text-2xl font-black"
+                  style={{ color: currentBadge.color }}
+                >
+                  {currentBadge.name}
+                </h2>
+
+                <p className="text-xs text-slate-500">
+                  A partir de {currentBadge.threshold} pontos
+                </p>
+              </div>
+
+            </div>
+
+          </section>
+
+        </div>
+
+        {/* COMPARAÇÃO SEMANAL */}
+        <section className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+
+          <div className="flex items-center gap-3 mb-5">
+            <div className="bg-blue-50 text-blue-600 p-2 rounded-xl">
+              {comparisonIcon}
+            </div>
+
+            <div>
+              <h2 className="font-bold text-slate-800">
+                Seu desempenho
+              </h2>
+
+              <p className="text-xs text-slate-500">
+                Comparação com a semana anterior
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
+
+            <div className="text-center p-4 bg-slate-50 rounded-xl">
+              <p className="text-xs text-slate-500">
+                Semana anterior
+              </p>
+
+              <p className="text-2xl font-black text-slate-600 mt-1">
+                {previousWeekPoints}
+              </p>
+            </div>
+
+            <div className="text-center">
+
+              <div className="text-4xl">
+                {comparisonEmoji}
+              </div>
+
+              <p className="font-bold text-slate-800 mt-2">
+                {comparisonTitle}
+              </p>
+
+              <p className="text-xs text-slate-500 mt-1">
+                {comparisonText}
+              </p>
+
+            </div>
+
+            <div className="text-center p-4 bg-blue-50 rounded-xl">
+              <p className="text-xs text-blue-600">
+                Semana atual
+              </p>
+
+              <p className="text-2xl font-black text-blue-600 mt-1">
+                {points}
+              </p>
+            </div>
+
+          </div>
+
+          <div className="mt-5">
+
+            <div className="flex justify-between text-xs text-slate-500 mb-2">
+              <span>Semana anterior</span>
+              <span>Semana atual</span>
+            </div>
+
+            <div className="h-4 bg-slate-100 rounded-full overflow-hidden">
+
+              <div
+                className="h-full bg-gradient-to-r from-slate-400 to-blue-600 rounded-full transition-all"
+                style={{
+                  width: `${Math.min(
+                    Math.max(
+                      previousWeekPoints > 0
+                        ? (points / previousWeekPoints) * 50
+                        : 50,
+                      10
+                    ),
+                    100
+                  )}%`,
+                }}
+              />
+
+            </div>
+
+          </div>
+
+        </section>
+
+        {/* CATEGORIAS */}
+        <section>
+
+          <div className="flex items-center gap-2 mb-4">
+            <Trophy className="w-5 h-5 text-amber-500" />
+
+            <h2 className="text-lg font-bold text-slate-800">
+              Ranking da Semana
+            </h2>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+
+            {CATEGORIES.map((item, index) => (
+
+              <div
+                key={item.name}
+                className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5"
+              >
+
+                <div className="flex items-center justify-between">
 
                   <div>
                     <p className="text-xs font-bold uppercase text-slate-400">
-                      Desempenho
+                      Ranking
                     </p>
 
-                    <h3 className="font-black text-slate-800">
-                      Esta semana
+                    <h3 className="font-bold text-slate-800 mt-1">
+                      {item.name}
                     </h3>
                   </div>
+
+                  <span className="text-3xl">
+                    {item.icon}
+                  </span>
+
                 </div>
 
-                <div className="mt-6 flex items-center justify-between">
-                  <div>
-                    <p className="text-3xl font-black text-slate-800">
-                      {weeklyData.currentWeekPoints}
-                    </p>
+                <div className="mt-6 text-center">
 
-                    <p className="text-xs text-slate-500">
-                      pontos
-                    </p>
+                  <div className="text-4xl">
+                    {index === 0
+                      ? '🥇'
+                      : index === 1
+                      ? '🥈'
+                      : index === 2
+                      ? '🥉'
+                      : '🏅'}
                   </div>
 
-                  <div className="text-right">
-                    <p className="text-xs text-slate-400">
-                      Semana anterior
-                    </p>
-
-                    <p className="font-bold text-slate-700">
-                      {weeklyData.previousWeekPoints} pts
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </section>
-
-            <section className="bg-white rounded-3xl p-6 shadow-md border border-slate-200">
-              <div className="flex items-center gap-3 mb-6">
-                <div className="text-4xl">{performance.emoji}</div>
-
-                <div>
-                  <h2 className="text-xl font-black text-slate-800">
-                    {performance.title}
-                  </h2>
-
-                  <p className="text-sm text-slate-500">
-                    {performance.text}
+                  <p className="text-sm font-bold text-slate-700 mt-2">
+                    Ranking disponível
                   </p>
-                </div>
-              </div>
 
-              <div className="flex items-center gap-3">
-                <div className="flex-1 h-5 bg-slate-100 rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-blue-500 rounded-full transition-all"
-                    style={{
-                      width: `${Math.min(
-                        100,
-                        weeklyData.currentWeekPoints > 0
-                          ? Math.max(
-                              10,
-                              Math.min(
-                                100,
-                                (weeklyData.currentWeekPoints /
-                                  Math.max(
-                                    weeklyData.previousWeekPoints,
-                                    weeklyData.currentWeekPoints
-                                  )) *
-                                  100
-                              )
-                            )
-                          : 5
-                      )}%`,
-                    }}
-                  />
-                </div>
-
-                {performance.type === 'up' && (
-                  <TrendingUp className="w-6 h-6 text-emerald-500" />
-                )}
-
-                {performance.type === 'down' && (
-                  <TrendingDown className="w-6 h-6 text-orange-500" />
-                )}
-
-                {performance.type === 'same' && (
-                  <Minus className="w-6 h-6 text-slate-400" />
-                )}
-              </div>
-            </section>
-
-            <section>
-              <div className="flex items-center gap-3 mb-5">
-                <Trophy className="w-6 h-6 text-amber-500" />
-
-                <h2 className="text-2xl font-black text-slate-800">
-                  Ranking da Semana
-                </h2>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-5">
-                {categories
-                  .filter((category) => category.ranking !== false)
-                  .map((category) => {
-                    const progress =
-                      getCategoryProgress(category);
-
-                    const percentage = Math.min(
-                      100,
-                      (progress.points /
-                        Math.max(progress.goal, 1)) *
-                        100
-                    );
-
-                    return (
-                      <div
-                        key={category.id || category._id}
-                        className="bg-white rounded-3xl p-5 shadow-md border border-slate-200"
-                      >
-                        <div className="flex items-center justify-between">
-                          <div
-                            className="w-12 h-12 rounded-2xl flex items-center justify-center text-2xl"
-                            style={{
-                              backgroundColor: `${category.color || '#3B82F6'}20`,
-                            }}
-                          >
-                            {category.icon || '🏆'}
-                          </div>
-
-                          <ChevronRight className="w-5 h-5 text-slate-300" />
-                        </div>
-
-                        <h3 className="font-black text-lg text-slate-800 mt-4">
-                          {category.name}
-                        </h3>
-
-                        <p className="text-xs text-slate-500 mt-1">
-                          {category.description ||
-                            'Acompanhe seu desempenho'}
-                        </p>
-
-                        <div className="mt-5">
-                          <div className="flex justify-between text-xs mb-2">
-                            <span className="font-bold text-slate-600">
-                              Sua pontuação
-                            </span>
-
-                            <span className="font-black">
-                              {progress.points} pts
-                            </span>
-                          </div>
-
-                          <div className="h-3 bg-slate-100 rounded-full overflow-hidden">
-                            <div
-                              className="h-full rounded-full transition-all"
-                              style={{
-                                width: `${percentage}%`,
-                                backgroundColor:
-                                  category.color || '#3B82F6',
-                              }}
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-              </div>
-            </section>
-          </>
-        )}
-
-        {(role === 'educator' || role === 'super_admin') && (
-          <>
-            <section className="bg-white rounded-3xl p-7 shadow-md border border-slate-200">
-              <div className="flex items-center gap-3 mb-6">
-                <div className="w-12 h-12 rounded-2xl bg-blue-100 flex items-center justify-center">
-                  <PlusCircle className="w-6 h-6 text-blue-600" />
-                </div>
-
-                <div>
-                  <h2 className="text-xl font-black text-slate-800">
-                    Lançar Pontuação
-                  </h2>
-
-                  <p className="text-sm text-slate-500">
-                    Registre as atividades verificadas pelo educador.
+                  <p className="text-xs text-slate-400 mt-1">
+                    Acompanhe sua evolução
                   </p>
+
                 </div>
+
               </div>
 
-              {message && (
-                <div className="mb-5 p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 font-semibold text-sm">
-                  ✅ {message}
-                </div>
-              )}
+            ))}
 
-              {error && (
-                <div className="mb-5 p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 font-semibold text-sm">
-                  ⚠️ {error}
-                </div>
-              )}
+          </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-xs font-bold uppercase text-slate-500 mb-2">
-                    Aluno
-                  </label>
+        </section>
 
-                  <select
-                    value={selectedStudent}
-                    onChange={(e) =>
-                      setSelectedStudent(e.target.value)
-                    }
-                    className="w-full px-4 py-3 rounded-xl border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="">
-                      Selecione o aluno
-                    </option>
+        {/* BADGES */}
+        <section className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
 
-                    {students.map((student) => (
-                      <option
-                        key={student.id || student._id}
-                        value={student.id || student._id}
-                      >
-                        {student.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+          <h2 className="font-bold text-slate-800 mb-4">
+            🏅 Seus níveis
+          </h2>
 
-                <div>
-                  <label className="block text-xs font-bold uppercase text-slate-500 mb-2">
-                    Categoria
-                  </label>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
 
-                  <select
-                    value={selectedCategory}
-                    onChange={(e) =>
-                      setSelectedCategory(e.target.value)
-                    }
-                    className="w-full px-4 py-3 rounded-xl border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="">
-                      Selecione a categoria
-                    </option>
+            {BADGES.map((badge) => (
 
-                    {categories.map((category) => (
-                      <option
-                        key={category.id || category._id}
-                        value={category.id || category._id}
-                      >
-                        {category.icon || '🏆'} {category.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold uppercase text-slate-500 mb-2">
-                    Atividades realizadas
-                  </label>
-
-                  <input
-                    type="number"
-                    min="1"
-                    value={activityAmount}
-                    onChange={(e) =>
-                      setActivityAmount(e.target.value)
-                    }
-                    placeholder="Ex.: 10"
-                    className="w-full px-4 py-3 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-              </div>
-
-              <button
-                onClick={handleAddPoints}
-                disabled={savingPoints}
-                className="mt-5 w-full md:w-auto px-7 py-3 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:bg-slate-400 text-white font-black transition"
+              <div
+                key={badge.name}
+                className={`rounded-xl p-4 text-center border ${
+                  points >= badge.threshold
+                    ? 'border-emerald-300 bg-emerald-50'
+                    : 'border-slate-200 bg-slate-50'
+                }`}
               >
-                {savingPoints
-                  ? 'Lançando...'
-                  : 'Lançar Pontuação'}
-              </button>
 
-              <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-3">
-                <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200">
-                  <p className="text-2xl font-black text-emerald-700">
-                    +50
-                  </p>
-                  <p className="text-xs font-semibold text-emerald-800">
-                    Meta da semana
-                  </p>
+                <div className="text-3xl">
+                  {badge.icon}
                 </div>
 
-                <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200">
-                  <p className="text-2xl font-black text-amber-700">
-                    +25
-                  </p>
-                  <p className="text-xs font-semibold text-amber-800">
-                    Metade ou mais da meta
-                  </p>
-                </div>
-
-                <div className="p-4 rounded-2xl bg-blue-50 border border-blue-200">
-                  <p className="text-2xl font-black text-blue-700">
-                    +05
-                  </p>
-                  <p className="text-xs font-semibold text-blue-800">
-                    Fez menos da metade
-                  </p>
-                </div>
-              </div>
-
-              <div className="mt-3 p-4 rounded-2xl bg-purple-50 border border-purple-200">
-                <p className="text-sm font-bold text-purple-800">
-                  🔥 +10 pontos extras
+                <p
+                  className="font-bold mt-2"
+                  style={{ color: badge.color }}
+                >
+                  {badge.name}
                 </p>
 
-                <p className="text-xs text-purple-700 mt-1">
-                  Concedidos uma única vez por categoria quando o aluno
-                  ultrapassar a meta semanal.
+                <p className="text-xs text-slate-500">
+                  {badge.threshold} pontos
                 </p>
-              </div>
-            </section>
 
-            <section>
-              <div className="flex items-center gap-3 mb-5">
-                <Trophy className="w-6 h-6 text-amber-500" />
+              </div>
+
+            ))}
+
+          </div>
+
+        </section>
+      </>
+    )}
+
+    {/* LANÇAMENTO DE PONTOS */}
+    {(role === 'educator' || role === 'super_admin') && (
+
+      <section className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+
+        <div className="bg-gradient-to-r from-blue-600 to-indigo-600 px-6 py-5 text-white">
+
+          <div className="flex items-center gap-3">
+
+            <div className="bg-white/20 rounded-xl p-2">
+              <PlusCircle className="w-6 h-6" />
+            </div>
+
+            <div>
+              <h2 className="text-xl font-bold">
+                Lançar Pontuação
+              </h2>
+
+              <p className="text-sm text-blue-100 mt-1">
+                Registre o desempenho semanal do aluno
+              </p>
+            </div>
+
+          </div>
+
+        </div>
+
+        <form
+          onSubmit={handleLaunchPoints}
+          className="p-6 space-y-5"
+        >
+
+          {/* ALUNO */}
+          <div>
+
+            <label className="block text-sm font-semibold text-slate-700 mb-2">
+              Aluno
+            </label>
+
+            <select
+              value={studentId}
+              onChange={(e) => setStudentId(e.target.value)}
+              disabled={loadingStudents || saving}
+              className="w-full px-4 py-3 rounded-xl border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+
+              <option value="">
+                {loadingStudents
+                  ? 'Carregando alunos...'
+                  : 'Selecione o aluno'}
+              </option>
+
+              {students.map((student) => (
+
+                <option
+                  key={student.id}
+                  value={student.id}
+                >
+                  {student.name} — {student.email}
+                </option>
+
+              ))}
+
+            </select>
+
+          </div>
+
+          {/* CATEGORIA */}
+          <div>
+
+            <label className="block text-sm font-semibold text-slate-700 mb-2">
+              Categoria
+            </label>
+
+            <select
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+              disabled={saving}
+              className="w-full px-4 py-3 rounded-xl border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+
+              <option value="">
+                Selecione a categoria
+              </option>
+
+              {CATEGORIES.map((item) => (
+
+                <option
+                  key={item.name}
+                  value={item.name}
+                >
+                  {item.icon} {item.name}
+                </option>
+
+              ))}
+
+            </select>
+
+          </div>
+
+          {/* META / REALIZADO */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+            <div>
+
+              <label className="block text-sm font-semibold text-slate-700 mb-2">
+                Meta da semana
+              </label>
+
+              <input
+                type="number"
+                min="1"
+                value={weeklyGoal}
+                onChange={(e) =>
+                  setWeeklyGoal(e.target.value)
+                }
+                disabled={saving}
+                className="w-full px-4 py-3 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+
+            </div>
+
+            <div>
+
+              <label className="block text-sm font-semibold text-slate-700 mb-2">
+                Quanto o aluno realizou?
+              </label>
+
+              <input
+                type="number"
+                min="0"
+                value={completed}
+                onChange={(e) =>
+                  setCompleted(e.target.value)
+                }
+                disabled={saving}
+                placeholder="Ex.: 8"
+                className="w-full px-4 py-3 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+
+            </div>
+
+          </div>
+
+          {/* PRÉVIA */}
+          {completedNumber > 0 && goalNumber > 0 && (
+
+            <div className="rounded-xl bg-slate-50 border border-slate-200 p-5">
+
+              <div className="flex items-center justify-between">
 
                 <div>
-                  <h2 className="text-2xl font-black text-slate-800">
-                    Categorias
-                  </h2>
 
-                  <p className="text-sm text-slate-500">
-                    Categorias disponíveis para lançamento de pontos.
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Prévia da pontuação
                   </p>
+
+                  <p className="text-3xl font-black text-slate-800 mt-1">
+                    +{previewPoints} pontos
+                  </p>
+
                 </div>
+
+                <div className="text-right">
+
+                  {completedNumber > goalNumber ? (
+                    <>
+                      <div className="text-3xl">🔥</div>
+                      <p className="text-xs font-bold text-orange-600">
+                        Meta ultrapassada!
+                      </p>
+                    </>
+                  ) : completedNumber >= goalNumber ? (
+                    <>
+                      <div className="text-3xl">🎯</div>
+                      <p className="text-xs font-bold text-emerald-600">
+                        Meta atingida!
+                      </p>
+                    </>
+                  ) : completedNumber >= goalNumber / 2 ? (
+                    <>
+                      <div className="text-3xl">👏</div>
+                      <p className="text-xs font-bold text-blue-600">
+                        Metade ou mais!
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <div className="text-3xl">💪</div>
+                      <p className="text-xs font-bold text-amber-600">
+                        Vamos continuar!
+                      </p>
+                    </>
+                  )}
+
+                </div>
+
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                {categories.map((category) => (
-                  <div
-                    key={category.id || category._id}
-                    className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm"
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="text-3xl">
-                        {category.icon || '🏆'}
-                      </span>
+              <div className="mt-4 h-3 bg-slate-200 rounded-full overflow-hidden">
 
-                      {category.ranking !== false && (
-                        <span className="text-[10px] font-bold uppercase px-2 py-1 rounded-full bg-emerald-100 text-emerald-700">
-                          Ranking
-                        </span>
-                      )}
-                    </div>
+                <div
+                  className="h-full bg-blue-600 rounded-full transition-all"
+                  style={{
+                    width: `${Math.min(
+                      (completedNumber / goalNumber) * 100,
+                      100
+                    )}%`,
+                  }}
+                />
 
-                    <h3 className="font-black text-slate-800 mt-4">
-                      {category.name}
-                    </h3>
-
-                    <p className="text-xs text-slate-500 mt-1">
-                      {category.description || 'Categoria de atividades'}
-                    </p>
-
-                    <p className="text-xs font-bold text-blue-600 mt-4">
-                      Meta: pontuação semanal
-                    </p>
-                  </div>
-                ))}
-              </div>
-            </section>
-          </>
-        )}
-
-        {role === 'super_admin' && (
-          <section className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-3xl p-7">
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-2xl bg-amber-100 flex items-center justify-center">
-                <Users className="w-6 h-6 text-amber-600" />
               </div>
 
-              <div>
-                <h2 className="text-xl font-black text-amber-900">
-                  Painel do Super Administrador
-                </h2>
+              <div className="flex justify-between text-xs text-slate-500 mt-2">
+                <span>
+                  {completedNumber} realizados
+                </span>
 
-                <p className="text-sm text-amber-700">
-                  Gestão geral do Supera Alunos.
-                </p>
+                <span>
+                  Meta: {goalNumber}
+                </span>
               </div>
+
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
-              <div className="bg-white/80 rounded-2xl p-5">
-                <Award className="w-7 h-7 text-amber-500" />
+          )}
 
-                <p className="text-3xl font-black text-slate-800 mt-3">
-                  {students.length}
-                </p>
+          {/* SUCESSO */}
+          {message && (
 
-                <p className="text-sm text-slate-500">
-                  alunos cadastrados
-                </p>
-              </div>
+            <div className="flex items-center gap-3 rounded-xl bg-emerald-50 border border-emerald-200 p-4 text-emerald-800">
 
-              <div className="bg-white/80 rounded-2xl p-5">
-                <Target className="w-7 h-7 text-blue-500" />
+              <CheckCircle2 className="w-5 h-5" />
 
-                <p className="text-3xl font-black text-slate-800 mt-3">
-                  {categories.length}
-                </p>
+              <p className="text-sm font-semibold">
+                {message}
+              </p>
 
-                <p className="text-sm text-slate-500">
-                  categorias
-                </p>
-              </div>
-
-              <div className="bg-white/80 rounded-2xl p-5">
-                <Trophy className="w-7 h-7 text-emerald-500" />
-
-                <p className="text-3xl font-black text-slate-800 mt-3">
-                  {categories.filter(
-                    (category) => category.ranking !== false
-                  ).length}
-                </p>
-
-                <p className="text-sm text-slate-500">
-                  categorias no ranking
-                </p>
-              </div>
             </div>
-          </section>
-        )}
-      </main>
-    </div>
-  );
+
+          )}
+
+          {/* ERRO */}
+          {error && (
+
+            <div className="flex items-center gap-3 rounded-xl bg-rose-50 border border-rose-200 p-4 text-rose-800">
+
+              <AlertCircle className="w-5 h-5" />
+
+              <p className="text-sm font-semibold">
+                {error}
+              </p>
+
+            </div>
+
+          )}
+
+          {/* ALUNO SELECIONADO */}
+          {selectedStudent && (
+
+            <div className="rounded-xl bg-blue-50 border border-blue-100 p-4">
+
+              <p className="text-xs text-blue-600 font-semibold uppercase">
+                Aluno selecionado
+              </p>
+
+              <p className="text-lg font-bold text-blue-900 mt-1">
+                {selectedStudent.name}
+              </p>
+
+              <p className="text-xs text-blue-700 mt-1">
+                Saldo atual: {selectedStudent.points} pontos
+              </p>
+
+            </div>
+
+          )}
+
+          {/* BOTÃO */}
+          <button
+            type="submit"
+            disabled={saving || loadingStudents}
+            className="w-full py-3.5 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white font-bold transition-colors flex items-center justify-center gap-2"
+          >
+
+            {saving ? (
+              <>
+                <Loader2 className="w-5 h-5 animate-spin" />
+                Lançando pontuação...
+              </>
+            ) : (
+              <>
+                <PlusCircle className="w-5 h-5" />
+                Lançar Pontuação
+              </>
+            )}
+
+          </button>
+
+        </form>
+
+      </section>
+
+    )}
+
+    {/* ADMINISTRADOR */}
+    {role === 'super_admin' && (
+
+      <section className="bg-amber-50 border border-amber-200 rounded-2xl p-6">
+
+        <div className="flex items-center gap-3">
+
+          <Users className="w-6 h-6 text-amber-600" />
+
+          <div>
+            <h2 className="font-bold text-amber-900">
+              Painel do Super Administrador
+            </h2>
+
+            <p className="text-sm text-amber-700 mt-1">
+              Aqui ficarão as configurações gerais da escola,
+              usuários, categorias e gamificação.
+            </p>
+          </div>
+
+        </div>
+
+      </section>
+
+    )}
+
+    {/* ATALHOS */}
+    <section className="grid grid-cols-1 md:grid-cols-3 gap-4">
+
+      <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex items-center gap-4">
+
+        <ShoppingBag className="w-8 h-8 text-indigo-600" />
+
+        <div>
+          <h4 className="font-bold text-sm text-slate-800">
+            Loja de Prêmios
+          </h4>
+
+          <p className="text-xs text-slate-500">
+            Resgate recompensas com seus pontos
+          </p>
+        </div>
+
+      </div>
+
+      <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex items-center gap-4">
+
+        <MessageSquare className="w-8 h-8 text-emerald-600" />
+
+        <div>
+          <h4 className="font-bold text-sm text-slate-800">
+            Chats por Categoria
+          </h4>
+
+          <p className="text-xs text-slate-500">
+            Tire dúvidas e converse em grupo
+          </p>
+        </div>
+
+      </div>
+
+      <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex items-center gap-4">
+
+        <Award className="w-8 h-8 text-amber-500" />
+
+        <div>
+          <h4 className="font-bold text-sm text-slate-800">
+            Indique um Amigo
+          </h4>
+
+          <p className="text-xs text-slate-500">
+            Ganhe pontos ao indicar novos alunos
+          </p>
+        </div>
+
+      </div>
+
+    </section>
+
+  </main>
+</div>
+
+);
 }
