@@ -279,7 +279,10 @@ export default function DashboardPage() {
   const canManageSchools =
     user?.role === "super_admin";
 
+  // Suporte, Administrador e Educador podem acessar
+  // a tela de alunos.
   const canManageStudents =
+    user?.role === "super_admin" ||
     user?.role === "admin" ||
     user?.role === "educator";
 
