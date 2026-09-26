@@ -3,7 +3,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  ArrowLeft,
+  Home,
   Brain,
   Plus,
   Pencil,
@@ -312,11 +312,13 @@ export default function CategoriesPage() {
             <button
               onClick={() => router.push("/dashboard")}
               className="flex items-center gap-2 text-slate-600 hover:text-orange-600 font-semibold transition-colors"
+              aria-label="Ir para Home"
+              title="Home"
             >
-              <ArrowLeft className="w-5 h-5" />
+              <Home className="w-5 h-5" />
 
-              <span className="hidden sm:inline">
-                Voltar
+              <span>
+                HOME
               </span>
             </button>
 
