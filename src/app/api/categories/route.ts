@@ -23,7 +23,10 @@ async function getAuthenticatedUser(request: NextRequest) {
     return null;
   }
 
-  if (new Date(session.expiresAt) < new Date()) {
+  if (
+    !session.expiresAt ||
+    new Date(session.expiresAt) < new Date()
+  ) {
     await db.collection("sessions").deleteOne({
       _id: session._id,
     });
@@ -42,6 +45,14 @@ async function getAuthenticatedUser(request: NextRequest) {
   return user;
 }
 
+function isValidHexColor(color: string) {
+  return /^#[0-9A-Fa-f]{6}$/.test(color);
+}
+
+function isValidIcon(icon: string) {
+  return icon.length >= 1 && icon.length <= 10;
+}
+
 export async function GET(request: NextRequest) {
   try {
     const user = await getAuthenticatedUser(request);
@@ -55,7 +66,10 @@ export async function GET(request: NextRequest) {
 
     if (!ALLOWED_ROLES.includes(user.role)) {
       return NextResponse.json(
-        { error: "Você não tem permissão para acessar as categorias." },
+        {
+          error:
+            "Você não tem permissão para acessar as categorias.",
+        },
         { status: 403 }
       );
     }
@@ -75,9 +89,16 @@ export async function GET(request: NextRequest) {
       description: category.description || "",
       icon: category.icon || "⭐",
       color: category.color || "#3B82F6",
-      weeklyGoal: category.weeklyGoal || 10,
-      defaultPoints: category.defaultPoints || 50,
-      participatesInRanking: category.participatesInRanking !== false,
+      weeklyGoal:
+        typeof category.weeklyGoal === "number"
+          ? category.weeklyGoal
+          : 10,
+      defaultPoints:
+        typeof category.defaultPoints === "number"
+          ? category.defaultPoints
+          : 50,
+      participatesInRanking:
+        category.participatesInRanking !== false,
       createdAt: category.createdAt,
       updatedAt: category.updatedAt,
     }));
@@ -108,12 +129,24 @@ export async function POST(request: NextRequest) {
 
     if (!ALLOWED_ROLES.includes(user.role)) {
       return NextResponse.json(
-        { error: "Você não tem permissão para criar categorias." },
+        {
+          error:
+            "Você não tem permissão para criar categorias.",
+        },
         { status: 403 }
       );
     }
 
-    const body = await request.json();
+    let body: Record<string, unknown>;
+
+    try {
+      body = await request.json();
+    } catch {
+      return NextResponse.json(
+        { error: "Dados enviados em formato inválido." },
+        { status: 400 }
+      );
+    }
 
     const name = String(body.name || "").trim();
     const description = String(body.description || "").trim();
@@ -133,16 +166,70 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!Number.isFinite(weeklyGoal) || weeklyGoal <= 0) {
+    if (name.length > 100) {
       return NextResponse.json(
-        { error: "A meta semanal deve ser maior que zero." },
+        {
+          error:
+            "O nome da categoria deve ter no máximo 100 caracteres.",
+        },
         { status: 400 }
       );
     }
 
-    if (!Number.isFinite(defaultPoints) || defaultPoints <= 0) {
+    if (description.length > 500) {
       return NextResponse.json(
-        { error: "A pontuação padrão deve ser maior que zero." },
+        {
+          error:
+            "A descrição deve ter no máximo 500 caracteres.",
+        },
+        { status: 400 }
+      );
+    }
+
+    if (!isValidIcon(icon)) {
+      return NextResponse.json(
+        {
+          error:
+            "O ícone deve ter entre 1 e 10 caracteres.",
+        },
+        { status: 400 }
+      );
+    }
+
+    if (!isValidHexColor(color)) {
+      return NextResponse.json(
+        {
+          error:
+            "A cor deve estar no formato hexadecimal, como #F97316.",
+        },
+        { status: 400 }
+      );
+    }
+
+    if (
+      !Number.isFinite(weeklyGoal) ||
+      weeklyGoal <= 0 ||
+      weeklyGoal > 100000
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "A meta semanal deve estar entre 1 e 100000.",
+        },
+        { status: 400 }
+      );
+    }
+
+    if (
+      !Number.isFinite(defaultPoints) ||
+      defaultPoints <= 0 ||
+      defaultPoints > 100000
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "A pontuação padrão deve estar entre 1 e 100000.",
+        },
         { status: 400 }
       );
     }
@@ -152,16 +239,30 @@ export async function POST(request: NextRequest) {
 
     const categories = db.collection("categories");
 
-    const existingCategory = await categories.findOne({
-      name: {
-        $regex: `^${name}$`,
-        $options: "i",
-      },
-    });
+    const existingCategories = await categories
+      .find({
+        name: {
+          $exists: true,
+        },
+      })
+      .project({ name: 1 })
+      .toArray();
 
-    if (existingCategory) {
+    const normalizedName = name.toLocaleLowerCase("pt-BR");
+
+    const duplicate = existingCategories.some(
+      (category) =>
+        String(category.name || "")
+          .trim()
+          .toLocaleLowerCase("pt-BR") === normalizedName
+    );
+
+    if (duplicate) {
       return NextResponse.json(
-        { error: "Já existe uma categoria com esse nome." },
+        {
+          error:
+            "Já existe uma categoria com esse nome.",
+        },
         { status: 409 }
       );
     }
@@ -187,7 +288,7 @@ export async function POST(request: NextRequest) {
         message: "Categoria criada com sucesso.",
         category: {
           id: result.insertedId.toString(),
-          ...newCategory,
+          newCategory,
         },
       },
       { status: 201 }
