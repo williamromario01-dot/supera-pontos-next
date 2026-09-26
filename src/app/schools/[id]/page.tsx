@@ -545,7 +545,7 @@ export default function SchoolDetailsPage() {
                 <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
                   <div className="flex items-center gap-4">
                     <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-blue-600 text-lg font-bold text-white">
-                      {admin.name
+                      {admin?.name
                         .split(" ")
                         .slice(0, 2)
                         .map((part) =>
