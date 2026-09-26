@@ -3,23 +3,10 @@ import { NextRequest, NextResponse } from "next/server";
 import clientPromise from "@/lib/mongodb";
 import { ObjectId } from "mongodb";
 
-/*
-  Regras de pontuação:
-
-  Menos da metade da meta = 5 pontos
-  Metade ou mais = 25 pontos
-  Meta atingida = 50 pontos
-  Meta ultrapassada = 50 + 10 = 60 pontos
-
-  Os 10 pontos extras só podem ser recebidos
-  uma vez por categoria na mesma semana.
-*/
-
 function getWeekKey(date: Date = new Date()) {
   const d = new Date(date);
   d.setHours(0, 0, 0, 0);
 
-  // Segunda-feira como início da semana
   const day = d.getDay();
   const diff = day === 0 ? -6 : 1 - day;
 
@@ -140,10 +127,6 @@ export async function POST(request: NextRequest) {
 
     const weekKey = getWeekKey();
 
-    /*
-      Verificamos se já existe lançamento dessa categoria
-      para esse aluno nesta semana.
-    */
     const existingRecord = await pointRecords.findOne({
       studentId: studentObjectId,
       category,
@@ -179,14 +162,6 @@ export async function POST(request: NextRequest) {
       performance = "baixo";
     }
 
-    /*
-      Os 10 pontos extras são concedidos somente quando
-      a meta foi ultrapassada.
-
-      Como só permitimos um lançamento por categoria
-      por semana, esses 10 pontos não podem ser recebidos
-      novamente naquela categoria durante a semana.
-    */
     const extraPoints = completed > weeklyGoal ? 10 : 0;
 
     const totalPoints = basePoints + extraPoints;
@@ -208,13 +183,12 @@ export async function POST(request: NextRequest) {
       updatedAt: now,
     };
 
-    await pointRecords.insertOne(record);
+    const insertResult = await pointRecords.insertOne(record);
 
-    /*
-      Atualiza o saldo total do aluno.
-    */
     const updateResult = await users.updateOne(
-      { _id: studentObjectId },
+      {
+        _id: studentObjectId,
+      },
       {
         $inc: {
           points: totalPoints,
@@ -227,7 +201,7 @@ export async function POST(request: NextRequest) {
 
     if (updateResult.matchedCount === 0) {
       await pointRecords.deleteOne({
-        _id: record._id,
+        _id: insertResult.insertedId,
       });
 
       return NextResponse.json(
