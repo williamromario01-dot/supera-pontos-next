@@ -63,10 +63,9 @@ const [events, setEvents] = useState<PointEvent[]>([]);
 const [loading, setLoading] = useState(true);
 const [error, setError] = useState("");
 
-const [selectedCategory, setSelectedCategory] =
-useState("all");
-
+const [selectedCategory, setSelectedCategory] = useState("all");
 const [currentPage, setCurrentPage] = useState(1);
+
 const itemsPerPage = 10;
 
 useEffect(() => {
@@ -99,15 +98,12 @@ setError("");
   );
 
   if (!response.ok) {
-    throw new Error("Não foi possível carregar o histórico.");
+    throw new Error("Erro ao carregar histórico");
   }
 
   const data: HistoryResponse = await response.json();
 
-  const history =
-    data.events ||
-    data.history ||
-    [];
+  const history = data.events || data.history || [];
 
   setEvents(history);
 } catch (err) {
@@ -168,15 +164,13 @@ return event.category?.color || "#f97316";
 }
 
 const categories = useMemo(() => {
-const unique = new Map<string, string>();
+const unique = new Set<string>();
 
 events.forEach((event) => {
-  const name = getCategoryName(event);
-
-  unique.set(name, name);
+  unique.add(getCategoryName(event));
 });
 
-return Array.from(unique.values());
+return Array.from(unique);
 
 }, [events]);
 
@@ -189,13 +183,12 @@ return events.filter(
   (event) =>
     getCategoryName(event) === selectedCategory
 );
+
 }, [events, selectedCategory]);
 
 const totalPages = Math.max(
 1,
-Math.ceil(
-filteredEvents.length / itemsPerPage
-)
+Math.ceil(filteredEvents.length / itemsPerPage)
 );
 
 const paginatedEvents = filteredEvents.slice(
@@ -204,7 +197,8 @@ currentPage * itemsPerPage
 );
 
 const totalPoints = filteredEvents.reduce(
-(total, event) => total + Number(event.points || 0),
+(total, event) =>
+total + Number(event.points || 0),
 0
 );
 
@@ -212,13 +206,7 @@ const positiveEvents = filteredEvents.filter(
 (event) => Number(event.points || 0) > 0
 ).length;
 
-const negativeEvents = filteredEvents.filter(
-(event) => Number(event.points || 0) < 0
-).length;
-
-function handleCategoryChange(
-category: string
-) {
+function handleCategoryChange(category: string) {
 setSelectedCategory(category);
 setCurrentPage(1);
 }
@@ -241,12 +229,10 @@ if (!user) {
 return null;
 }
 
-return ( <div className="min-h-screen bg-slate-50">
-{/* HEADER */} <header className="sticky top-0 z-30 bg-white/95 backdrop-blur border-b border-slate-200"> <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4"> <div className="flex items-center justify-between gap-4"> <div className="flex items-center gap-3">
+return ( <div className="min-h-screen bg-slate-50"> <header className="sticky top-0 z-30 bg-white/95 backdrop-blur border-b border-slate-200"> <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4"> <div className="flex items-center justify-between gap-4"> <div className="flex items-center gap-3">
 <button
 onClick={() => router.push("/dashboard")}
 className="w-10 h-10 rounded-xl bg-slate-100 hover:bg-orange-50 hover:text-orange-500 flex items-center justify-center transition"
-aria-label="Voltar para o dashboard"
 > <ArrowLeft className="w-5 h-5" /> </button>
 
           <div className="w-11 h-11 rounded-xl bg-orange-500 flex items-center justify-center shadow-md">
@@ -275,7 +261,12 @@ aria-label="Voltar para o dashboard"
   </header>
 
   <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
-    {/* CABEÇALHO DA PÁGINA */}
+    {error && (
+      <div className="mb-6 rounded-2xl border border-rose-200 bg-rose-50 px-5 py-4 text-sm text-rose-700">
+        {error}
+      </div>
+    )}
+
     <section className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-orange-500 via-orange-500 to-orange-600 p-6 sm:p-8 text-white shadow-lg">
       <div className="absolute -right-12 -top-12 w-40 h-40 rounded-full bg-white/10" />
 
@@ -302,14 +293,6 @@ aria-label="Voltar para o dashboard"
       </div>
     </section>
 
-    {/* ERRO */}
-    {error && (
-      <div className="mt-6 rounded-2xl border border-rose-200 bg-rose-50 px-5 py-4 text-sm text-rose-700">
-        {error}
-      </div>
-    )}
-
-    {/* RESUMO */}
     <section className="grid grid-cols-2 lg:grid-cols-4 gap-4 mt-6">
       <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
         <div className="w-10 h-10 rounded-xl bg-orange-50 flex items-center justify-center">
@@ -369,7 +352,6 @@ aria-label="Voltar para o dashboard"
       </div>
     </section>
 
-    {/* FILTROS */}
     <section className="mt-6 bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         <div>
@@ -383,7 +365,7 @@ aria-label="Voltar para o dashboard"
 
           <p className="text-xs text-slate-500 mt-1">
             Escolha uma categoria para visualizar
-            somente seus respectivos lançamentos.
+            seus respectivos lançamentos.
           </p>
         </div>
 
@@ -420,7 +402,6 @@ aria-label="Voltar para o dashboard"
       </div>
     </section>
 
-    {/* HISTÓRICO */}
     <section className="mt-6 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
       <div className="px-5 sm:px-6 py-5 border-b border-slate-100">
         <div className="flex items-center justify-between gap-4">
@@ -513,4 +494,64 @@ aria-label="Voltar para o dashboard"
         </div>
       ) : (
         <div className="py-16 px-6 text-center">
-          <div className="w-16 h-
+          <div className="w-16 h-16 mx-auto rounded-2xl bg-slate-100 flex items-center justify-center">
+            <History className="w-8 h-8 text-slate-300" />
+          </div>
+
+          <h3 className="mt-4 font-black text-slate-700">
+            Nenhum lançamento encontrado
+          </h3>
+
+          <p className="mt-1 text-sm text-slate-400 max-w-md mx-auto">
+            Ainda não existem registros para o
+            filtro selecionado.
+          </p>
+        </div>
+      )}
+
+      {filteredEvents.length > itemsPerPage && (
+        <div className="px-5 sm:px-6 py-4 border-t border-slate-100 flex items-center justify-between">
+          <p className="text-xs sm:text-sm text-slate-500">
+            Página <strong>{currentPage}</strong> de{" "}
+            <strong>{totalPages}</strong>
+          </p>
+
+          <div className="flex items-center gap-2">
+            <button
+              disabled={currentPage === 1}
+              onClick={() =>
+                setCurrentPage((page) =>
+                  Math.max(page - 1, 1)
+                )
+              }
+              className="w-9 h-9 rounded-xl border border-slate-200 flex items-center justify-center text-slate-500 hover:bg-orange-50 hover:text-orange-500 disabled:opacity-40 disabled:cursor-not-allowed transition"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+
+            <button
+              disabled={currentPage === totalPages}
+              onClick={() =>
+                setCurrentPage((page) =>
+                  Math.min(page + 1, totalPages)
+                )
+              }
+              className="w-9 h-9 rounded-xl border border-slate-200 flex items-center justify-center text-slate-500 hover:bg-orange-50 hover:text-orange-500 disabled:opacity-40 disabled:cursor-not-allowed transition"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
+    </section>
+
+    <footer className="py-8 text-center">
+      <p className="text-xs text-slate-400">
+        Supera Alunos • Histórico de desenvolvimento cognitivo
+      </p>
+    </footer>
+  </main>
+</div>
+
+);
+}
