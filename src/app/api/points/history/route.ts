@@ -118,7 +118,7 @@ export async function GET(request: NextRequest) {
       .toArray();
 
     const studentIds = [
-      ...new Set(
+      new Set(
         events
           .map((event) => event.studentId?.toString())
           .filter(Boolean)
@@ -126,7 +126,7 @@ export async function GET(request: NextRequest) {
     ];
 
     const categoryIds = [
-      ...new Set(
+      new Set(
         events
           .map((event) => event.categoryId?.toString())
           .filter(Boolean)
@@ -134,7 +134,7 @@ export async function GET(request: NextRequest) {
     ];
 
     const educatorIds = [
-      ...new Set(
+      new Set(
         events
           .map((event) => event.educatorId?.toString())
           .filter(Boolean)
