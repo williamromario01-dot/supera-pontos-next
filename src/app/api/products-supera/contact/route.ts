@@ -32,10 +32,7 @@ async function getAuthenticatedUser(request: NextRequest) {
   return user;
 }
 
-export async function POST(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function POST(request: NextRequest) {
   try {
     const user = await getAuthenticatedUser(request);
 
@@ -66,11 +63,27 @@ export async function POST(
       );
     }
 
-    const productId = params.id;
+    const body = await request.json();
+
+    const productId = String(
+      body.productId || ""
+    ).trim();
+
+    if (!productId) {
+      return NextResponse.json(
+        {
+          error:
+            "O produto não foi informado.",
+        },
+        { status: 400 }
+      );
+    }
 
     if (!ObjectId.isValid(productId)) {
       return NextResponse.json(
-        { error: "Produto inválido." },
+        {
+          error: "Produto inválido.",
+        },
         { status: 400 }
       );
     }
@@ -142,15 +155,15 @@ export async function POST(
       user.name || "Aluno"
     ).trim();
 
-    const price = Number(product.price || 0);
+    const price = Number(
+      product.price || 0
+    );
 
-    const formattedPrice = price.toLocaleString(
-      "pt-BR",
-      {
+    const formattedPrice =
+      price.toLocaleString("pt-BR", {
         style: "currency",
         currency: "BRL",
-      }
-    );
+      });
 
     const message = [
       "Olá! Tenho interesse em comprar um produto da Supera.",
