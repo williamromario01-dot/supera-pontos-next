@@ -1,73 +1,72 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
 import {
-  Home,
-  ShoppingBag,
+  ArrowLeft,
+  Edit,
+  Image as ImageIcon,
+  MessageCircle,
+  Package,
   Plus,
-  Pencil,
+  ShoppingBag,
   Trash2,
   X,
-  Package,
-  Loader2,
-  CheckCircle2,
-  AlertCircle,
-  MessageCircle,
-  DollarSign,
 } from "lucide-react";
+import { useRouter } from "next/navigation";
 
-type UserRole =
-  | "super_admin"
-  | "admin"
-  | "educator"
-  | "student";
-
-interface User {
+type User = {
   id: string;
   name: string;
   email: string;
-  role: UserRole;
-  points: number;
+  role: "super_admin" | "admin" | "educator" | "student";
+  points?: number;
   schoolId?: string;
-}
+};
 
-interface Product {
+type School = {
+  id: string;
+  name: string;
+};
+
+type Product = {
   id: string;
   schoolId: string;
   name: string;
   description: string;
-  image: string;
+  image?: string;
   price: number;
   stock: number;
   active: boolean;
-  createdAt?: string;
-  updatedAt?: string;
-}
+};
 
-interface School {
-  id: string;
+type ProductForm = {
   name: string;
-}
+  description: string;
+  image: string;
+  price: string;
+  stock: string;
+  schoolId: string;
+};
 
 export default function ProductsSuperaPage() {
+  const router = useRouter();
+
   const [user, setUser] = useState<User | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
   const [schools, setSchools] = useState<School[]>([]);
 
   const [loading, setLoading] = useState(true);
+  const [loadingProducts, setLoadingProducts] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [contactingId, setContactingId] =
-    useState<string | null>(null);
+  const [contacting, setContacting] = useState<string | null>(null);
 
-  const [showForm, setShowForm] = useState(false);
-  const [editingProduct, setEditingProduct] =
-    useState<Product | null>(null);
-
-  const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
 
-  const [form, setForm] = useState({
+  const [showModal, setShowModal] = useState(false);
+  const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+
+  const [form, setForm] = useState<ProductForm>({
     name: "",
     description: "",
     image: "",
@@ -82,58 +81,32 @@ export default function ProductsSuperaPage() {
     user?.role === "educator";
 
   const isStudent = user?.role === "student";
-
-  function formatPrice(value: number) {
-    return new Intl.NumberFormat("pt-BR", {
-      style: "currency",
-      currency: "BRL",
-    }).format(value);
-  }
-
-  function getSchoolName(schoolId: string) {
-    const school = schools.find(
-      (item) => item.id === schoolId
-    );
-
-    return school?.name || "Escola";
-  }
+  const isSuperAdmin = user?.role === "super_admin";
 
   async function loadUser() {
-    const response = await fetch("/api/auth/me", {
-      cache: "no-store",
-    });
+    try {
+      const response = await fetch("/api/auth/me", {
+        credentials: "include",
+      });
 
-    if (!response.ok) {
-      throw new Error(
-        "Não foi possível carregar o usuário."
-      );
-    }
-
-    const data = await response.json();
-
-    setUser(data.user);
-
-    return data.user as User;
-  }
-
-  async function loadProducts() {
-    const response = await fetch(
-      "/api/products-supera",
-      {
-        cache: "no-store",
+      if (!response.ok) {
+        router.push("/");
+        return null;
       }
-    );
 
-    const data = await response.json();
+      const data = await response.json();
 
-    if (!response.ok) {
-      throw new Error(
-        data.error ||
-          "Não foi possível carregar os produtos."
-      );
+      if (!data.user) {
+        router.push("/");
+        return null;
+      }
+
+      setUser(data.user);
+      return data.user as User;
+    } catch {
+      router.push("/");
+      return null;
     }
-
-    setProducts(Array.isArray(data) ? data : []);
   }
 
   async function loadSchools(currentUser: User) {
@@ -141,58 +114,95 @@ export default function ProductsSuperaPage() {
       return;
     }
 
-    const response = await fetch("/api/schools", {
-      cache: "no-store",
-    });
-
-    if (!response.ok) {
-      return;
-    }
-
-    const data = await response.json();
-
-    const list = Array.isArray(data)
-      ? data
-      : Array.isArray(data.schools)
-      ? data.schools
-      : [];
-
-    setSchools(
-      list.map((school: any) => ({
-        id:
-          school.id ||
-          school._id?.toString(),
-        name: school.name,
-      }))
-    );
-  }
-
-  async function loadPage() {
     try {
-      setLoading(true);
-      setError("");
+      const response = await fetch("/api/schools", {
+        credentials: "include",
+      });
 
-      const currentUser = await loadUser();
+      const contentType =
+        response.headers.get("content-type") || "";
 
-      await Promise.all([
-        loadProducts(),
-        loadSchools(currentUser),
-      ]);
+      if (!contentType.includes("application/json")) {
+        throw new Error(
+          "A API de escolas não retornou JSON."
+        );
+      }
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          data.error || "Erro ao carregar escolas."
+        );
+      }
+
+      setSchools(data.schools || []);
     } catch (err) {
-      console.error(err);
-
       setError(
         err instanceof Error
           ? err.message
-          : "Erro ao carregar os Produtos Supera."
+          : "Erro ao carregar escolas."
+      );
+    }
+  }
+
+  async function loadProducts() {
+    setLoadingProducts(true);
+    setError("");
+
+    try {
+      const response = await fetch(
+        "/api/products-supera",
+        {
+          credentials: "include",
+          cache: "no-store",
+        }
+      );
+
+      const contentType =
+        response.headers.get("content-type") || "";
+
+      if (!contentType.includes("application/json")) {
+        throw new Error(
+          `A API de Produtos Supera retornou ${response.status} em vez de JSON.`
+        );
+      }
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          data.error || "Erro ao carregar produtos."
+        );
+      }
+
+      setProducts(data.products || []);
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Erro ao carregar produtos."
       );
     } finally {
-      setLoading(false);
+      setLoadingProducts(false);
     }
   }
 
   useEffect(() => {
-    loadPage();
+    async function initialize() {
+      setLoading(true);
+
+      const currentUser = await loadUser();
+
+      if (currentUser) {
+        await loadSchools(currentUser);
+        await loadProducts();
+      }
+
+      setLoading(false);
+    }
+
+    initialize();
   }, []);
 
   function resetForm() {
@@ -207,177 +217,253 @@ export default function ProductsSuperaPage() {
           ? ""
           : user?.schoolId || "",
     });
+  }
 
+  function openCreateModal() {
     setEditingProduct(null);
-  }
 
-  function openCreateForm() {
-    resetForm();
-    setMessage("");
+    setForm({
+      name: "",
+      description: "",
+      image: "",
+      price: "",
+      stock: "",
+      schoolId:
+        user?.role === "super_admin"
+          ? ""
+          : user?.schoolId || "",
+    });
+
     setError("");
-    setShowForm(true);
+    setSuccess("");
+    setShowModal(true);
   }
 
-  function openEditForm(product: Product) {
+  function openEditModal(product: Product) {
     setEditingProduct(product);
 
     setForm({
-      name: product.name,
+      name: product.name || "",
       description: product.description || "",
       image: product.image || "",
-      price: String(product.price),
-      stock: String(product.stock),
-      schoolId: product.schoolId,
+      price: String(product.price ?? ""),
+      stock: String(product.stock ?? ""),
+      schoolId: product.schoolId || "",
     });
 
-    setMessage("");
     setError("");
-    setShowForm(true);
+    setSuccess("");
+    setShowModal(true);
   }
 
-  function closeForm() {
+  function closeModal() {
     if (saving) {
       return;
     }
 
-    setShowForm(false);
+    setShowModal(false);
+    setEditingProduct(null);
     resetForm();
   }
 
-  async function handleSave(
-    event: React.FormEvent<HTMLFormElement>
-  ) {
-    event.preventDefault();
+  async function saveProduct() {
+    setError("");
+    setSuccess("");
+
+    const name = form.name.trim();
+    const description = form.description.trim();
+    const image = form.image.trim();
+
+    const price = Number(
+      form.price.replace(",", ".")
+    );
+
+    const stock = Number(form.stock);
+
+    if (!name) {
+      setError("Informe o nome do produto.");
+      return;
+    }
+
+    if (!Number.isFinite(price) || price <= 0) {
+      setError("Informe um preço válido.");
+      return;
+    }
+
+    if (
+      !Number.isInteger(stock) ||
+      stock < 0
+    ) {
+      setError("Informe um estoque válido.");
+      return;
+    }
+
+    if (
+      user?.role === "super_admin" &&
+      !form.schoolId
+    ) {
+      setError("Selecione a escola.");
+      return;
+    }
+
+    setSaving(true);
 
     try {
-      setSaving(true);
-      setError("");
-      setMessage("");
+      const isEditing = Boolean(editingProduct);
 
-      const payload: Record<string, unknown> = {
-        name: form.name,
-        description: form.description,
-        image: form.image,
-        price: Number(form.price),
-        stock: Number(form.stock),
-      };
-
-      if (user?.role === "super_admin") {
-        payload.schoolId = form.schoolId;
-      }
-
-      const url = editingProduct
-        ? `/api/products-supera/${editingProduct.id}`
+      const url = isEditing
+        ? `/api/products-supera/${editingProduct!.id}`
         : "/api/products-supera";
 
-      const method = editingProduct
-        ? "PATCH"
-        : "POST";
+      const method = isEditing ? "PATCH" : "POST";
+
+      const body: Record<string, unknown> = {
+        name,
+        description,
+        image,
+        price,
+        stock,
+      };
+
+      if (!isEditing && user?.role === "super_admin") {
+        body.schoolId = form.schoolId;
+      }
 
       const response = await fetch(url, {
         method,
+        credentials: "include",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(body),
       });
+
+      const contentType =
+        response.headers.get("content-type") || "";
+
+      if (!contentType.includes("application/json")) {
+        throw new Error(
+          `A API retornou ${response.status} em vez de JSON.`
+        );
+      }
 
       const data = await response.json();
 
       if (!response.ok) {
         throw new Error(
-          data.error ||
-            "Não foi possível salvar o produto."
+          data.error || "Não foi possível salvar o produto."
         );
       }
 
-      setMessage(
-        editingProduct
-          ? "Produto atualizado com sucesso!"
-          : "Produto cadastrado com sucesso!"
+      setSuccess(
+        isEditing
+          ? "Produto atualizado com sucesso."
+          : "Produto criado com sucesso."
       );
 
-      setShowForm(false);
+      setShowModal(false);
+      setEditingProduct(null);
       resetForm();
 
       await loadProducts();
     } catch (err) {
-      console.error(err);
-
       setError(
         err instanceof Error
           ? err.message
-          : "Erro ao salvar o produto."
+          : "Erro ao salvar produto."
       );
     } finally {
       setSaving(false);
     }
   }
 
-  async function handleDelete(product: Product) {
+  async function deleteProduct(product: Product) {
     const confirmed = window.confirm(
-      `Deseja realmente remover o produto "${product.name}"?`
+      `Deseja realmente remover "${product.name}" da loja?`
     );
 
     if (!confirmed) {
       return;
     }
 
-    try {
-      setError("");
-      setMessage("");
+    setError("");
+    setSuccess("");
 
+    try {
       const response = await fetch(
         `/api/products-supera/${product.id}`,
         {
           method: "DELETE",
+          credentials: "include",
         }
       );
+
+      const contentType =
+        response.headers.get("content-type") || "";
+
+      if (!contentType.includes("application/json")) {
+        throw new Error(
+          `A API retornou ${response.status} em vez de JSON.`
+        );
+      }
 
       const data = await response.json();
 
       if (!response.ok) {
         throw new Error(
-          data.error ||
-            "Não foi possível remover o produto."
+          data.error || "Não foi possível remover o produto."
         );
       }
 
-      setMessage("Produto removido com sucesso.");
+      setSuccess(
+        "Produto removido da loja com sucesso."
+      );
 
       await loadProducts();
     } catch (err) {
-      console.error(err);
-
       setError(
         err instanceof Error
           ? err.message
-          : "Erro ao remover o produto."
+          : "Erro ao remover produto."
       );
     }
   }
 
-  async function handleBuy(product: Product) {
-    if (!isStudent) {
-      return;
-    }
-
-    if (product.stock <= 0) {
-      setError("Este produto está sem estoque.");
-      return;
-    }
+  async function contactWhatsApp(product: Product) {
+    setError("");
+    setSuccess("");
+    setContacting(product.id);
 
     try {
-      setContactingId(product.id);
-      setError("");
-      setMessage("");
-
+      /*
+       * IMPORTANTE:
+       * A rota existente é:
+       * /api/products-supera/contact
+       *
+       * O ID do produto é enviado no corpo.
+       */
       const response = await fetch(
-        `/api/products-supera/${product.id}/contact`,
+        "/api/products-supera/contact",
         {
           method: "POST",
+          credentials: "include",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            productId: product.id,
+          }),
         }
       );
+
+      const contentType =
+        response.headers.get("content-type") || "";
+
+      if (!contentType.includes("application/json")) {
+        throw new Error(
+          `A API de contato retornou ${response.status} em vez de JSON.`
+        );
+      }
 
       const data = await response.json();
 
@@ -390,7 +476,7 @@ export default function ProductsSuperaPage() {
 
       if (!data.whatsappUrl) {
         throw new Error(
-          "O link do WhatsApp não foi gerado."
+          "A API não retornou o link do WhatsApp."
         );
       }
 
@@ -400,345 +486,342 @@ export default function ProductsSuperaPage() {
         "noopener,noreferrer"
       );
     } catch (err) {
-      console.error(err);
-
       setError(
         err instanceof Error
           ? err.message
           : "Erro ao abrir o WhatsApp."
       );
     } finally {
-      setContactingId(null);
+      setContacting(null);
     }
+  }
+
+  function getSchoolName(schoolId: string) {
+    const school = schools.find(
+      (item) => item.id === schoolId
+    );
+
+    return school?.name || "Escola";
+  }
+
+  function formatPrice(price: number) {
+    return Number(price || 0).toLocaleString(
+      "pt-BR",
+      {
+        style: "currency",
+        currency: "BRL",
+      }
+    );
   }
 
   if (loading) {
     return (
-      <main className="min-h-screen bg-slate-50">
-        <div className="flex min-h-screen items-center justify-center">
-          <div className="flex items-center gap-3 text-slate-600">
-            <Loader2 className="h-6 w-6 animate-spin" />
-            <span>
-              Carregando Produtos Supera...
-            </span>
-          </div>
+      <main className="min-h-screen bg-orange-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-4 border-orange-200 border-t-orange-600" />
+          <p className="text-gray-600">
+            Carregando Produtos Supera...
+          </p>
         </div>
       </main>
     );
   }
 
   return (
-    <main className="min-h-screen bg-slate-50">
-      <header className="border-b border-slate-200 bg-white">
-        <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-4 sm:px-6 lg:px-8">
-          <Link
-            href="/dashboard"
-            className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
-            aria-label="Ir para Home"
-            title="Home"
-          >
-            <Home className="h-4 w-4" />
-            HOME
-          </Link>
+    <main className="min-h-screen bg-orange-50">
+      <header className="border-b bg-white shadow-sm">
+        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4 sm:px-6 lg:px-8">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => router.push("/dashboard")}
+              className="flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-50"
+            >
+              <ArrowLeft size={18} />
+              HOME
+            </button>
 
-          <div className="flex min-w-0 items-center gap-3">
-            <div className="hidden rounded-2xl bg-orange-100 p-3 sm:block">
-              <ShoppingBag className="h-6 w-6 text-orange-600" />
-            </div>
+            <div className="hidden h-8 w-px bg-gray-200 sm:block" />
 
-            <div className="min-w-0">
-              <h1 className="truncate text-xl font-bold text-slate-900 sm:text-2xl">
-                Produtos Supera
-              </h1>
+            <div>
+              <div className="flex items-center gap-2">
+                <ShoppingBag
+                  className="text-orange-600"
+                  size={24}
+                />
+                <h1 className="text-xl font-bold text-gray-900 sm:text-2xl">
+                  Produtos Supera
+                </h1>
+              </div>
 
-              <p className="text-sm text-slate-500">
-                Produtos para você comprar
+              <p className="mt-1 text-xs text-gray-500 sm:text-sm">
+                Produtos disponíveis para compra
               </p>
             </div>
           </div>
 
-          <div className="hidden sm:block">
-            <div className="rounded-2xl bg-orange-50 px-4 py-2 text-right">
-              <p className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
-                Produtos
-              </p>
-
-              <p className="text-base font-bold text-orange-600">
-                {products.length}
-              </p>
-            </div>
-          </div>
+          {canManage && (
+            <button
+              onClick={openCreateModal}
+              className="flex items-center gap-2 rounded-xl bg-orange-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-orange-700"
+            >
+              <Plus size={18} />
+              <span className="hidden sm:inline">
+                Novo produto
+              </span>
+              <span className="sm:hidden">
+                Novo
+              </span>
+            </button>
+          )}
         </div>
       </header>
 
-      <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
-        {message ? (
-          <div className="mb-6 flex items-start gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-800">
-            <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0" />
-
-            <p className="text-sm font-medium">
-              {message}
-            </p>
+      <section className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+        {error && (
+          <div className="mb-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {error}
           </div>
-        ) : null}
+        )}
 
-        {error ? (
-          <div className="mb-6 flex items-start gap-3 rounded-2xl border border-red-200 bg-red-50 p-4 text-red-800">
-            <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" />
-
-            <p className="text-sm font-medium">
-              {error}
-            </p>
-
-            <button
-              type="button"
-              onClick={() => setError("")}
-              className="ml-auto"
-              aria-label="Fechar aviso"
-            >
-              <X className="h-4 w-4" />
-            </button>
+        {success && (
+          <div className="mb-5 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
+            {success}
           </div>
-        ) : null}
+        )}
 
-        <section className="mb-8 overflow-hidden rounded-3xl bg-gradient-to-r from-orange-500 to-orange-600 p-6 text-white shadow-sm sm:p-8">
-          <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
-            <div className="max-w-2xl">
-              <div className="mb-3 inline-flex rounded-full bg-white/15 px-3 py-1 text-xs font-semibold uppercase tracking-wider">
-                Produtos Supera
-              </div>
-
-              <h2 className="text-2xl font-bold sm:text-3xl">
-                Encontre produtos da Supera
-              </h2>
-
-              <p className="mt-2 text-sm leading-6 text-orange-50 sm:text-base">
-                Gostou de algum produto? Clique em
-                comprar e fale diretamente com a
-                equipe da sua escola pelo WhatsApp.
-              </p>
-            </div>
-
-            {canManage ? (
-              <button
-                type="button"
-                onClick={openCreateForm}
-                className="inline-flex items-center justify-center gap-2 rounded-2xl bg-white px-5 py-3 font-bold text-orange-600 shadow-sm transition hover:bg-orange-50"
-              >
-                <Plus className="h-5 w-5" />
-                Adicionar produto
-              </button>
-            ) : null}
-          </div>
-        </section>
-
-        {canManage ? (
-          <div className="mb-6 rounded-2xl border border-orange-100 bg-orange-50 p-4">
+        {isStudent && (
+          <div className="mb-6 rounded-2xl border border-orange-200 bg-white p-5 shadow-sm">
             <div className="flex items-start gap-3">
-              <Package className="mt-0.5 h-5 w-5 shrink-0 text-orange-600" />
+              <div className="rounded-xl bg-orange-100 p-2.5">
+                <MessageCircle
+                  size={22}
+                  className="text-orange-600"
+                />
+              </div>
 
               <div>
-                <p className="font-semibold text-slate-900">
-                  Área de gerenciamento
-                </p>
+                <h2 className="font-bold text-gray-900">
+                  Gostou de algum produto?
+                </h2>
 
-                <p className="mt-1 text-sm text-slate-600">
-                  {user?.role === "super_admin"
-                    ? "Você está visualizando produtos de todas as escolas e pode cadastrar produtos para uma escola específica."
-                    : "Você pode cadastrar e administrar os produtos da sua escola."}
+                <p className="mt-1 text-sm leading-6 text-gray-600">
+                  Clique em{" "}
+                  <strong>QUERO COMPRAR</strong>{" "}
+                  e você será direcionado para o
+                  WhatsApp da sua escola.
                 </p>
               </div>
             </div>
           </div>
-        ) : null}
+        )}
 
-        {products.length === 0 ? (
-          <div className="rounded-3xl border border-dashed border-slate-300 bg-white p-10 text-center">
-            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-orange-50">
-              <ShoppingBag className="h-8 w-8 text-orange-500" />
+        {loadingProducts ? (
+          <div className="flex min-h-[300px] items-center justify-center">
+            <div className="text-center">
+              <div className="mx-auto mb-4 h-9 w-9 animate-spin rounded-full border-4 border-orange-200 border-t-orange-600" />
+              <p className="text-gray-600">
+                Carregando produtos...
+              </p>
             </div>
+          </div>
+        ) : products.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-orange-300 bg-white p-10 text-center shadow-sm">
+            <Package
+              size={48}
+              className="mx-auto mb-4 text-orange-300"
+            />
 
-            <h3 className="text-lg font-bold text-slate-900">
+            <h2 className="text-lg font-bold text-gray-900">
               Nenhum produto disponível
-            </h3>
+            </h2>
 
-            <p className="mx-auto mt-2 max-w-md text-sm text-slate-500">
-              {canManage
-                ? "Cadastre o primeiro produto para começar."
-                : "Em breve teremos produtos disponíveis."}
+            <p className="mt-2 text-sm text-gray-500">
+              Ainda não há produtos cadastrados para esta
+              escola.
             </p>
+
+            {canManage && (
+              <button
+                onClick={openCreateModal}
+                className="mt-5 inline-flex items-center gap-2 rounded-xl bg-orange-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-orange-700"
+              >
+                <Plus size={18} />
+                Cadastrar produto
+              </button>
+            )}
           </div>
         ) : (
-          <section className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {products.map((product) => (
               <article
                 key={product.id}
-                className="group overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm transition hover:-translate-y-1 hover:shadow-lg"
+                className="overflow-hidden rounded-2xl border border-orange-100 bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
               >
-                <div className="relative aspect-[4/3] overflow-hidden bg-slate-100">
+                <div className="relative flex h-52 items-center justify-center bg-gray-50">
                   {product.image ? (
                     <img
                       src={product.image}
                       alt={product.name}
-                      className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
+                      className="h-full w-full object-cover"
+                      onError={(event) => {
+                        event.currentTarget.style.display =
+                          "none";
+                      }}
                     />
                   ) : (
-                    <div className="flex h-full w-full items-center justify-center">
-                      <ShoppingBag className="h-14 w-14 text-slate-300" />
+                    <div className="text-center text-gray-300">
+                      <ImageIcon
+                        size={48}
+                        className="mx-auto"
+                      />
+                      <p className="mt-2 text-xs">
+                        Sem imagem
+                      </p>
                     </div>
                   )}
 
-                  {product.stock <= 0 ? (
-                    <div className="absolute inset-0 flex items-center justify-center bg-slate-900/55">
-                      <span className="rounded-full bg-white px-4 py-2 text-sm font-bold text-slate-800">
+                  {product.stock <= 0 && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-black/45">
+                      <span className="rounded-full bg-white px-4 py-2 text-sm font-bold text-red-600 shadow">
                         ESGOTADO
                       </span>
                     </div>
-                  ) : null}
+                  )}
                 </div>
 
                 <div className="p-5">
-                  <div className="mb-3 flex items-start justify-between gap-3">
-                    <h3 className="font-bold text-slate-900">
+                  <div className="mb-2 flex items-start justify-between gap-3">
+                    <h2 className="font-bold text-gray-900">
                       {product.name}
-                    </h3>
+                    </h2>
 
-                    <div className="shrink-0 rounded-xl bg-orange-50 px-2.5 py-1">
-                      <span className="text-xs font-bold text-orange-600">
-                        {formatPrice(product.price)}
+                    {isSuperAdmin && (
+                      <span className="shrink-0 rounded-full bg-orange-100 px-2 py-1 text-[10px] font-semibold text-orange-700">
+                        {getSchoolName(
+                          product.schoolId
+                        )}
                       </span>
-                    </div>
+                    )}
                   </div>
 
-                  {product.description ? (
-                    <p className="mb-4 line-clamp-3 text-sm leading-5 text-slate-500">
+                  {product.description && (
+                    <p className="mb-4 line-clamp-3 text-sm leading-5 text-gray-600">
                       {product.description}
-                    </p>
-                  ) : (
-                    <p className="mb-4 text-sm text-slate-400">
-                      Produto Supera
                     </p>
                   )}
 
-                  {user?.role === "super_admin" ? (
-                    <p className="mb-4 text-xs font-medium text-slate-400">
-                      {getSchoolName(product.schoolId)}
-                    </p>
-                  ) : null}
+                  <div className="mb-4 flex items-end justify-between gap-3">
+                    <div>
+                      <p className="text-xs text-gray-500">
+                        Valor
+                      </p>
 
-                  <div className="mb-4 flex items-center justify-between border-t border-slate-100 pt-4">
-                    <div className="flex items-center gap-2 text-sm text-slate-500">
-                      <Package className="h-4 w-4" />
+                      <p className="text-2xl font-bold text-orange-600">
+                        {formatPrice(product.price)}
+                      </p>
+                    </div>
 
-                      <span>
-                        {product.stock > 0
-                          ? `${product.stock} disponível${
-                              product.stock !== 1
-                                ? "s"
-                                : ""
-                            }`
-                          : "Sem estoque"}
-                      </span>
+                    <div className="text-right">
+                      <p className="text-xs text-gray-500">
+                        Estoque
+                      </p>
+
+                      <p
+                        className={`text-sm font-semibold ${
+                          product.stock <= 0
+                            ? "text-red-600"
+                            : "text-gray-800"
+                        }`}
+                      >
+                        {product.stock}
+                      </p>
                     </div>
                   </div>
 
                   {isStudent ? (
                     <button
-                      type="button"
                       disabled={
                         product.stock <= 0 ||
-                        contactingId === product.id
+                        contacting === product.id
                       }
                       onClick={() =>
-                        handleBuy(product)
+                        contactWhatsApp(product)
                       }
-                      className={`flex w-full items-center justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-bold transition ${
-                        product.stock > 0
-                          ? "bg-green-600 text-white hover:bg-green-700"
-                          : "cursor-not-allowed bg-slate-100 text-slate-400"
-                      }`}
+                      className="flex w-full items-center justify-center gap-2 rounded-xl bg-green-600 px-4 py-3 text-sm font-bold text-white transition hover:bg-green-700 disabled:cursor-not-allowed disabled:bg-gray-300"
                     >
-                      {contactingId === product.id ? (
-                        <>
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                          Abrindo WhatsApp...
-                        </>
-                      ) : product.stock <= 0 ? (
-                        "Sem estoque"
-                      ) : (
-                        <>
-                          <MessageCircle className="h-4 w-4" />
-                          QUERO COMPRAR
-                        </>
-                      )}
-                    </button>
-                  ) : null}
+                      <MessageCircle size={18} />
 
-                  {canManage ? (
+                      {contacting === product.id
+                        ? "Abrindo..."
+                        : product.stock <= 0
+                        ? "Esgotado"
+                        : "QUERO COMPRAR"}
+                    </button>
+                  ) : canManage ? (
                     <div className="flex gap-2">
                       <button
-                        type="button"
                         onClick={() =>
-                          openEditForm(product)
+                          openEditModal(product)
                         }
-                        className="flex flex-1 items-center justify-center gap-2 rounded-2xl border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                        className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-orange-200 px-3 py-2.5 text-sm font-semibold text-orange-700 transition hover:bg-orange-50"
                       >
-                        <Pencil className="h-4 w-4" />
+                        <Edit size={17} />
                         Editar
                       </button>
 
                       <button
-                        type="button"
                         onClick={() =>
-                          handleDelete(product)
+                          deleteProduct(product)
                         }
-                        className="flex items-center justify-center rounded-2xl border border-red-200 px-4 py-3 text-red-600 transition hover:bg-red-50"
+                        className="flex items-center justify-center rounded-xl border border-red-200 px-3 py-2.5 text-red-600 transition hover:bg-red-50"
                         title="Remover produto"
                       >
-                        <Trash2 className="h-4 w-4" />
+                        <Trash2 size={17} />
                       </button>
                     </div>
                   ) : null}
                 </div>
               </article>
             ))}
-          </section>
+          </div>
         )}
-      </div>
+      </section>
 
-      {showForm ? (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/50 p-0 backdrop-blur-sm sm:items-center sm:p-4">
-          <div className="max-h-[95vh] w-full overflow-y-auto rounded-t-3xl bg-white shadow-2xl sm:max-w-2xl sm:rounded-3xl">
-            <div className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-100 bg-white px-5 py-4 sm:px-6">
+      {showModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white shadow-2xl">
+            <div className="sticky top-0 flex items-center justify-between border-b bg-white px-5 py-4">
               <div>
-                <h2 className="text-lg font-bold text-slate-900">
+                <h2 className="text-lg font-bold text-gray-900">
                   {editingProduct
                     ? "Editar produto"
                     : "Novo produto"}
                 </h2>
 
-                <p className="text-sm text-slate-500">
-                  Configure o produto e o estoque.
+                <p className="text-xs text-gray-500">
+                  Cadastre um produto para venda
+                  pelo WhatsApp.
                 </p>
               </div>
 
               <button
-                type="button"
-                onClick={closeForm}
-                className="rounded-xl p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-900"
-                aria-label="Fechar"
+                onClick={closeModal}
+                className="rounded-lg p-2 text-gray-500 hover:bg-gray-100"
               >
-                <X className="h-5 w-5" />
+                <X size={20} />
               </button>
             </div>
 
-            <form
-              onSubmit={handleSave}
-              className="space-y-5 p-5 sm:p-6"
-            >
+            <div className="space-y-5 p-5">
+              {error && (
+                <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                  {error}
+                </div>
+              )}
+
               <div>
-                <label className="mb-2 block text-sm font-semibold text-slate-700">
-                  Nome do produto *
+                <label className="mb-1.5 block text-sm font-semibold text-gray-700">
+                  Nome do produto
                 </label>
 
                 <input
@@ -751,14 +834,13 @@ export default function ProductsSuperaPage() {
                     })
                   }
                   maxLength={100}
-                  required
                   placeholder="Ex.: Camiseta Supera"
-                  className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none transition focus:border-orange-400 focus:ring-4 focus:ring-orange-100"
+                  className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm outline-none transition focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
                 />
               </div>
 
               <div>
-                <label className="mb-2 block text-sm font-semibold text-slate-700">
+                <label className="mb-1.5 block text-sm font-semibold text-gray-700">
                   Descrição
                 </label>
 
@@ -774,96 +856,14 @@ export default function ProductsSuperaPage() {
                   maxLength={500}
                   rows={4}
                   placeholder="Descreva o produto..."
-                  className="w-full resize-none rounded-2xl border border-slate-200 px-4 py-3 outline-none transition focus:border-orange-400 focus:ring-4 focus:ring-orange-100"
+                  className="w-full resize-none rounded-xl border border-gray-300 px-4 py-3 text-sm outline-none transition focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
                 />
               </div>
 
-              <div>
-                <label className="mb-2 block text-sm font-semibold text-slate-700">
-                  Imagem
-                </label>
-
-                <input
-                  type="text"
-                  value={form.image}
-                  onChange={(event) =>
-                    setForm({
-                      ...form,
-                      image: event.target.value,
-                    })
-                  }
-                  placeholder="URL da imagem"
-                  className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none transition focus:border-orange-400 focus:ring-4 focus:ring-orange-100"
-                />
-
-                <p className="mt-1.5 text-xs text-slate-400">
-                  Você pode deixar vazio para usar o
-                  ícone padrão.
-                </p>
-              </div>
-
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              {isSuperAdmin && !editingProduct && (
                 <div>
-                  <label className="mb-2 block text-sm font-semibold text-slate-700">
-                    Preço *
-                  </label>
-
-                  <div className="relative">
-                    <DollarSign className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-green-600" />
-
-                    <input
-                      type="number"
-                      min="0.01"
-                      max="1000000"
-                      step="0.01"
-                      value={form.price}
-                      onChange={(event) =>
-                        setForm({
-                          ...form,
-                          price:
-                            event.target.value,
-                        })
-                      }
-                      required
-                      placeholder="49.90"
-                      className="w-full rounded-2xl border border-slate-200 py-3 pl-11 pr-4 outline-none transition focus:border-orange-400 focus:ring-4 focus:ring-orange-100"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="mb-2 block text-sm font-semibold text-slate-700">
-                    Estoque *
-                  </label>
-
-                  <div className="relative">
-                    <Package className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
-
-                    <input
-                      type="number"
-                      min="0"
-                      max="1000000"
-                      step="1"
-                      value={form.stock}
-                      onChange={(event) =>
-                        setForm({
-                          ...form,
-                          stock:
-                            event.target.value,
-                        })
-                      }
-                      required
-                      placeholder="10"
-                      className="w-full rounded-2xl border border-slate-200 py-3 pl-11 pr-4 outline-none transition focus:border-orange-400 focus:ring-4 focus:ring-orange-100"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {user?.role === "super_admin" ? (
-                <div>
-                  <label className="mb-2 block text-sm font-semibold text-slate-700">
-                    Escola *
+                  <label className="mb-1.5 block text-sm font-semibold text-gray-700">
+                    Escola
                   </label>
 
                   <select
@@ -875,11 +875,10 @@ export default function ProductsSuperaPage() {
                           event.target.value,
                       })
                     }
-                    required
-                    className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 outline-none transition focus:border-orange-400 focus:ring-4 focus:ring-orange-100"
+                    className="w-full rounded-xl border border-gray-300 bg-white px-4 py-3 text-sm outline-none transition focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
                   >
                     <option value="">
-                      Selecione a escola
+                      Selecione uma escola
                     </option>
 
                     {schools.map((school) => (
@@ -892,42 +891,99 @@ export default function ProductsSuperaPage() {
                     ))}
                   </select>
                 </div>
-              ) : null}
+              )}
 
-              <div className="flex flex-col-reverse gap-3 border-t border-slate-100 pt-5 sm:flex-row sm:justify-end">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="mb-1.5 block text-sm font-semibold text-gray-700">
+                    Preço
+                  </label>
+
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={form.price}
+                    onChange={(event) =>
+                      setForm({
+                        ...form,
+                        price: event.target.value,
+                      })
+                    }
+                    placeholder="Ex.: 49,90"
+                    className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm outline-none transition focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-1.5 block text-sm font-semibold text-gray-700">
+                    Estoque
+                  </label>
+
+                  <input
+                    type="number"
+                    min="0"
+                    value={form.stock}
+                    onChange={(event) =>
+                      setForm({
+                        ...form,
+                        stock: event.target.value,
+                      })
+                    }
+                    placeholder="Ex.: 10"
+                    className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm outline-none transition focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="mb-1.5 block text-sm font-semibold text-gray-700">
+                  URL da imagem
+                </label>
+
+                <input
+                  type="url"
+                  value={form.image}
+                  onChange={(event) =>
+                    setForm({
+                      ...form,
+                      image: event.target.value,
+                    })
+                  }
+                  placeholder="https://..."
+                  className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm outline-none transition focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
+                />
+
+                <p className="mt-1.5 text-xs text-gray-500">
+                  Cole o endereço público da imagem do
+                  produto.
+                </p>
+              </div>
+
+              <div className="flex flex-col-reverse gap-3 border-t pt-5 sm:flex-row sm:justify-end">
                 <button
-                  type="button"
-                  onClick={closeForm}
+                  onClick={closeModal}
                   disabled={saving}
-                  className="rounded-2xl border border-slate-200 px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
+                  className="rounded-xl border border-gray-300 px-5 py-3 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
                 >
                   Cancelar
                 </button>
 
                 <button
-                  type="submit"
+                  onClick={saveProduct}
                   disabled={saving}
-                  className="inline-flex items-center justify-center gap-2 rounded-2xl bg-orange-500 px-6 py-3 text-sm font-bold text-white transition hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="rounded-xl bg-orange-600 px-5 py-3 text-sm font-bold text-white hover:bg-orange-700 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  {saving ? (
-                    <>
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      Salvando...
-                    </>
-                  ) : (
-                    <>
-                      <CheckCircle2 className="h-4 w-4" />
-                      {editingProduct
-                        ? "Salvar alterações"
-                        : "Cadastrar produto"}
-                    </>
-                  )}
+                  {saving
+                    ? "Salvando..."
+                    : editingProduct
+                    ? "Salvar alterações"
+                    : "Cadastrar produto"}
                 </button>
               </div>
-            </form>
+            </div>
           </div>
         </div>
-      ) : null}
+      )}
     </main>
   );
 }
