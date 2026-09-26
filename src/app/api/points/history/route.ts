@@ -59,7 +59,10 @@ export async function GET(request: NextRequest) {
     const limitParam = Number(searchParams.get("limit") || "50");
 
     const limit = Math.min(
-      Math.max(Number.isFinite(limitParam) ? limitParam : 50, 1),
+      Math.max(
+        Number.isFinite(limitParam) ? limitParam : 50,
+        1
+      ),
       200
     );
 
@@ -70,8 +73,12 @@ export async function GET(request: NextRequest) {
 
     const query: Record<string, unknown> = {};
 
-    // Educadores e super administradores podem consultar
-    // o histórico de qualquer aluno.
+    /*
+     * Educadores e superadministradores podem consultar
+     * o histórico de qualquer aluno.
+     *
+     * Alunos só podem consultar o próprio histórico.
+     */
     if (
       user.role === "educator" ||
       user.role === "super_admin"
@@ -89,15 +96,20 @@ export async function GET(request: NextRequest) {
         query.studentId = studentObjectId;
       }
     } else if (user.role === "student") {
-      // Aluno só pode consultar o próprio histórico.
       query.studentId = user._id;
     } else {
       return NextResponse.json(
-        { error: "Você não tem permissão para consultar o histórico." },
+        {
+          error:
+            "Você não tem permissão para consultar o histórico.",
+        },
         { status: 403 }
       );
     }
 
+    /*
+     * Filtro opcional por categoria.
+     */
     if (categoryId) {
       const categoryObjectId = validObjectId(categoryId);
 
@@ -111,54 +123,83 @@ export async function GET(request: NextRequest) {
       query.categoryId = categoryObjectId;
     }
 
+    /*
+     * Busca os lançamentos.
+     */
     const events = await pointEvents
       .find(query)
       .sort({ createdAt: -1 })
       .limit(limit)
       .toArray();
 
-    const studentIds = [
+    /*
+     * IDs dos alunos envolvidos.
+     */
+    const studentIds: string[] = Array.from(
       new Set(
         events
           .map((event) => event.studentId?.toString())
-          .filter(Boolean)
-      ),
-    ];
+          .filter(
+            (id): id is string => Boolean(id)
+          )
+      )
+    );
 
-    const categoryIds = [
+    /*
+     * IDs das categorias envolvidas.
+     */
+    const categoryIds: string[] = Array.from(
       new Set(
         events
           .map((event) => event.categoryId?.toString())
-          .filter(Boolean)
-      ),
-    ];
+          .filter(
+            (id): id is string => Boolean(id)
+          )
+      )
+    );
 
-    const educatorIds = [
+    /*
+     * IDs dos educadores envolvidos.
+     */
+    const educatorIds: string[] = Array.from(
       new Set(
         events
           .map((event) => event.educatorId?.toString())
-          .filter(Boolean)
-      ),
-    ];
+          .filter(
+            (id): id is string => Boolean(id)
+          )
+      )
+    );
 
+    /*
+     * Converte os IDs para ObjectId.
+     */
     const studentObjectIds = studentIds
-      .filter((id) => ObjectId.isValid(id))
-      .map((id) => new ObjectId(id));
+      .filter((id: string) => ObjectId.isValid(id))
+      .map((id: string) => new ObjectId(id));
 
     const categoryObjectIds = categoryIds
-      .filter((id) => ObjectId.isValid(id))
-      .map((id) => new ObjectId(id));
+      .filter((id: string) => ObjectId.isValid(id))
+      .map((id: string) => new ObjectId(id));
 
     const educatorObjectIds = educatorIds
-      .filter((id) => ObjectId.isValid(id))
-      .map((id) => new ObjectId(id));
+      .filter((id: string) => ObjectId.isValid(id))
+      .map((id: string) => new ObjectId(id));
 
+    /*
+     * Busca alunos, categorias e educadores
+     * em paralelo para melhorar o desempenho.
+     */
     const [students, categories, educators] =
       await Promise.all([
         db
           .collection("users")
           .find(
-            { _id: { $in: studentObjectIds } },
+            {
+              _id: {
+                $in: studentObjectIds,
+              },
+            },
             {
               projection: {
                 name: 1,
@@ -171,7 +212,11 @@ export async function GET(request: NextRequest) {
         db
           .collection("categories")
           .find(
-            { _id: { $in: categoryObjectIds } },
+            {
+              _id: {
+                $in: categoryObjectIds,
+              },
+            },
             {
               projection: {
                 name: 1,
@@ -185,7 +230,11 @@ export async function GET(request: NextRequest) {
         db
           .collection("users")
           .find(
-            { _id: { $in: educatorObjectIds } },
+            {
+              _id: {
+                $in: educatorObjectIds,
+              },
+            },
             {
               projection: {
                 name: 1,
@@ -196,6 +245,10 @@ export async function GET(request: NextRequest) {
           .toArray(),
       ]);
 
+    /*
+     * Cria mapas para encontrar rapidamente
+     * os dados relacionados a cada lançamento.
+     */
     const studentMap = new Map(
       students.map((student) => [
         student._id.toString(),
@@ -217,6 +270,9 @@ export async function GET(request: NextRequest) {
       ])
     );
 
+    /*
+     * Monta o histórico final.
+     */
     const history = events.map((event) => {
       const student = studentMap.get(
         event.studentId?.toString()
@@ -235,13 +291,17 @@ export async function GET(request: NextRequest) {
 
         student: {
           id: event.studentId?.toString(),
-          name: student?.name || "Aluno não encontrado",
+          name:
+            student?.name ||
+            "Aluno não encontrado",
           email: student?.email || "",
         },
 
         category: {
           id: event.categoryId?.toString(),
-          name: category?.name || "Categoria não encontrada",
+          name:
+            category?.name ||
+            "Categoria não encontrada",
           icon: category?.icon || "⭐",
           color: category?.color || "#3B82F6",
         },
@@ -250,7 +310,9 @@ export async function GET(request: NextRequest) {
 
         educator: {
           id: event.educatorId?.toString(),
-          name: educator?.name || "Educador não encontrado",
+          name:
+            educator?.name ||
+            "Educador não encontrado",
           email: educator?.email || "",
         },
 
