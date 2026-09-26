@@ -3,7 +3,6 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
-PlusCircle,
 ShoppingBag,
 MessageSquare,
 LogOut,
@@ -105,7 +104,6 @@ const roleLabel = roleLabels[user.role] || user.role.toUpperCase();
 return ( <div className="min-h-screen bg-slate-100 flex flex-col">
 
 ```
-  {/* CABEÇALHO */}
   <header className="bg-white border-b border-slate-200 px-6 py-4">
     <div className="max-w-6xl mx-auto flex items-center justify-between gap-4">
 
@@ -140,10 +138,8 @@ return ( <div className="min-h-screen bg-slate-100 flex flex-col">
     </div>
   </header>
 
-  {/* CONTEÚDO */}
   <main className="p-6 max-w-6xl w-full mx-auto space-y-6 flex-1">
 
-    {/* ÁREA DO ALUNO */}
     {user.role === 'student' && (
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
 
@@ -203,82 +199,26 @@ return ( <div className="min-h-screen bg-slate-100 flex flex-col">
       </div>
     )}
 
-    {/* ÁREA DO EDUCADOR / ADMINISTRADOR */}
     {(user.role === 'educator' ||
       user.role === 'admin' ||
       user.role === 'super_admin') && (
 
-      <div className="bg-white rounded-2xl p-6 shadow-md border border-slate-200 space-y-4">
+      <div className="bg-white rounded-2xl p-6 shadow-md border border-slate-200">
 
         <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-          <PlusCircle className="w-5 h-5 text-blue-600" />
-          Lançar Pontuação para Aluno
+          <Award className="w-5 h-5 text-blue-600" />
+          Área administrativa
         </h2>
 
-        <p className="text-sm text-slate-500">
-          Nesta área, o educador poderá verificar a atividade realizada
-          pelo aluno e lançar os pontos correspondentes.
+        <p className="text-sm text-slate-500 mt-2">
+          Usuário autenticado com sucesso. As ferramentas de
+          gerenciamento de categorias, alunos, pontos e rankings serão
+          adicionadas nas próximas etapas.
         </p>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-
-          <div className="p-4 rounded-xl border border-slate-200 bg-slate-50">
-            <span className="text-xs font-bold text-blue-600 uppercase">
-              Ábaco
-            </span>
-
-            <p className="text-sm text-slate-500 mt-2">
-              Registrar pontos após a conferência da atividade.
-            </p>
-
-            <button
-              type="button"
-              className="mt-4 w-full py-2 bg-slate-900 hover:bg-blue-600 text-white rounded-lg text-xs font-bold transition-colors"
-            >
-              Atribuir Pontos
-            </button>
-          </div>
-
-          <div className="p-4 rounded-xl border border-slate-200 bg-slate-50">
-            <span className="text-xs font-bold text-emerald-600 uppercase">
-              Abrindo Horizontes
-            </span>
-
-            <p className="text-sm text-slate-500 mt-2">
-              Registrar pontos após a conferência da atividade.
-            </p>
-
-            <button
-              type="button"
-              className="mt-4 w-full py-2 bg-slate-900 hover:bg-emerald-600 text-white rounded-lg text-xs font-bold transition-colors"
-            >
-              Atribuir Pontos
-            </button>
-          </div>
-
-          <div className="p-4 rounded-xl border border-slate-200 bg-slate-50">
-            <span className="text-xs font-bold text-amber-600 uppercase">
-              Desafios
-            </span>
-
-            <p className="text-sm text-slate-500 mt-2">
-              Registrar pontos após a conferência da atividade.
-            </p>
-
-            <button
-              type="button"
-              className="mt-4 w-full py-2 bg-slate-900 hover:bg-amber-600 text-white rounded-lg text-xs font-bold transition-colors"
-            >
-              Atribuir Pontos
-            </button>
-          </div>
-
-        </div>
 
       </div>
     )}
 
-    {/* PAINEL DO SUPER ADMINISTRADOR */}
     {user.role === 'super_admin' && (
       <div className="bg-amber-50 border border-amber-200 rounded-2xl p-6 shadow-sm">
 
@@ -295,7 +235,6 @@ return ( <div className="min-h-screen bg-slate-100 flex flex-col">
       </div>
     )}
 
-    {/* CARDS INFORMATIVOS */}
     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
 
       <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex items-center gap-4">
