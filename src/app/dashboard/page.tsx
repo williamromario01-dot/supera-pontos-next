@@ -247,8 +247,9 @@ export default function DashboardPage() {
   const canManageSchools =
     user?.role === "super_admin";
 
+  // SUPERADM NÃO GERENCIA ALUNOS DIRETAMENTE PELA TELA INICIAL.
+  // Alunos serão gerenciados dentro de cada escola.
   const canManageStudents =
-    user?.role === "super_admin" ||
     user?.role === "admin" ||
     user?.role === "educator";
 
