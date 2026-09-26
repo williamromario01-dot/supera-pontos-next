@@ -557,7 +557,7 @@ export default function SchoolDetailsPage() {
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
                         <p className="font-bold text-slate-900">
-                          {admin.name}
+                          {admin?.name}
                         </p>
 
                         <span className="rounded-full bg-green-100 px-2.5 py-1 text-xs font-bold text-green-700">
