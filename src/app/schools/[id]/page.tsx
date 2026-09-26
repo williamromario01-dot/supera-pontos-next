@@ -230,7 +230,7 @@ export default function SchoolDetailsPage() {
     }
 
     const confirmed = window.confirm(
-      `Tem certeza que deseja excluir o administrador "${admin?.name}"?\n\nO acesso dele ao sistema será removido.`
+      `Tem certeza que deseja excluir o administrador "${admin.name}"?\n\nO acesso dele ao sistema será removido.`
     );
 
     if (!confirmed) {
@@ -315,7 +315,7 @@ export default function SchoolDetailsPage() {
     return null;
   }
 
-  const hasAdmin = Boolean(admin);
+  const hasAdmin = admin !== null;
 
   return (
     <main className="min-h-screen bg-slate-50">
@@ -540,12 +540,12 @@ export default function SchoolDetailsPage() {
                   className="animate-spin text-orange-500"
                 />
               </div>
-            ) : hasAdmin ? (
+            ) : admin ? (
               <div className="rounded-2xl border border-blue-200 bg-blue-50 p-5">
                 <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
                   <div className="flex items-center gap-4">
                     <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-blue-600 text-lg font-bold text-white">
-                      {admin?.name
+                      {admin.name
                         .split(" ")
                         .slice(0, 2)
                         .map((part) =>
@@ -557,7 +557,7 @@ export default function SchoolDetailsPage() {
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
                         <p className="font-bold text-slate-900">
-                          {admin?.name}
+                          {admin.name}
                         </p>
 
                         <span className="rounded-full bg-green-100 px-2.5 py-1 text-xs font-bold text-green-700">
