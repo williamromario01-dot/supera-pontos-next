@@ -1,144 +1,91 @@
-```tsx
-'use client';
+import { NextRequest, NextResponse } from "next/server";
+import bcrypt from "bcryptjs";
+import crypto from "crypto";
+import clientPromise from "@/lib/mongodb";
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { ShieldCheck, UserCheck, GraduationCap } from 'lucide-react';
+export async function POST(request: NextRequest) {
+  try {
+    const body = await request.json();
 
-export default function LoginPage() {
-  const router = useRouter();
+    const email = String(body.email || "").trim().toLowerCase();
+    const password = String(body.password || "");
 
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    setLoading(true);
-    setError('');
-
-    try {
-      const response = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-        body: JSON.stringify({
-          email,
-          password,
-        }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        setError(data.error || 'Não foi possível realizar o login.');
-        return;
-      }
-
-      router.push('/dashboard');
-    } catch (error) {
-      console.error(error);
-      setError('Não foi possível conectar ao servidor.');
-    } finally {
-      setLoading(false);
+    if (!email || !password) {
+      return NextResponse.json(
+        { error: "E-mail e senha são obrigatórios." },
+        { status: 400 }
+      );
     }
-  };
 
-  return (
-    <div className="min-h-screen flex items-center justify-center p-4 bg-slate-100">
-      <div className="max-w-md w-full bg-white rounded-2xl shadow-xl p-8 border border-slate-200">
+    const client = await clientPromise;
+    const db = client.db("supera_pontos");
 
-        <div className="text-center mb-8">
-          <h1 className="text-3xl font-extrabold text-blue-600">
-            Supera Pontos
-          </h1>
+    const users = db.collection("users");
+    const sessions = db.collection("sessions");
 
-          <p className="text-sm text-slate-500 mt-2">
-            Acesse sua conta para acompanhar seus pontos e conquistas
-          </p>
-        </div>
+    const user = await users.findOne({ email });
 
-        <form onSubmit={handleLogin} className="space-y-4">
+    if (!user) {
+      return NextResponse.json(
+        { error: "E-mail ou senha incorretos." },
+        { status: 401 }
+      );
+    }
 
-          <div>
-            <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">
-              E-mail
-            </label>
+    const passwordMatches = await bcrypt.compare(
+      password,
+      user.passwordHash
+    );
 
-            <input
-              type="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="seu.email@supera.com"
-              className="w-full px-4 py-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm"
-            />
-          </div>
+    if (!passwordMatches) {
+      return NextResponse.json(
+        { error: "E-mail ou senha incorretos." },
+        { status: 401 }
+      );
+    }
 
-          <div>
-            <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">
-              Senha
-            </label>
+    const sessionToken = crypto.randomBytes(32).toString("hex");
 
-            <input
-              type="password"
-              required
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••"
-              className="w-full px-4 py-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm"
-            />
-          </div>
+    const expiresAt = new Date(
+      Date.now() + 7 * 24 * 60 * 60 * 1000
+    );
 
-          {error && (
-            <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-              {error}
-            </div>
-          )}
+    await sessions.insertOne({
+      token: sessionToken,
+      userId: user._id,
+      createdAt: new Date(),
+      expiresAt,
+    });
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white font-bold rounded-lg transition-colors shadow-md text-sm"
-          >
-            {loading ? 'Entrando...' : 'Entrar no Sistema'}
-          </button>
-        </form>
+    const response = NextResponse.json(
+      {
+        message: "Login realizado com sucesso.",
+        user: {
+          id: user._id.toString(),
+          name: user.name,
+          email: user.email,
+          role: user.role,
+          points: user.points || 0,
+        },
+      },
+      { status: 200 }
+    );
 
-        <div className="mt-8 pt-6 border-t border-slate-200 text-xs text-slate-500 space-y-3">
+    response.cookies.set("supera_session", sessionToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      path: "/",
+      expires: expiresAt,
+    });
 
-          <p className="font-semibold text-slate-700">
-            Acesso ao sistema
-          </p>
+    return response;
+  } catch (error) {
+    console.error("Erro no login:", error);
 
-          <div className="flex items-center gap-2">
-            <ShieldCheck className="w-4 h-4 text-blue-600" />
-            <span>
-              <b>Super Administrador</b>
-            </span>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <UserCheck className="w-4 h-4 text-emerald-600" />
-            <span>
-              <b>Educador</b>
-            </span>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <GraduationCap className="w-4 h-4 text-amber-600" />
-            <span>
-              <b>Aluno</b>
-            </span>
-          </div>
-
-        </div>
-      </div>
-    </div>
-  );
+    return NextResponse.json(
+      { error: "Erro interno ao realizar login." },
+      { status: 500 }
+    );
+  }
 }
-```
