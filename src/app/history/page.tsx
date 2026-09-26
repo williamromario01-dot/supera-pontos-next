@@ -167,7 +167,6 @@ export default function HistoryPage() {
 
   return (
     <main className="min-h-screen bg-slate-50">
-      {/* HEADER */}
       <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/95 backdrop-blur">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4 sm:px-6 lg:px-8">
           <button
@@ -197,7 +196,6 @@ export default function HistoryPage() {
       </header>
 
       <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-        {/* HERO */}
         <section className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-orange-500 via-orange-500 to-orange-600 p-6 text-white shadow-xl sm:p-8">
           <div className="absolute -right-20 -top-24 h-64 w-64 rounded-full bg-white/10" />
 
@@ -231,7 +229,6 @@ export default function HistoryPage() {
           </div>
         </section>
 
-        {/* RESUMO */}
         <section className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
             <div className="flex items-center justify-between">
@@ -288,7 +285,6 @@ export default function HistoryPage() {
           </div>
         </section>
 
-        {/* FILTROS */}
         <section className="mt-6 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
           <div className="flex flex-col gap-1">
             <div className="flex items-center gap-2">
@@ -306,7 +302,6 @@ export default function HistoryPage() {
           </div>
 
           <div className="mt-5 grid gap-4 md:grid-cols-2">
-            {/* ALUNO */}
             <div>
               <label className="mb-2 block text-sm font-bold text-slate-700">
                 Aluno
@@ -327,7 +322,6 @@ export default function HistoryPage() {
               </select>
             </div>
 
-            {/* CATEGORIA */}
             <div>
               <label className="mb-2 block text-sm font-bold text-slate-700">
                 Categoria
@@ -350,14 +344,12 @@ export default function HistoryPage() {
           </div>
         </section>
 
-        {/* ERRO */}
         {error && (
           <div className="mt-6 rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm font-medium text-red-700">
             {error}
           </div>
         )}
 
-        {/* HISTÓRICO */}
         <section className="mt-6">
           <div className="mb-4 flex items-end justify-between gap-4">
             <div>
@@ -406,7 +398,6 @@ export default function HistoryPage() {
                   className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm transition hover:shadow-md sm:p-5"
                 >
                   <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                    {/* ALUNO + CATEGORIA */}
                     <div className="flex min-w-0 items-center gap-4">
                       <div
                         className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl text-2xl"
@@ -445,7 +436,6 @@ export default function HistoryPage() {
                       </div>
                     </div>
 
-                    {/* PONTOS + DATA */}
                     <div className="flex items-center justify-between gap-4 border-t border-slate-100 pt-4 lg:min-w-[300px] lg:border-t-0 lg:pt-0">
                       <div className="flex items-center gap-2 text-xs text-slate-500">
                         <CalendarDays className="h-4 w-4" />
