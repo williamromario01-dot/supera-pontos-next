@@ -1,45 +1,62 @@
 "use client";
 
-import { useEffect, useState, ChangeEvent } from "react";
+import { ChangeEvent, FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
   Camera,
   CheckCircle2,
-  LockKeyhole,
-  User,
-  Mail,
-  ShieldCheck,
   Eye,
   EyeOff,
+  KeyRound,
+  Loader2,
+  Save,
+  ShieldCheck,
+  UserCircle,
 } from "lucide-react";
 
-type UserProfile = {
+interface User {
   id: string;
   name: string;
   email: string;
-  role: "super_admin" | "admin" | "educator" | "student";
+  role: string;
   points: number;
-  avatar: string | null;
-};
+  avatar?: string;
+}
 
-const ROLE_NAMES: Record<UserProfile["role"], string> = {
-  super_admin: "Suporte",
-  admin: "Administrador",
-  educator: "Educador",
-  student: "Aluno",
-};
+function getRoleName(role: string) {
+  switch (role) {
+    case "super_admin":
+      return "Super Administrador";
+    case "admin":
+      return "Administrador";
+    case "educator":
+      return "Educador";
+    case "student":
+      return "Aluno";
+    default:
+      return "Usuário";
+  }
+}
+
+function getInitials(name: string) {
+  return name
+    .split(" ")
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join("");
+}
 
 export default function ProfilePage() {
   const router = useRouter();
 
-  const [user, setUser] = useState<UserProfile | null>(null);
+  const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
-  const [uploadingAvatar, setUploadingAvatar] = useState(false);
-  const [avatarMessage, setAvatarMessage] = useState("");
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [savingAvatar, setSavingAvatar] = useState(false);
 
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -49,9 +66,10 @@ export default function ProfilePage() {
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
-  const [changingPassword, setChangingPassword] = useState(false);
-  const [passwordMessage, setPasswordMessage] = useState("");
-  const [passwordSuccess, setPasswordSuccess] = useState(false);
+  const [savingPassword, setSavingPassword] = useState(false);
+
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
 
   useEffect(() => {
     loadUser();
@@ -60,7 +78,7 @@ export default function ProfilePage() {
   async function loadUser() {
     try {
       const response = await fetch("/api/auth/me", {
-        credentials: "include",
+        cache: "no-store",
       });
 
       if (!response.ok) {
@@ -79,26 +97,27 @@ export default function ProfilePage() {
     }
   }
 
-  function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
+  function handleAvatarChange(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
 
     if (!file) {
       return;
     }
 
-    setAvatarMessage("");
+    setMessage("");
+    setError("");
 
     if (!file.type.startsWith("image/")) {
-      setAvatarMessage("Selecione uma imagem válida.");
+      setError("Selecione um arquivo de imagem.");
       return;
     }
 
     if (file.size > 5 * 1024 * 1024) {
-      setAvatarMessage("A imagem deve ter no máximo 5 MB.");
+      setError("A imagem deve ter no máximo 5 MB.");
       return;
     }
 
-    setSelectedFile(file);
+    setAvatarFile(file);
 
     const reader = new FileReader();
 
@@ -111,35 +130,31 @@ export default function ProfilePage() {
     reader.readAsDataURL(file);
   }
 
-  async function handleUploadAvatar() {
-    if (!selectedFile) {
+  async function handleAvatarSubmit() {
+    if (!avatarFile) {
+      setError("Selecione uma nova imagem primeiro.");
       return;
     }
 
-    setUploadingAvatar(true);
-    setAvatarMessage("");
+    setSavingAvatar(true);
+    setMessage("");
+    setError("");
 
     try {
       const formData = new FormData();
-      formData.append("avatar", selectedFile);
+      formData.append("avatar", avatarFile);
 
       const response = await fetch("/api/profile/avatar", {
         method: "POST",
         body: formData,
-        credentials: "include",
       });
 
       const data = await response.json();
 
       if (!response.ok) {
-        setAvatarMessage(
-          data.error || "Não foi possível atualizar a foto."
-        );
+        setError(data.error || "Não foi possível atualizar a foto.");
         return;
       }
-
-      setAvatarPreview(data.avatar);
-      setSelectedFile(null);
 
       setUser((previous) =>
         previous
@@ -150,36 +165,38 @@ export default function ProfilePage() {
           : previous
       );
 
-      setAvatarMessage("Foto de perfil atualizada com sucesso.");
+      setAvatarPreview(data.avatar);
+      setAvatarFile(null);
+      setMessage("Foto de perfil atualizada com sucesso.");
     } catch {
-      setAvatarMessage("Erro ao atualizar a foto.");
+      setError("Erro ao atualizar a foto de perfil.");
     } finally {
-      setUploadingAvatar(false);
+      setSavingAvatar(false);
     }
   }
 
-  async function handleChangePassword() {
-    setPasswordMessage("");
-    setPasswordSuccess(false);
+  async function handlePasswordSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    setMessage("");
+    setError("");
 
     if (!currentPassword || !newPassword || !confirmPassword) {
-      setPasswordMessage("Preencha todos os campos de senha.");
+      setError("Preencha todos os campos de senha.");
       return;
     }
 
     if (newPassword.length < 6) {
-      setPasswordMessage(
-        "A nova senha deve ter pelo menos 6 caracteres."
-      );
+      setError("A nova senha deve ter pelo menos 6 caracteres.");
       return;
     }
 
     if (newPassword !== confirmPassword) {
-      setPasswordMessage("A confirmação da senha não confere.");
+      setError("A confirmação da nova senha não confere.");
       return;
     }
 
-    setChangingPassword(true);
+    setSavingPassword(true);
 
     try {
       const response = await fetch("/api/profile/password", {
@@ -187,7 +204,6 @@ export default function ProfilePage() {
         headers: {
           "Content-Type": "application/json",
         },
-        credentials: "include",
         body: JSON.stringify({
           currentPassword,
           newPassword,
@@ -197,9 +213,7 @@ export default function ProfilePage() {
       const data = await response.json();
 
       if (!response.ok) {
-        setPasswordMessage(
-          data.error || "Não foi possível alterar a senha."
-        );
+        setError(data.error || "Não foi possível alterar a senha.");
         return;
       }
 
@@ -207,70 +221,20 @@ export default function ProfilePage() {
       setNewPassword("");
       setConfirmPassword("");
 
-      setPasswordSuccess(true);
-      setPasswordMessage("Senha alterada com sucesso.");
+      setMessage("Senha alterada com sucesso.");
     } catch {
-      setPasswordMessage("Erro ao alterar a senha.");
+      setError("Erro ao alterar a senha.");
     } finally {
-      setChangingPassword(false);
+      setSavingPassword(false);
     }
-  }
-
-  function getInitials(name: string) {
-    const parts = name.trim().split(/\s+/);
-
-    if (parts.length === 1) {
-      return parts[0].slice(0, 2).toUpperCase();
-    }
-
-    return (
-      parts[0][0] + parts[parts.length - 1][0]
-    ).toUpperCase();
-  }
-
-  function PasswordInput({
-    value,
-    setValue,
-    placeholder,
-    visible,
-    setVisible,
-  }: {
-    value: string;
-    setValue: (value: string) => void;
-    placeholder: string;
-    visible: boolean;
-    setVisible: (value: boolean) => void;
-  }) {
-    return (
-      <div className="relative">
-        <input
-          type={visible ? "text" : "password"}
-          value={value}
-          onChange={(event) => setValue(event.target.value)}
-          placeholder={placeholder}
-          className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 pr-12 text-sm text-slate-900 outline-none transition focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
-        />
-
-        <button
-          type="button"
-          onClick={() => setVisible(!visible)}
-          className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700"
-        >
-          {visible ? (
-            <EyeOff size={19} />
-          ) : (
-            <Eye size={19} />
-          )}
-        </button>
-      </div>
-    );
   }
 
   if (loading) {
     return (
       <main className="min-h-screen bg-slate-50 flex items-center justify-center">
-        <div className="text-sm text-slate-500">
-          Carregando perfil...
+        <div className="flex items-center gap-3 text-slate-600">
+          <Loader2 className="h-6 w-6 animate-spin text-orange-500" />
+          <span>Carregando perfil...</span>
         </div>
       </main>
     );
@@ -283,242 +247,316 @@ export default function ProfilePage() {
   return (
     <main className="min-h-screen bg-slate-50">
       <header className="border-b border-slate-200 bg-white">
-        <div className="mx-auto flex max-w-5xl items-center gap-4 px-4 py-4 sm:px-6">
+        <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-4 sm:px-6">
           <button
             onClick={() => router.push("/dashboard")}
-            className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-50"
-            aria-label="Voltar"
+            className="flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-100 hover:text-slate-900"
           >
-            <ArrowLeft size={20} />
+            <ArrowLeft className="h-5 w-5" />
+            <span>Voltar</span>
           </button>
 
-          <div>
-            <h1 className="text-xl font-bold text-slate-900">
-              Meu perfil
-            </h1>
-            <p className="text-sm text-slate-500">
-              Gerencie seus dados, foto e senha
-            </p>
+          <div className="flex items-center gap-3">
+            <div className="hidden text-right sm:block">
+              <p className="text-sm font-bold text-slate-900">{user.name}</p>
+              <p className="text-xs text-slate-500">
+                {getRoleName(user.role)}
+              </p>
+            </div>
+
+            <div className="h-11 w-11 overflow-hidden rounded-full bg-orange-100">
+              {user.avatar ? (
+                <img
+                  src={user.avatar}
+                  alt={`Foto de ${user.name}`}
+                  className="h-full w-full object-cover"
+                />
+              ) : (
+                <div className="flex h-full w-full items-center justify-center text-sm font-bold text-orange-600">
+                  {getInitials(user.name)}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </header>
 
-      <div className="mx-auto max-w-5xl space-y-6 px-4 py-6 sm:px-6 sm:py-8">
-        {/* Perfil */}
-        <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
-          <div className="bg-gradient-to-r from-orange-500 to-orange-600 px-6 py-8">
-            <div className="flex flex-col items-center gap-5 sm:flex-row">
+      <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:py-10">
+        <div className="mb-8">
+          <div className="mb-2 flex items-center gap-2 text-orange-500">
+            <UserCircle className="h-6 w-6" />
+            <span className="text-sm font-bold uppercase tracking-wide">
+              Minha conta
+            </span>
+          </div>
+
+          <h1 className="text-3xl font-black tracking-tight text-slate-900 sm:text-4xl">
+            Meu perfil
+          </h1>
+
+          <p className="mt-2 text-slate-500">
+            Gerencie sua foto de perfil e sua senha de acesso.
+          </p>
+        </div>
+
+        {message && (
+          <div className="mb-6 flex items-center gap-3 rounded-2xl border border-green-200 bg-green-50 p-4 text-sm font-medium text-green-700">
+            <CheckCircle2 className="h-5 w-5 shrink-0" />
+            {message}
+          </div>
+        )}
+
+        {error && (
+          <div className="mb-6 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-medium text-red-700">
+            {error}
+          </div>
+        )}
+
+        <div className="grid gap-6 lg:grid-cols-2">
+          {/* FOTO DE PERFIL */}
+          <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
+            <div className="mb-6 flex items-center gap-3">
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-orange-100 text-orange-600">
+                <Camera className="h-5 w-5" />
+              </div>
+
+              <div>
+                <h2 className="text-lg font-extrabold text-slate-900">
+                  Foto de perfil
+                </h2>
+                <p className="text-sm text-slate-500">
+                  Personalize sua conta
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-col items-center">
               <div className="relative">
-                <div className="flex h-28 w-28 items-center justify-center overflow-hidden rounded-full border-4 border-white bg-orange-100 text-3xl font-bold text-orange-600 shadow-lg">
+                <div className="h-36 w-36 overflow-hidden rounded-full border-4 border-orange-100 bg-orange-50 shadow-lg">
                   {avatarPreview ? (
                     <img
                       src={avatarPreview}
-                      alt="Foto de perfil"
+                      alt={`Foto de ${user.name}`}
                       className="h-full w-full object-cover"
                     />
                   ) : (
-                    getInitials(user.name)
+                    <div className="flex h-full w-full items-center justify-center text-4xl font-black text-orange-500">
+                      {getInitials(user.name)}
+                    </div>
                   )}
                 </div>
 
                 <label
-                  htmlFor="avatar-upload"
-                  className="absolute bottom-0 right-0 flex h-9 w-9 cursor-pointer items-center justify-center rounded-full border-2 border-white bg-slate-900 text-white shadow-md transition hover:bg-slate-700"
-                  title="Selecionar foto"
+                  htmlFor="avatar"
+                  className="absolute bottom-1 right-1 flex h-11 w-11 cursor-pointer items-center justify-center rounded-full border-4 border-white bg-orange-500 text-white shadow-lg transition hover:bg-orange-600"
                 >
-                  <Camera size={17} />
+                  <Camera className="h-5 w-5" />
                 </label>
 
                 <input
-                  id="avatar-upload"
+                  id="avatar"
                   type="file"
                   accept="image/jpeg,image/png,image/webp,image/gif"
-                  onChange={handleFileChange}
                   className="hidden"
+                  onChange={handleAvatarChange}
                 />
               </div>
 
-              <div className="text-center text-white sm:text-left">
-                <h2 className="text-2xl font-bold">
-                  {user.name}
-                </h2>
+              <h3 className="mt-5 text-xl font-extrabold text-slate-900">
+                {user.name}
+              </h3>
 
-                <p className="mt-1 text-sm text-orange-100">
-                  {ROLE_NAMES[user.role]}
-                </p>
+              <p className="mt-1 text-sm text-slate-500">{user.email}</p>
 
-                <p className="mt-2 text-sm text-orange-50">
-                  {user.email}
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <div className="p-6">
-            <div className="grid gap-4 sm:grid-cols-3">
-              <div className="rounded-2xl bg-slate-50 p-4">
-                <User
-                  size={20}
-                  className="text-orange-500"
-                />
-                <p className="mt-3 text-xs font-medium uppercase tracking-wide text-slate-400">
-                  Nome
-                </p>
-                <p className="mt-1 font-semibold text-slate-800">
-                  {user.name}
-                </p>
+              <div className="mt-3 rounded-full bg-orange-50 px-4 py-1.5 text-xs font-bold text-orange-600">
+                {getRoleName(user.role)}
               </div>
 
-              <div className="rounded-2xl bg-slate-50 p-4">
-                <Mail
-                  size={20}
-                  className="text-orange-500"
-                />
-                <p className="mt-3 text-xs font-medium uppercase tracking-wide text-slate-400">
-                  E-mail
-                </p>
-                <p className="mt-1 break-all font-semibold text-slate-800">
-                  {user.email}
-                </p>
-              </div>
+              <p className="mt-6 text-center text-xs leading-5 text-slate-400">
+                JPG, PNG, WEBP ou GIF
+                <br />
+                Tamanho máximo: 5 MB
+              </p>
 
-              <div className="rounded-2xl bg-slate-50 p-4">
-                <ShieldCheck
-                  size={20}
-                  className="text-orange-500"
-                />
-                <p className="mt-3 text-xs font-medium uppercase tracking-wide text-slate-400">
-                  Perfil
-                </p>
-                <p className="mt-1 font-semibold text-slate-800">
-                  {ROLE_NAMES[user.role]}
-                </p>
-              </div>
-            </div>
-
-            {selectedFile && (
-              <div className="mt-5 flex flex-col gap-3 rounded-2xl border border-orange-200 bg-orange-50 p-4 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <p className="text-sm font-semibold text-orange-900">
-                    Nova foto selecionada
-                  </p>
-                  <p className="mt-1 text-xs text-orange-700">
-                    {selectedFile.name}
-                  </p>
-                </div>
-
+              {avatarFile && (
                 <button
-                  type="button"
-                  onClick={handleUploadAvatar}
-                  disabled={uploadingAvatar}
-                  className="rounded-xl bg-orange-500 px-5 py-3 text-sm font-bold text-white transition hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-60"
+                  onClick={handleAvatarSubmit}
+                  disabled={savingAvatar}
+                  className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-orange-500 px-5 py-3 text-sm font-bold text-white transition hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
                 >
-                  {uploadingAvatar
-                    ? "Salvando..."
-                    : "Salvar foto"}
+                  {savingAvatar ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Salvando...
+                    </>
+                  ) : (
+                    <>
+                      <Save className="h-4 w-4" />
+                      Salvar foto
+                    </>
+                  )}
                 </button>
-              </div>
-            )}
-
-            <p className="mt-4 text-xs text-slate-400">
-              Formatos aceitos: JPG, PNG, WEBP ou GIF. Tamanho máximo: 5 MB.
-            </p>
-
-            {avatarMessage && (
-              <div className="mt-4 flex items-center gap-2 rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
-                <CheckCircle2 size={18} />
-                {avatarMessage}
-              </div>
-            )}
-          </div>
-        </section>
-
-        {/* Senha */}
-        <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-          <div className="mb-6 flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-orange-100 text-orange-600">
-              <LockKeyhole size={21} />
+              )}
             </div>
+          </section>
+
+          {/* ALTERAR SENHA */}
+          <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
+            <div className="mb-6 flex items-center gap-3">
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-orange-100 text-orange-600">
+                <KeyRound className="h-5 w-5" />
+              </div>
+
+              <div>
+                <h2 className="text-lg font-extrabold text-slate-900">
+                  Trocar senha
+                </h2>
+                <p className="text-sm text-slate-500">
+                  Mantenha sua conta protegida
+                </p>
+              </div>
+            </div>
+
+            <div className="mb-6 flex gap-3 rounded-2xl bg-slate-50 p-4">
+              <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-orange-500" />
+
+              <p className="text-xs leading-5 text-slate-500">
+                Para alterar sua senha, informe sua senha atual e depois
+                cadastre uma nova senha com pelo menos 6 caracteres.
+              </p>
+            </div>
+
+            <form onSubmit={handlePasswordSubmit} className="space-y-5">
+              <div>
+                <label className="mb-2 block text-sm font-bold text-slate-700">
+                  Senha atual
+                </label>
+
+                <div className="relative">
+                  <input
+                    type={showCurrentPassword ? "text" : "password"}
+                    value={currentPassword}
+                    onChange={(event) =>
+                      setCurrentPassword(event.target.value)
+                    }
+                    placeholder="Digite sua senha atual"
+                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 pr-12 text-sm outline-none transition focus:border-orange-400 focus:ring-4 focus:ring-orange-100"
+                  />
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setShowCurrentPassword((previous) => !previous)
+                    }
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                  >
+                    {showCurrentPassword ? (
+                      <EyeOff className="h-5 w-5" />
+                    ) : (
+                      <Eye className="h-5 w-5" />
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-bold text-slate-700">
+                  Nova senha
+                </label>
+
+                <div className="relative">
+                  <input
+                    type={showNewPassword ? "text" : "password"}
+                    value={newPassword}
+                    onChange={(event) => setNewPassword(event.target.value)}
+                    placeholder="Digite sua nova senha"
+                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 pr-12 text-sm outline-none transition focus:border-orange-400 focus:ring-4 focus:ring-orange-100"
+                  />
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setShowNewPassword((previous) => !previous)
+                    }
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                  >
+                    {showNewPassword ? (
+                      <EyeOff className="h-5 w-5" />
+                    ) : (
+                      <Eye className="h-5 w-5" />
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-bold text-slate-700">
+                  Confirmar nova senha
+                </label>
+
+                <div className="relative">
+                  <input
+                    type={showConfirmPassword ? "text" : "password"}
+                    value={confirmPassword}
+                    onChange={(event) =>
+                      setConfirmPassword(event.target.value)
+                    }
+                    placeholder="Digite novamente a nova senha"
+                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 pr-12 text-sm outline-none transition focus:border-orange-400 focus:ring-4 focus:ring-orange-100"
+                  />
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setShowConfirmPassword((previous) => !previous)
+                    }
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                  >
+                    {showConfirmPassword ? (
+                      <EyeOff className="h-5 w-5" />
+                    ) : (
+                      <Eye className="h-5 w-5" />
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={savingPassword}
+                className="flex w-full items-center justify-center gap-2 rounded-xl bg-orange-500 px-5 py-3.5 text-sm font-bold text-white transition hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {savingPassword ? (
+                  <>
+                    <Loader2 className="h-5 w-5 animate-spin" />
+                    Salvando...
+                  </>
+                ) : (
+                  <>
+                    <Save className="h-5 w-5" />
+                    Alterar senha
+                  </>
+                )}
+              </button>
+            </form>
+          </section>
+        </div>
+
+        <div className="mt-6 rounded-3xl border border-orange-100 bg-orange-50 p-5">
+          <div className="flex gap-3">
+            <ShieldCheck className="h-5 w-5 shrink-0 text-orange-500" />
 
             <div>
-              <h2 className="text-lg font-bold text-slate-900">
-                Trocar senha
-              </h2>
-              <p className="text-sm text-slate-500">
-                Atualize sua senha de acesso
+              <h3 className="text-sm font-bold text-slate-800">
+                Segurança da conta
+              </h3>
+              <p className="mt-1 text-xs leading-5 text-slate-500">
+                Sua senha é armazenada de forma protegida. Ao alterar a senha,
+                as outras sessões da sua conta são encerradas.
               </p>
             </div>
           </div>
-
-          <div className="grid gap-4">
-            <div>
-              <label className="mb-2 block text-sm font-semibold text-slate-700">
-                Senha atual
-              </label>
-
-              <PasswordInput
-                value={currentPassword}
-                setValue={setCurrentPassword}
-                placeholder="Digite sua senha atual"
-                visible={showCurrentPassword}
-                setVisible={setShowCurrentPassword}
-              />
-            </div>
-
-            <div>
-              <label className="mb-2 block text-sm font-semibold text-slate-700">
-                Nova senha
-              </label>
-
-              <PasswordInput
-                value={newPassword}
-                setValue={setNewPassword}
-                placeholder="Digite sua nova senha"
-                visible={showNewPassword}
-                setVisible={setShowNewPassword}
-              />
-            </div>
-
-            <div>
-              <label className="mb-2 block text-sm font-semibold text-slate-700">
-                Confirmar nova senha
-              </label>
-
-              <PasswordInput
-                value={confirmPassword}
-                setValue={setConfirmPassword}
-                placeholder="Digite novamente sua nova senha"
-                visible={showConfirmPassword}
-                setVisible={setShowConfirmPassword}
-              />
-            </div>
-          </div>
-
-          {passwordMessage && (
-            <div
-              className={`mt-4 rounded-xl px-4 py-3 text-sm ${
-                passwordSuccess
-                  ? "bg-emerald-50 text-emerald-700"
-                  : "bg-red-50 text-red-700"
-              }`}
-            >
-              {passwordMessage}
-            </div>
-          )}
-
-          <div className="mt-5 flex justify-end">
-            <button
-              type="button"
-              onClick={handleChangePassword}
-              disabled={changingPassword}
-              className="rounded-xl bg-slate-900 px-6 py-3 text-sm font-bold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {changingPassword
-                ? "Alterando..."
-                : "Alterar senha"}
-            </button>
-          </div>
-        </section>
+        </div>
       </div>
     </main>
   );
