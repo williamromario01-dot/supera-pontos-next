@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  ArrowLeft,
+  Home,
   Brain,
   Trophy,
   Medal,
@@ -127,9 +127,11 @@ export default function RankingPage() {
           <button
             onClick={() => router.push("/dashboard")}
             className="flex items-center gap-2 text-slate-600 hover:text-orange-600 font-semibold transition-colors"
+            aria-label="Ir para Home"
+            title="Home"
           >
-            <ArrowLeft className="w-5 h-5" />
-            <span className="hidden sm:inline">Voltar</span>
+            <Home className="w-5 h-5" />
+            <span>HOME</span>
           </button>
 
           <div className="flex items-center gap-2">
@@ -186,9 +188,7 @@ export default function RankingPage() {
                 <Trophy className="w-5 h-5" />
                 <div>
                   <p className="text-xs text-orange-100">Categorias</p>
-                  <p className="font-extrabold">
-                    {rankings.length}
-                  </p>
+                  <p className="font-extrabold">{rankings.length}</p>
                 </div>
               </div>
 
@@ -196,9 +196,7 @@ export default function RankingPage() {
                 <Users className="w-5 h-5" />
                 <div>
                   <p className="text-xs text-orange-100">Participantes</p>
-                  <p className="font-extrabold">
-                    {totalParticipants}
-                  </p>
+                  <p className="font-extrabold">{totalParticipants}</p>
                 </div>
               </div>
             </div>
