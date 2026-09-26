@@ -25,6 +25,7 @@ import {
   Users,
   School,
   UserCircle,
+  UserPlus,
 } from "lucide-react";
 
 interface User {
@@ -287,6 +288,14 @@ export default function DashboardPage() {
     user?.role === "admin" ||
     user?.role === "educator";
 
+  // INDICAÇÕES
+  // Todos os perfis autenticados podem acessar a aba.
+  const canAccessReferrals =
+    user?.role === "student" ||
+    user?.role === "educator" ||
+    user?.role === "admin" ||
+    user?.role === "super_admin";
+
   if (loading) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center">
@@ -409,6 +418,16 @@ export default function DashboardPage() {
                 >
                   <Tags size={17} />
                   Categorias
+                </button>
+              )}
+
+              {canAccessReferrals && (
+                <button
+                  onClick={() => router.push("/referrals")}
+                  className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-slate-500 hover:bg-slate-100 text-sm font-bold transition"
+                >
+                  <UserPlus size={17} />
+                  Indicações
                 </button>
               )}
 
@@ -559,6 +578,19 @@ export default function DashboardPage() {
                   >
                     <Tags size={18} />
                     Categorias
+                  </button>
+                )}
+
+                {canAccessReferrals && (
+                  <button
+                    onClick={() => {
+                      setMenuOpen(false);
+                      router.push("/referrals");
+                    }}
+                    className="flex items-center gap-3 px-4 py-3 rounded-xl text-slate-600 hover:bg-slate-100 font-bold text-sm"
+                  >
+                    <UserPlus size={18} />
+                    Indicações
                   </button>
                 )}
 
@@ -1384,6 +1416,32 @@ export default function DashboardPage() {
 
                 <p className="text-xs text-slate-400 mt-1">
                   Consulte e gerencie as categorias de pontuação.
+                </p>
+
+                <div className="mt-4 flex items-center gap-1 text-xs font-bold text-orange-500">
+                  Acessar
+                  <ChevronRight size={14} />
+                </div>
+
+              </button>
+            )}
+
+            {canAccessReferrals && (
+              <button
+                onClick={() => router.push("/referrals")}
+                className="group bg-white border border-slate-200 rounded-2xl p-5 text-left hover:border-orange-200 hover:shadow-md transition"
+              >
+
+                <div className="w-11 h-11 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center mb-4">
+                  <UserPlus size={21} />
+                </div>
+
+                <h3 className="font-black text-slate-800">
+                  Indicações
+                </h3>
+
+                <p className="text-xs text-slate-400 mt-1">
+                  Envie indicações e acompanhe as aprovações.
                 </p>
 
                 <div className="mt-4 flex items-center gap-1 text-xs font-bold text-orange-500">
