@@ -325,24 +325,6 @@ body {
   font-weight: 800;
 }
 
-/* =========================================
-   RESPONSIVIDADE
-========================================= */
-
-@media (max-width: 480px) {
-  .login-page {
-    padding: 20px 12px;
-  }
-
-  .login-card-content {
-    padding: 24px 20px;
-  }
-
-  .login-title {
-    font-size: 30px;
-  }
-
-  .login-subtitle {
-    font-size: 14px;
-  }
+.tailwind-check {
+  @apply bg-red-500 text-white p-10 rounded-2xl text-3xl font-bold;
 }
