@@ -1,5 +1,7 @@
 'use client';
 
+'use client';
+
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
@@ -292,4 +294,5 @@ return ( <div className="min-h-screen bg-slate-100 flex flex-col">
 ```
 
 );
+}
 }    
