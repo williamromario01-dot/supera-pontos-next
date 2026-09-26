@@ -59,26 +59,26 @@ export default function CategoriesPage() {
     useState(true);
 
   useEffect(() => {
-    const role = localStorage.getItem("user_role");
-
-    if (role !== "educator" && role !== "super_admin") {
-      router.push("/dashboard");
-      return;
-    }
-
     loadCategories();
-  }, [router]);
+  }, []);
 
   async function loadCategories() {
     try {
       setLoading(true);
       setError("");
 
-      const response = await fetch("/api/categories");
+      const response = await fetch("/api/categories", {
+        credentials: "include",
+      });
 
       const data = await response.json();
 
       if (!response.ok) {
+        if (response.status === 401 || response.status === 403) {
+          router.push("/dashboard");
+          return;
+        }
+
         throw new Error(
           data.error || "Não foi possível carregar as categorias."
         );
@@ -119,6 +119,7 @@ export default function CategoriesPage() {
     setWeeklyGoal(String(category.weeklyGoal));
     setDefaultPoints(String(category.defaultPoints));
     setParticipatesInRanking(category.participatesInRanking);
+    setError("");
 
     window.scrollTo({
       top: 0,
@@ -152,22 +153,18 @@ export default function CategoriesPage() {
     try {
       setSaving(true);
 
-      if (editingId) {
-        /*
-         * A edição será conectada à API de PUT
-         * na próxima etapa.
-         */
-        setError(
-          "A criação já está funcionando. A edição será conectada na próxima etapa."
-        );
-        return;
-      }
+      const url = editingId
+        ? `/api/categories/${editingId}`
+        : "/api/categories";
 
-      const response = await fetch("/api/categories", {
-        method: "POST",
+      const method = editingId ? "PATCH" : "POST";
+
+      const response = await fetch(url, {
+        method,
         headers: {
           "Content-Type": "application/json",
         },
+        credentials: "include",
         body: JSON.stringify({
           name: name.trim(),
           description: description.trim(),
@@ -183,14 +180,24 @@ export default function CategoriesPage() {
 
       if (!response.ok) {
         throw new Error(
-          data.error || "Não foi possível criar a categoria."
+          data.error || "Não foi possível salvar a categoria."
         );
       }
 
-      setCategories((current) => [
-        ...current,
-        data.category,
-      ]);
+      if (editingId) {
+        setCategories((current) =>
+          current.map((category) =>
+            category.id === editingId
+              ? data.category
+              : category
+          )
+        );
+      } else {
+        setCategories((current) => [
+          ...current,
+          data.category,
+        ]);
+      }
 
       clearForm();
     } catch (err) {
@@ -208,20 +215,48 @@ export default function CategoriesPage() {
 
   async function handleDelete(id: string) {
     const confirmed = window.confirm(
-      "Tem certeza que deseja excluir esta categoria?"
+      "Tem certeza que deseja excluir esta categoria?\n\nEssa ação não poderá ser desfeita."
     );
 
     if (!confirmed) {
       return;
     }
 
-    /*
-     * A exclusão será conectada à API de DELETE
-     * na próxima etapa.
-     */
-    setError(
-      "A criação está funcionando. A exclusão será conectada na próxima etapa."
-    );
+    try {
+      setError("");
+
+      const response = await fetch(
+        `/api/categories/${id}`,
+        {
+          method: "DELETE",
+          credentials: "include",
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          data.error || "Não foi possível excluir a categoria."
+        );
+      }
+
+      setCategories((current) =>
+        current.filter((category) => category.id !== id)
+      );
+
+      if (editingId === id) {
+        clearForm();
+      }
+    } catch (err) {
+      console.error(err);
+
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Erro ao excluir categoria."
+      );
+    }
   }
 
   return (
@@ -255,8 +290,6 @@ export default function CategoriesPage() {
       </header>
 
       <main className="max-w-6xl mx-auto p-4 sm:p-6 space-y-6">
-        {/* FORMULÁRIO */}
-
         <section className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
           <div className="flex items-center justify-between mb-6">
             <div>
@@ -267,8 +300,7 @@ export default function CategoriesPage() {
               </h2>
 
               <p className="text-sm text-slate-500 mt-1">
-                Configure como essa categoria funcionará no
-                sistema.
+                Configure como essa categoria funcionará no sistema.
               </p>
             </div>
 
@@ -353,13 +385,17 @@ export default function CategoriesPage() {
                 <input
                   type="color"
                   value={color}
-                  onChange={(e) => setColor(e.target.value)}
+                  onChange={(e) =>
+                    setColor(e.target.value)
+                  }
                   className="w-16 h-12 rounded-lg cursor-pointer"
                 />
 
                 <input
                   value={color}
-                  onChange={(e) => setColor(e.target.value)}
+                  onChange={(e) =>
+                    setColor(e.target.value)
+                  }
                   className="flex-1 px-4 py-3 rounded-xl border border-slate-300 font-mono"
                 />
               </div>
@@ -428,8 +464,7 @@ export default function CategoriesPage() {
                   </strong>
 
                   <span className="block text-xs text-slate-500">
-                    Esta categoria aparecerá nos rankings dos
-                    alunos.
+                    Esta categoria aparecerá nos rankings dos alunos.
                   </span>
                 </span>
               </label>
@@ -441,7 +476,9 @@ export default function CategoriesPage() {
                 disabled={saving}
                 className="flex items-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-xl font-bold shadow-md transition"
               >
-                {editingId ? (
+                {saving ? (
+                  "Salvando..."
+                ) : editingId ? (
                   <>
                     <Save className="w-5 h-5" />
                     Salvar alterações
@@ -456,8 +493,6 @@ export default function CategoriesPage() {
             </div>
           </form>
         </section>
-
-        {/* LISTA */}
 
         <section>
           <div className="flex items-center justify-between mb-4">
@@ -521,7 +556,9 @@ export default function CategoriesPage() {
 
                     <div className="flex gap-1">
                       <button
-                        onClick={() => startEdit(category)}
+                        onClick={() =>
+                          startEdit(category)
+                        }
                         className="p-2 rounded-lg hover:bg-blue-50 text-blue-600"
                         title="Editar"
                       >
