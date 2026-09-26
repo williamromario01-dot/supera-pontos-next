@@ -59,7 +59,6 @@ const [error, setError] = useState("");
 async function handleLogin(event: FormEvent<HTMLFormElement>) {
 event.preventDefault();
 
-```
 setError("");
 setLoading(true);
 
@@ -107,13 +106,11 @@ try {
 } finally {
   setLoading(false);
 }
-```
 
 }
 
 return ( <main className="login-page"> <div className="login-container">
 
-```
     {/* CABEÇALHO */}
     <div className="login-header">
 
@@ -501,7 +498,6 @@ return ( <main className="login-page"> <div className="login-container">
     }
   `}</style>
 </main>
-```
 
 );
 }
