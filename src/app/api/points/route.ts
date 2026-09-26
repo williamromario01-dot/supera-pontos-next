@@ -1,196 +1,194 @@
 import { NextRequest, NextResponse } from "next/server";
-import clientPromise from "@/lib/mongodb";
 import { ObjectId } from "mongodb";
+import clientPromise from "@/lib/mongodb";
 
-function getWeekKey(date: Date = new Date()) {
-  const d = new Date(date);
-  d.setHours(0, 0, 0, 0);
+const DB_NAME = "supera_pontos";
 
-  const day = d.getDay();
-  const diff = day === 0 ? -6 : 1 - day;
+const ALLOWED_ROLES = ["super_admin", "educator"];
 
-  d.setDate(d.getDate() + diff);
+async function getAuthenticatedUser(request: NextRequest) {
+  const sessionToken = request.cookies.get("supera_session")?.value;
 
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, "0");
-  const dayOfMonth = String(d.getDate()).padStart(2, "0");
+  if (!sessionToken) {
+    return null;
+  }
 
-  return `${year}-${month}-${dayOfMonth}`;
+  const client = await clientPromise;
+  const db = client.db(DB_NAME);
+
+  const session = await db.collection("sessions").findOne({
+    token: sessionToken,
+  });
+
+  if (!session) {
+    return null;
+  }
+
+  if (new Date(session.expiresAt) < new Date()) {
+    await db.collection("sessions").deleteOne({
+      _id: session._id,
+    });
+
+    return null;
+  }
+
+  const user = await db.collection("users").findOne({
+    _id: session.userId,
+  });
+
+  return user || null;
 }
 
-export async function GET() {
-  try {
-    const client = await clientPromise;
-    const db = client.db("supera_pontos");
-
-    const users = db.collection("users");
-
-    const students = await users
-      .find(
-        { role: "student" },
-        {
-          projection: {
-            passwordHash: 0,
-          },
-        }
-      )
-      .sort({ name: 1 })
-      .toArray();
-
-    return NextResponse.json({
-      students: students.map((student) => ({
-        id: student._id.toString(),
-        name: student.name,
-        email: student.email,
-        points: student.points || 0,
-      })),
-    });
-  } catch (error) {
-    console.error("Erro ao buscar alunos:", error);
-
-    return NextResponse.json(
-      {
-        error: "Erro ao buscar alunos.",
-      },
-      { status: 500 }
-    );
+function getObjectId(id: string) {
+  if (!ObjectId.isValid(id)) {
+    return null;
   }
+
+  return new ObjectId(id);
 }
 
 export async function POST(request: NextRequest) {
   try {
+    // 1. Verificar sessão
+    const user = await getAuthenticatedUser(request);
+
+    if (!user) {
+      return NextResponse.json(
+        { error: "Não autenticado." },
+        { status: 401 }
+      );
+    }
+
+    // 2. Verificar permissão
+    if (!ALLOWED_ROLES.includes(user.role)) {
+      return NextResponse.json(
+        {
+          error:
+            "Você não tem permissão para lançar pontos.",
+        },
+        { status: 403 }
+      );
+    }
+
     const body = await request.json();
 
     const studentId = String(body.studentId || "").trim();
-    const category = String(body.category || "").trim();
-    const completed = Number(body.completed);
-    const weeklyGoal = Number(body.weeklyGoal);
+    const categoryId = String(body.categoryId || "").trim();
+    const points = Number(body.points);
 
-    if (!studentId || !category) {
+    // 3. Validar dados básicos
+    if (!studentId) {
+      return NextResponse.json(
+        { error: "O aluno é obrigatório." },
+        { status: 400 }
+      );
+    }
+
+    if (!categoryId) {
+      return NextResponse.json(
+        { error: "A categoria é obrigatória." },
+        { status: 400 }
+      );
+    }
+
+    if (!Number.isFinite(points) || points <= 0) {
       return NextResponse.json(
         {
-          error: "Aluno e categoria são obrigatórios.",
+          error:
+            "A quantidade de pontos deve ser maior que zero.",
         },
         { status: 400 }
       );
     }
 
-    if (!Number.isFinite(completed) || completed < 0) {
+    // Evita pontuação com casas decimais
+    if (!Number.isInteger(points)) {
       return NextResponse.json(
         {
-          error: "A quantidade realizada é inválida.",
+          error: "A quantidade de pontos deve ser um número inteiro.",
         },
         { status: 400 }
       );
     }
 
-    if (!Number.isFinite(weeklyGoal) || weeklyGoal <= 0) {
+    const studentObjectId = getObjectId(studentId);
+    const categoryObjectId = getObjectId(categoryId);
+
+    if (!studentObjectId) {
       return NextResponse.json(
-        {
-          error: "A meta semanal deve ser maior que zero.",
-        },
+        { error: "ID do aluno inválido." },
         { status: 400 }
       );
     }
 
-    if (!ObjectId.isValid(studentId)) {
+    if (!categoryObjectId) {
       return NextResponse.json(
-        {
-          error: "ID do aluno inválido.",
-        },
+        { error: "ID da categoria inválido." },
         { status: 400 }
       );
     }
 
     const client = await clientPromise;
-    const db = client.db("supera_pontos");
+    const db = client.db(DB_NAME);
 
     const users = db.collection("users");
-    const pointRecords = db.collection("point_records");
+    const categories = db.collection("categories");
+    const pointEvents = db.collection("pointEvents");
 
-    const studentObjectId = new ObjectId(studentId);
-
+    // 4. Verificar aluno
     const student = await users.findOne({
       _id: studentObjectId,
-      role: "student",
     });
 
     if (!student) {
       return NextResponse.json(
-        {
-          error: "Aluno não encontrado.",
-        },
+        { error: "Aluno não encontrado." },
         { status: 404 }
       );
     }
 
-    const weekKey = getWeekKey();
-
-    const existingRecord = await pointRecords.findOne({
-      studentId: studentObjectId,
-      category,
-      weekKey,
-    });
-
-    if (existingRecord) {
+    // Impede lançar pontos para outro educador/admin
+    if (student.role !== "student") {
       return NextResponse.json(
         {
           error:
-            "Já existe um lançamento para esta categoria deste aluno nesta semana.",
+            "Os pontos só podem ser lançados para alunos.",
         },
-        { status: 409 }
+        { status: 400 }
       );
     }
 
-    const halfGoal = weeklyGoal / 2;
+    // 5. Verificar categoria
+    const category = await categories.findOne({
+      _id: categoryObjectId,
+    });
 
-    let basePoints = 0;
-    let performance: "baixo" | "medio" | "meta" | "ultrapassou";
-
-    if (completed > weeklyGoal) {
-      basePoints = 50;
-      performance = "ultrapassou";
-    } else if (completed >= weeklyGoal) {
-      basePoints = 50;
-      performance = "meta";
-    } else if (completed >= halfGoal) {
-      basePoints = 25;
-      performance = "medio";
-    } else {
-      basePoints = 5;
-      performance = "baixo";
+    if (!category) {
+      return NextResponse.json(
+        { error: "Categoria não encontrada." },
+        { status: 404 }
+      );
     }
 
-    const extraPoints = completed > weeklyGoal ? 10 : 0;
-
-    const totalPoints = basePoints + extraPoints;
-
+    // 6. Criar evento de pontos
     const now = new Date();
 
-    const record = {
+    const pointEvent = {
       studentId: studentObjectId,
-      studentName: student.name,
-      category,
-      weekKey,
-      completed,
-      weeklyGoal,
-      performance,
-      basePoints,
-      extraPoints,
-      totalPoints,
+      categoryId: categoryObjectId,
+      educatorId: user._id,
+      points,
       createdAt: now,
-      updatedAt: now,
     };
 
-    const insertResult = await pointRecords.insertOne(record);
+    const result = await pointEvents.insertOne(pointEvent);
 
-    const updateResult = await users.updateOne(
-      {
-        _id: studentObjectId,
-      },
+    // 7. Atualizar total geral do aluno
+    await users.updateOne(
+      { _id: studentObjectId },
       {
         $inc: {
-          points: totalPoints,
+          points,
         },
         $set: {
           updatedAt: now,
@@ -198,45 +196,28 @@ export async function POST(request: NextRequest) {
       }
     );
 
-    if (updateResult.matchedCount === 0) {
-      await pointRecords.deleteOne({
-        _id: insertResult.insertedId,
-      });
-
-      return NextResponse.json(
-        {
-          error: "Não foi possível atualizar os pontos do aluno.",
-        },
-        { status: 500 }
-      );
-    }
-
     return NextResponse.json(
       {
-        message: "Pontuação registrada com sucesso.",
-        record: {
-          studentId,
+        message: "Pontos lançados com sucesso.",
+        pointEvent: {
+          id: result.insertedId.toString(),
+          studentId: studentObjectId.toString(),
           studentName: student.name,
-          category,
-          weekKey,
-          completed,
-          weeklyGoal,
-          performance,
-          basePoints,
-          extraPoints,
-          totalPoints,
-          newTotalPoints: (student.points || 0) + totalPoints,
+          categoryId: categoryObjectId.toString(),
+          categoryName: category.name,
+          points,
+          educatorId: user._id.toString(),
+          educatorName: user.name,
+          createdAt: now,
         },
       },
       { status: 201 }
     );
   } catch (error) {
-    console.error("Erro ao registrar pontuação:", error);
+    console.error("Erro ao lançar pontos:", error);
 
     return NextResponse.json(
-      {
-        error: "Erro interno ao registrar pontuação.",
-      },
+      { error: "Erro interno ao lançar pontos." },
       { status: 500 }
     );
   }
