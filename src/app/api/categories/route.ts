@@ -1,185 +1,158 @@
-import { NextRequest, NextResponse } from 'next/server';
-import clientPromise from '@/lib/mongodb';
-import { ObjectId } from 'mongodb';
+import { NextRequest, NextResponse } from "next/server";
+import clientPromise from "@/lib/mongodb";
 
-async function getAuthenticatedUser(request: NextRequest) {
-const sessionToken = request.cookies.get('supera_session')?.value;
+const DB_NAME = "supera_pontos";
 
-if (!sessionToken) {
-return null;
-}
+export async function GET() {
+  try {
+    const client = await clientPromise;
+    const db = client.db(DB_NAME);
 
-const client = await clientPromise;
-const db = client.db('supera_pontos');
+    const categories = await db
+      .collection("categories")
+      .find({})
+      .sort({ createdAt: 1 })
+      .toArray();
 
-const session = await db.collection('sessions').findOne({
-token: sessionToken,
-});
+    const formattedCategories = categories.map((category) => ({
+      id: category._id.toString(),
+      name: category.name,
+      description: category.description || "",
+      icon: category.icon || "⭐",
+      color: category.color || "#3B82F6",
+      weeklyGoal: category.weeklyGoal || 10,
+      defaultPoints: category.defaultPoints || 50,
+      participatesInRanking: category.participatesInRanking !== false,
+      createdAt: category.createdAt,
+      updatedAt: category.updatedAt,
+    }));
 
-if (!session) {
-return null;
-}
+    return NextResponse.json({
+      categories: formattedCategories,
+    });
+  } catch (error) {
+    console.error("Erro ao buscar categorias:", error);
 
-if (new Date(session.expiresAt) < new Date()) {
-await db.collection('sessions').deleteOne({
-_id: session._id,
-});
-
-return null;
-
-}
-
-const user = await db.collection('users').findOne({
-_id: session.userId,
-});
-
-return user;
-}
-
-export async function GET(request: NextRequest) {
-try {
-const user = await getAuthenticatedUser(request);
-
-if (!user) {
-  return NextResponse.json(
-    { error: 'Não autenticado.' },
-    { status: 401 }
-  );
-}
-
-const client = await clientPromise;
-const db = client.db('supera_pontos');
-
-const categories = await db
-  .collection('categories')
-  .find({ active: true })
-  .sort({ name: 1 })
-  .toArray();
-
-return NextResponse.json({
-  categories: categories.map((category) => ({
-    id: category._id.toString(),
-    name: category.name,
-    description: category.description || '',
-    icon: category.icon || '🧠',
-    color: category.color || '#F97316',
-    weeklyGoal: category.weeklyGoal || 10,
-    rankable: category.rankable !== false,
-    active: category.active !== false,
-  })),
-});
-
-} catch (error) {
-console.error('Erro ao buscar categorias:', error);
-
-return NextResponse.json(
-  { error: 'Erro interno ao buscar categorias.' },
-  { status: 500 }
-);
-
-}
+    return NextResponse.json(
+      {
+        error: "Erro interno ao buscar categorias.",
+      },
+      {
+        status: 500,
+      }
+    );
+  }
 }
 
 export async function POST(request: NextRequest) {
-try {
-const user = await getAuthenticatedUser(request);
+  try {
+    const body = await request.json();
 
-if (!user) {
-  return NextResponse.json(
-    { error: 'Não autenticado.' },
-    { status: 401 }
-  );
-}
+    const name = String(body.name || "").trim();
+    const description = String(body.description || "").trim();
+    const icon = String(body.icon || "⭐").trim();
+    const color = String(body.color || "#3B82F6").trim();
 
-const allowedRoles = ['super_admin', 'admin', 'educator'];
+    const weeklyGoal = Number(body.weeklyGoal);
+    const defaultPoints = Number(body.defaultPoints);
 
-if (!allowedRoles.includes(user.role)) {
-  return NextResponse.json(
-    { error: 'Você não tem permissão para criar categorias.' },
-    { status: 403 }
-  );
-}
+    const participatesInRanking =
+      body.participatesInRanking !== false;
 
-const body = await request.json();
+    if (!name) {
+      return NextResponse.json(
+        {
+          error: "O nome da categoria é obrigatório.",
+        },
+        {
+          status: 400,
+        }
+      );
+    }
 
-const name = String(body.name || '').trim();
-const description = String(body.description || '').trim();
-const icon = String(body.icon || '🧠').trim();
-const color = String(body.color || '#F97316').trim();
-const weeklyGoal = Number(body.weeklyGoal);
-const rankable = body.rankable !== false;
+    if (!Number.isFinite(weeklyGoal) || weeklyGoal <= 0) {
+      return NextResponse.json(
+        {
+          error: "A meta semanal deve ser maior que zero.",
+        },
+        {
+          status: 400,
+        }
+      );
+    }
 
-if (!name) {
-  return NextResponse.json(
-    { error: 'O nome da categoria é obrigatório.' },
-    { status: 400 }
-  );
-}
+    if (!Number.isFinite(defaultPoints) || defaultPoints <= 0) {
+      return NextResponse.json(
+        {
+          error: "A pontuação padrão deve ser maior que zero.",
+        },
+        {
+          status: 400,
+        }
+      );
+    }
 
-if (!Number.isFinite(weeklyGoal) || weeklyGoal <= 0) {
-  return NextResponse.json(
-    { error: 'A meta semanal deve ser maior que zero.' },
-    { status: 400 }
-  );
-}
+    const client = await clientPromise;
+    const db = client.db(DB_NAME);
 
-const client = await clientPromise;
-const db = client.db('supera_pontos');
-const categories = db.collection('categories');
+    const categories = db.collection("categories");
 
-const existingCategory = await categories.findOne({
-  name: {
-    $regex: `^${name}$`,
-    $options: 'i',
-  },
-});
+    const existingCategory = await categories.findOne({
+      name: {
+        $regex: `^${name}$`,
+        $options: "i",
+      },
+    });
 
-if (existingCategory) {
-  return NextResponse.json(
-    { error: 'Já existe uma categoria com esse nome.' },
-    { status: 409 }
-  );
-}
+    if (existingCategory) {
+      return NextResponse.json(
+        {
+          error: "Já existe uma categoria com esse nome.",
+        },
+        {
+          status: 409,
+        }
+      );
+    }
 
-const newCategory = {
-  name,
-  description,
-  icon,
-  color,
-  weeklyGoal,
-  rankable,
-  active: true,
-  createdBy: user._id,
-  createdAt: new Date(),
-  updatedAt: new Date(),
-};
+    const now = new Date();
 
-const result = await categories.insertOne(newCategory);
-
-return NextResponse.json(
-  {
-    message: 'Categoria criada com sucesso.',
-    category: {
-      id: result.insertedId.toString(),
+    const newCategory = {
       name,
       description,
       icon,
       color,
       weeklyGoal,
-      rankable,
-      active: true,
-    },
-  },
-  { status: 201 }
-);
+      defaultPoints,
+      participatesInRanking,
+      createdAt: now,
+      updatedAt: now,
+    };
 
-} catch (error) {
-console.error('Erro ao criar categoria:', error);
+    const result = await categories.insertOne(newCategory);
 
-return NextResponse.json(
-  { error: 'Erro interno ao criar categoria.' },
-  { status: 500 }
-);
+    return NextResponse.json(
+      {
+        message: "Categoria criada com sucesso.",
+        category: {
+          id: result.insertedId.toString(),
+          ...newCategory,
+        },
+      },
+      {
+        status: 201,
+      }
+    );
+  } catch (error) {
+    console.error("Erro ao criar categoria:", error);
 
-}
+    return NextResponse.json(
+      {
+        error: "Erro interno ao criar categoria.",
+      },
+      {
+        status: 500,
+      }
+    );
+  }
 }
