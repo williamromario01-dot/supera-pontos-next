@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import {
+  Home,
   Building2,
   Plus,
   Users,
@@ -13,6 +14,7 @@ import {
   X,
   Loader2,
 } from "lucide-react";
+import Link from "next/link";
 
 interface School {
   id: string;
@@ -130,33 +132,48 @@ export default function SchoolsPage() {
   return (
     <main className="min-h-screen bg-slate-50">
       <header className="border-b border-slate-200 bg-white">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-5 sm:px-6 lg:px-8">
-          <div className="flex items-center gap-3">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-orange-500 text-white shadow-lg shadow-orange-500/20">
-              <Building2 size={25} />
-            </div>
+        <div className="mx-auto max-w-7xl px-4 py-5 sm:px-6 lg:px-8">
 
-            <div>
-              <h1 className="text-xl font-bold text-slate-900">
-                Escolas
-              </h1>
-              <p className="text-sm text-slate-500">
-                Gerencie as escolas do sistema
-              </p>
-            </div>
+          <div className="mb-4">
+            <Link
+              href="/dashboard"
+              aria-label="Ir para Home"
+              title="Home"
+              className="inline-flex items-center gap-2 text-sm font-medium text-slate-500 transition hover:text-orange-600"
+            >
+              <Home size={18} />
+              HOME
+            </Link>
           </div>
 
-          <button
-            onClick={() => {
-              setShowForm(true);
-              setMessage("");
-              setError("");
-            }}
-            className="flex items-center gap-2 rounded-xl bg-orange-500 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-orange-500/20 transition hover:bg-orange-600"
-          >
-            <Plus size={18} />
-            Nova escola
-          </button>
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-3">
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-orange-500 text-white shadow-lg shadow-orange-500/20">
+                <Building2 size={25} />
+              </div>
+
+              <div>
+                <h1 className="text-xl font-bold text-slate-900">
+                  Escolas
+                </h1>
+                <p className="text-sm text-slate-500">
+                  Gerencie as escolas do sistema
+                </p>
+              </div>
+            </div>
+
+            <button
+              onClick={() => {
+                setShowForm(true);
+                setMessage("");
+                setError("");
+              }}
+              className="flex items-center justify-center gap-2 rounded-xl bg-orange-500 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-orange-500/20 transition hover:bg-orange-600"
+            >
+              <Plus size={18} />
+              Nova escola
+            </button>
+          </div>
         </div>
       </header>
 
