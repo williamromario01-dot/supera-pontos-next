@@ -1,19 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
 import clientPromise from "@/lib/mongodb";
 
+const DB_NAME = "supera_pontos";
+
 export async function GET(request: NextRequest) {
   try {
     const sessionToken = request.cookies.get("supera_session")?.value;
 
     if (!sessionToken) {
       return NextResponse.json(
-        { error: "Não autenticado." },
+        {
+          error: "Não autenticado.",
+        },
         { status: 401 }
       );
     }
 
     const client = await clientPromise;
-    const db = client.db("supera_pontos");
+    const db = client.db(DB_NAME);
 
     const session = await db.collection("sessions").findOne({
       token: sessionToken,
@@ -21,7 +25,9 @@ export async function GET(request: NextRequest) {
 
     if (!session) {
       return NextResponse.json(
-        { error: "Sessão inválida." },
+        {
+          error: "Sessão inválida.",
+        },
         { status: 401 }
       );
     }
@@ -31,10 +37,22 @@ export async function GET(request: NextRequest) {
         _id: session._id,
       });
 
-      return NextResponse.json(
-        { error: "Sessão expirada." },
+      const response = NextResponse.json(
+        {
+          error: "Sessão expirada.",
+        },
         { status: 401 }
       );
+
+      response.cookies.set("supera_session", "", {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+        path: "/",
+        maxAge: 0,
+      });
+
+      return response;
     }
 
     const user = await db.collection("users").findOne({
@@ -43,8 +61,23 @@ export async function GET(request: NextRequest) {
 
     if (!user) {
       return NextResponse.json(
-        { error: "Usuário não encontrado." },
-        { status: 401 }
+        {
+          error: "Usuário não encontrado.",
+        },
+        { status: 404 }
+      );
+    }
+
+    if (user.active === false) {
+      await db.collection("sessions").deleteOne({
+        _id: session._id,
+      });
+
+      return NextResponse.json(
+        {
+          error: "Usuário desativado.",
+        },
+        { status: 403 }
       );
     }
 
@@ -55,13 +88,16 @@ export async function GET(request: NextRequest) {
         email: user.email,
         role: user.role,
         points: user.points || 0,
+        avatar: user.avatar || null,
       },
     });
   } catch (error) {
-    console.error("Erro ao verificar sessão:", error);
+    console.error("Erro ao verificar usuário:", error);
 
     return NextResponse.json(
-      { error: "Erro interno ao verificar autenticação." },
+      {
+        error: "Erro interno ao verificar usuário.",
+      },
       { status: 500 }
     );
   }
