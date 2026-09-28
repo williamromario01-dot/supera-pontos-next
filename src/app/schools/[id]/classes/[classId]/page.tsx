@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
   ArrowLeft,
+  Home,
   Users,
   UserPlus,
   UserMinus,
@@ -297,17 +298,27 @@ export default function ClassManagementPage() {
     return (
       <main className="min-h-screen bg-gray-50 p-6">
         <div className="max-w-4xl mx-auto">
-          <button
-            onClick={() =>
-              router.push(
-                `/schools/${schoolId}`
-              )
-            }
-            className="flex items-center gap-2 text-gray-600 hover:text-gray-900 mb-6"
-          >
-            <ArrowLeft size={18} />
-            Voltar para a escola
-          </button>
+          <div className="flex items-center justify-between mb-6">
+            <button
+              onClick={() =>
+                router.push(
+                  `/schools/${schoolId}`
+                )
+              }
+              className="flex items-center gap-2 text-gray-600 hover:text-gray-900 transition"
+            >
+              <ArrowLeft size={18} />
+              Voltar para a escola
+            </button>
+
+            <button
+              onClick={() => router.push("/")}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-gray-900 text-white hover:bg-gray-800 transition"
+            >
+              <Home size={18} />
+              Home
+            </button>
+          </div>
 
           <div className="bg-white rounded-xl border border-red-200 p-8 text-center">
             <AlertCircle
@@ -333,20 +344,31 @@ export default function ClassManagementPage() {
   return (
     <main className="min-h-screen bg-gray-50">
       <div className="max-w-7xl mx-auto px-4 py-6 sm:px-6 lg:px-8">
-        {/* Cabeçalho */}
-        <div className="mb-6">
+        {/* Navegação */}
+        <div className="flex items-center justify-between mb-4">
           <button
             onClick={() =>
               router.push(
                 `/schools/${schoolId}`
               )
             }
-            className="flex items-center gap-2 text-gray-600 hover:text-gray-900 mb-4"
+            className="flex items-center gap-2 text-gray-600 hover:text-gray-900 transition"
           >
             <ArrowLeft size={18} />
             Voltar para a escola
           </button>
 
+          <button
+            onClick={() => router.push("/")}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-gray-900 text-white hover:bg-gray-800 transition shadow-sm"
+          >
+            <Home size={18} />
+            Home
+          </button>
+        </div>
+
+        {/* Cabeçalho */}
+        <div className="mb-6">
           <div className="bg-white rounded-2xl border border-gray-200 p-6 shadow-sm">
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
               <div className="flex items-center gap-4">
@@ -472,7 +494,6 @@ export default function ClassManagementPage() {
           </div>
 
           <div className="p-6">
-            {/* Busca */}
             <div className="relative mb-5">
               <Search
                 size={19}
@@ -505,8 +526,8 @@ export default function ClassManagementPage() {
                 </p>
 
                 <p className="text-sm mt-1">
-                  Todos os alunos da escola podem já
-                  estar alocados em turmas.
+                  Todos os alunos da escola podem
+                  já estar alocados em turmas.
                 </p>
               </div>
             ) : (
