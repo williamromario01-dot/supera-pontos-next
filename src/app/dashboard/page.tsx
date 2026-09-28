@@ -279,8 +279,6 @@ export default function DashboardPage() {
   const canManageSchools =
     user?.role === "super_admin";
 
-  // Suporte, Administrador e Educador podem acessar
-  // a tela de alunos.
   const canManageStudents =
     user?.role === "super_admin" ||
     user?.role === "admin" ||
@@ -291,14 +289,18 @@ export default function DashboardPage() {
     user?.role === "admin" ||
     user?.role === "educator";
 
+  // Suporte, Administrador e Educador podem lançar pontos.
+  const canManagePoints =
+    user?.role === "super_admin" ||
+    user?.role === "admin" ||
+    user?.role === "educator";
+
   const canAccessReferrals =
     user?.role === "student" ||
     user?.role === "educator" ||
     user?.role === "admin" ||
     user?.role === "super_admin";
 
-  // As lojas aparecem somente para Aluno, Educador e Administrador.
-  // O perfil Suporte (super_admin) não vê as lojas no Dashboard.
   const canAccessStores =
     user?.role === "student" ||
     user?.role === "educator" ||
@@ -426,6 +428,18 @@ export default function DashboardPage() {
                 >
                   <Tags size={17} />
                   Categorias
+                </button>
+              )}
+
+              {/* PONTUAR ALUNO */}
+
+              {canManagePoints && (
+                <button
+                  onClick={() => router.push("/points")}
+                  className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-orange-500 text-white hover:bg-orange-600 text-sm font-bold transition shadow-sm"
+                >
+                  <Award size={17} />
+                  Pontuar aluno
                 </button>
               )}
 
@@ -606,6 +620,21 @@ export default function DashboardPage() {
                   >
                     <Tags size={18} />
                     Categorias
+                  </button>
+                )}
+
+                {/* PONTUAR ALUNO - MOBILE */}
+
+                {canManagePoints && (
+                  <button
+                    onClick={() => {
+                      setMenuOpen(false);
+                      router.push("/points");
+                    }}
+                    className="flex items-center gap-3 px-4 py-3 rounded-xl bg-orange-500 text-white hover:bg-orange-600 font-bold text-sm transition"
+                  >
+                    <Award size={18} />
+                    Pontuar aluno
                   </button>
                 )}
 
@@ -1476,6 +1505,34 @@ export default function DashboardPage() {
 
                 <div className="mt-4 flex items-center gap-1 text-xs font-bold text-orange-500">
                   Acessar
+                  <ChevronRight size={14} />
+                </div>
+
+              </button>
+            )}
+
+            {/* PONTUAR ALUNO */}
+
+            {canManagePoints && (
+              <button
+                onClick={() => router.push("/points")}
+                className="group bg-white border-2 border-orange-200 rounded-2xl p-5 text-left hover:border-orange-400 hover:shadow-md transition"
+              >
+
+                <div className="w-11 h-11 rounded-xl bg-orange-50 text-orange-600 flex items-center justify-center mb-4">
+                  <Award size={21} />
+                </div>
+
+                <h3 className="font-black text-slate-800">
+                  Pontuar aluno
+                </h3>
+
+                <p className="text-xs text-slate-400 mt-1">
+                  Lance pontos para os alunos nas categorias de treinamento.
+                </p>
+
+                <div className="mt-4 flex items-center gap-1 text-xs font-bold text-orange-500">
+                  Lançar pontos
                   <ChevronRight size={14} />
                 </div>
 
