@@ -14,6 +14,9 @@ import {
   CheckCircle2,
   AlertCircle,
   Loader2,
+  GraduationCap,
+  Plus,
+  Settings,
 } from "lucide-react";
 
 interface School {
@@ -47,6 +50,20 @@ interface ImportResult {
   error?: string;
 }
 
+interface ClassItem {
+  id: string;
+  name: string;
+  schoolId: string;
+  educatorId?: string | null;
+  educator?: {
+    id: string;
+    name: string;
+    email?: string;
+  } | null;
+  studentCount: number;
+  active: boolean;
+}
+
 export default function SchoolPage() {
   const params = useParams();
   const router = useRouter();
@@ -57,12 +74,15 @@ export default function SchoolPage() {
 
   const [school, setSchool] = useState<School | null>(null);
   const [students, setStudents] = useState<Student[]>([]);
+  const [classes, setClasses] = useState<ClassItem[]>([]);
 
   const [loading, setLoading] = useState(true);
   const [loadingStudents, setLoadingStudents] = useState(false);
+  const [loadingClasses, setLoadingClasses] = useState(false);
 
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
+  const [classSearch, setClassSearch] = useState("");
 
   const [showAddStudent, setShowAddStudent] = useState(false);
 
@@ -88,10 +108,16 @@ export default function SchoolPage() {
     role: string;
   } | null>(null);
 
+  const [showCreateClass, setShowCreateClass] = useState(false);
+  const [newClassName, setNewClassName] = useState("");
+  const [creatingClass, setCreatingClass] = useState(false);
+
   const canManageStudents =
     currentUser?.role === "super_admin" ||
     currentUser?.role === "admin" ||
     currentUser?.role === "educator";
+
+  const canManageClasses = canManageStudents;
 
   async function loadCurrentUser() {
     try {
@@ -170,6 +196,37 @@ export default function SchoolPage() {
     }
   }
 
+  async function loadClasses() {
+    try {
+      setLoadingClasses(true);
+
+      const response = await fetch(
+        `/api/classes?schoolId=${encodeURIComponent(schoolId)}`,
+        {
+          credentials: "include",
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error("Não foi possível carregar as turmas.");
+      }
+
+      const data = await response.json();
+
+      const list =
+        data.classes ||
+        data.data ||
+        (Array.isArray(data) ? data : []);
+
+      setClasses(list);
+    } catch (err) {
+      console.error(err);
+      setClasses([]);
+    } finally {
+      setLoadingClasses(false);
+    }
+  }
+
   async function loadData() {
     setLoading(true);
     setError("");
@@ -191,7 +248,11 @@ export default function SchoolPage() {
       return;
     }
 
-    await Promise.all([loadSchool(), loadStudents()]);
+    await Promise.all([
+      loadSchool(),
+      loadStudents(),
+      loadClasses(),
+    ]);
 
     setLoading(false);
   }
@@ -243,7 +304,9 @@ export default function SchoolPage() {
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.error || "Não foi possível adicionar o aluno.");
+        throw new Error(
+          data.error || "Não foi possível adicionar o aluno."
+        );
       }
 
       setStudentName("");
@@ -386,6 +449,58 @@ export default function SchoolPage() {
     }
   }
 
+  async function handleCreateClass(event: React.FormEvent) {
+    event.preventDefault();
+
+    const name = newClassName.trim();
+
+    if (!name) {
+      alert("Informe o nome da turma.");
+      return;
+    }
+
+    try {
+      setCreatingClass(true);
+
+      const response = await fetch("/api/classes", {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          name,
+          schoolId,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          data.error || "Não foi possível criar a turma."
+        );
+      }
+
+      setNewClassName("");
+      setShowCreateClass(false);
+
+      await loadClasses();
+
+      alert("Turma criada com sucesso.");
+    } catch (err) {
+      console.error(err);
+
+      alert(
+        err instanceof Error
+          ? err.message
+          : "Não foi possível criar a turma."
+      );
+    } finally {
+      setCreatingClass(false);
+    }
+  }
+
   const filteredStudents = students.filter((student) => {
     const searchTerm = search.toLowerCase().trim();
 
@@ -397,6 +512,16 @@ export default function SchoolPage() {
       student.name.toLowerCase().includes(searchTerm) ||
       student.email.toLowerCase().includes(searchTerm)
     );
+  });
+
+  const filteredClasses = classes.filter((classItem) => {
+    const searchTerm = classSearch.toLowerCase().trim();
+
+    if (!searchTerm) {
+      return true;
+    }
+
+    return classItem.name.toLowerCase().includes(searchTerm);
   });
 
   if (loading) {
@@ -434,6 +559,7 @@ export default function SchoolPage() {
   return (
     <main className="min-h-screen bg-slate-50">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
+
         {/* Cabeçalho */}
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-8">
           <div>
@@ -484,7 +610,8 @@ export default function SchoolPage() {
         </div>
 
         {/* Resumo */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
+
           <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
             <div className="flex items-center justify-between">
               <div>
@@ -524,7 +651,198 @@ export default function SchoolPage() {
               </div>
             </div>
           </div>
+
+          <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-slate-500">
+                  Turmas
+                </p>
+
+                <p className="text-3xl font-bold text-slate-900 mt-1">
+                  {classes.length}
+                </p>
+              </div>
+
+              <div className="h-12 w-12 rounded-xl bg-orange-100 flex items-center justify-center">
+                <GraduationCap className="h-6 w-6 text-orange-600" />
+              </div>
+            </div>
+          </div>
         </div>
+
+        {/* TURMAS */}
+        <section className="bg-white rounded-2xl border border-slate-200 shadow-sm mb-8">
+
+          <div className="p-6 border-b border-slate-200">
+            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+
+              <div>
+                <div className="flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-xl bg-orange-100 flex items-center justify-center">
+                    <GraduationCap className="h-5 w-5 text-orange-600" />
+                  </div>
+
+                  <div>
+                    <h2 className="text-xl font-bold text-slate-900">
+                      Turmas
+                    </h2>
+
+                    <p className="text-sm text-slate-500 mt-1">
+                      Organize os alunos em turmas e gerencie seus vínculos.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {canManageClasses && (
+                <button
+                  onClick={() => {
+                    setNewClassName("");
+                    setShowCreateClass(true);
+                  }}
+                  className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-orange-500 hover:bg-orange-600 text-white font-semibold transition"
+                >
+                  <Plus className="h-5 w-5" />
+                  Criar turma
+                </button>
+              )}
+            </div>
+
+            {classes.length > 0 && (
+              <div className="relative mt-6">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" />
+
+                <input
+                  type="text"
+                  value={classSearch}
+                  onChange={(event) =>
+                    setClassSearch(event.target.value)
+                  }
+                  placeholder="Pesquisar turma..."
+                  className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                />
+              </div>
+            )}
+          </div>
+
+          <div className="p-6">
+
+            {loadingClasses ? (
+              <div className="flex justify-center py-12">
+                <Loader2 className="h-7 w-7 text-orange-500 animate-spin" />
+              </div>
+            ) : filteredClasses.length === 0 ? (
+              <div className="py-12 text-center">
+                <GraduationCap className="h-12 w-12 text-slate-300 mx-auto mb-3" />
+
+                <h3 className="font-semibold text-slate-700">
+                  {classSearch
+                    ? "Nenhuma turma encontrada"
+                    : "Nenhuma turma cadastrada"}
+                </h3>
+
+                <p className="text-sm text-slate-500 mt-1">
+                  {classSearch
+                    ? "Tente pesquisar por outro nome."
+                    : "Crie a primeira turma desta escola para começar a organizar os alunos."}
+                </p>
+
+                {!classSearch && canManageClasses && (
+                  <button
+                    onClick={() => {
+                      setNewClassName("");
+                      setShowCreateClass(true);
+                    }}
+                    className="inline-flex items-center gap-2 mt-5 px-4 py-2.5 rounded-xl bg-orange-500 hover:bg-orange-600 text-white font-semibold"
+                  >
+                    <Plus className="h-5 w-5" />
+                    Criar primeira turma
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+
+                {filteredClasses.map((classItem) => (
+                  <div
+                    key={classItem.id}
+                    className="rounded-2xl border border-slate-200 p-5 hover:border-orange-300 hover:shadow-sm transition"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="h-11 w-11 rounded-xl bg-orange-100 flex items-center justify-center shrink-0">
+                          <GraduationCap className="h-6 w-6 text-orange-600" />
+                        </div>
+
+                        <div className="min-w-0">
+                          <h3 className="font-bold text-slate-900 truncate">
+                            {classItem.name}
+                          </h3>
+
+                          <p className="text-sm text-slate-500 mt-0.5">
+                            {classItem.active
+                              ? "Turma ativa"
+                              : "Turma inativa"}
+                          </p>
+                        </div>
+                      </div>
+
+                      <span
+                        className={`shrink-0 px-2.5 py-1 rounded-full text-xs font-semibold ${
+                          classItem.active
+                            ? "bg-green-100 text-green-700"
+                            : "bg-slate-100 text-slate-500"
+                        }`}
+                      >
+                        {classItem.active ? "Ativa" : "Inativa"}
+                      </span>
+                    </div>
+
+                    <div className="mt-5 space-y-3">
+
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-slate-500">
+                          Alunos
+                        </span>
+
+                        <span className="font-bold text-slate-900">
+                          {classItem.studentCount}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-sm text-slate-500">
+                          Educador
+                        </span>
+
+                        <span className="text-sm font-medium text-slate-700 text-right truncate">
+                          {classItem.educator?.name ||
+                            "Não definido"}
+                        </span>
+                      </div>
+
+                    </div>
+
+                    <button
+                      onClick={() =>
+                        router.push(
+                          `/schools/${schoolId}/classes/${classItem.id}`
+                        )
+                      }
+                      className="w-full mt-5 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 font-semibold transition"
+                    >
+                      <Settings className="h-4 w-4" />
+                      Gerenciar turma
+                    </button>
+                  </div>
+                ))}
+
+              </div>
+            )}
+          </div>
+        </section>
 
         {/* Área de alunos */}
         <section className="bg-white rounded-2xl border border-slate-200 shadow-sm">
@@ -672,6 +990,97 @@ export default function SchoolPage() {
         </section>
       </div>
 
+      {/* Modal - Criar turma */}
+      {showCreateClass && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+          <div className="w-full max-w-lg bg-white rounded-2xl shadow-xl">
+
+            <div className="flex items-center justify-between p-6 border-b border-slate-200">
+              <div>
+                <h2 className="text-xl font-bold text-slate-900">
+                  Criar turma
+                </h2>
+
+                <p className="text-sm text-slate-500 mt-1">
+                  Crie uma nova turma para esta escola.
+                </p>
+              </div>
+
+              <button
+                onClick={() => setShowCreateClass(false)}
+                className="h-9 w-9 rounded-lg hover:bg-slate-100 flex items-center justify-center"
+              >
+                <X className="h-5 w-5 text-slate-500" />
+              </button>
+            </div>
+
+            <form
+              onSubmit={handleCreateClass}
+              className="p-6 space-y-5"
+            >
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Nome da turma
+                </label>
+
+                <input
+                  type="text"
+                  value={newClassName}
+                  onChange={(event) =>
+                    setNewClassName(event.target.value)
+                  }
+                  placeholder="Ex.: 9º Ano A"
+                  autoFocus
+                  className="w-full px-4 py-3 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-orange-500"
+                />
+              </div>
+
+              <div className="rounded-xl bg-blue-50 border border-blue-200 p-4">
+                <div className="flex gap-3">
+                  <Users className="h-5 w-5 text-blue-600 shrink-0 mt-0.5" />
+
+                  <div>
+                    <p className="font-semibold text-blue-900">
+                      Sem limite de alunos
+                    </p>
+
+                    <p className="text-sm text-blue-800 mt-1">
+                      A turma pode ter quantos alunos forem necessários.
+                      O limite de 15 alunos existe somente em cada operação
+                      de alocação.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowCreateClass(false)}
+                  className="px-4 py-2.5 rounded-xl border border-slate-300 text-slate-700 font-medium hover:bg-slate-50"
+                >
+                  Cancelar
+                </button>
+
+                <button
+                  type="submit"
+                  disabled={creatingClass}
+                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-orange-500 hover:bg-orange-600 text-white font-semibold disabled:opacity-50"
+                >
+                  {creatingClass && (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  )}
+
+                  {creatingClass
+                    ? "Criando..."
+                    : "Criar turma"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* Modal - Adicionar aluno */}
       {showAddStudent && (
         <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
@@ -807,6 +1216,7 @@ export default function SchoolPage() {
             </div>
 
             <div className="p-6 space-y-6">
+
               {/* Formato */}
               <div className="rounded-xl bg-blue-50 border border-blue-200 p-4">
                 <div className="flex gap-3">
@@ -940,38 +1350,34 @@ export default function SchoolPage() {
                   }`}
                 >
                   {importResult.error ? (
-                    <>
-                      <div className="flex gap-3">
-                        <AlertCircle className="h-5 w-5 text-red-600 shrink-0" />
+                    <div className="flex gap-3">
+                      <AlertCircle className="h-5 w-5 text-red-600 shrink-0" />
 
-                        <div>
-                          <p className="font-semibold text-red-800">
-                            Importação não concluída
-                          </p>
+                      <div>
+                        <p className="font-semibold text-red-800">
+                          Importação não concluída
+                        </p>
 
-                          <p className="text-sm text-red-700 mt-1">
-                            {importResult.error}
-                          </p>
-                        </div>
+                        <p className="text-sm text-red-700 mt-1">
+                          {importResult.error}
+                        </p>
                       </div>
-                    </>
+                    </div>
                   ) : (
-                    <>
-                      <div className="flex gap-3">
-                        <CheckCircle2 className="h-5 w-5 text-green-600 shrink-0" />
+                    <div className="flex gap-3">
+                      <CheckCircle2 className="h-5 w-5 text-green-600 shrink-0" />
 
-                        <div>
-                          <p className="font-semibold text-green-800">
-                            Importação concluída
-                          </p>
+                      <div>
+                        <p className="font-semibold text-green-800">
+                          Importação concluída
+                        </p>
 
-                          <p className="text-sm text-green-700 mt-1">
-                            {importResult.imported || 0} aluno(s)
-                            importado(s) com sucesso.
-                          </p>
-                        </div>
+                        <p className="text-sm text-green-700 mt-1">
+                          {importResult.imported || 0} aluno(s)
+                          importado(s) com sucesso.
+                        </p>
                       </div>
-                    </>
+                    </div>
                   )}
 
                   {importResult.errors &&
@@ -1038,6 +1444,7 @@ export default function SchoolPage() {
                   )}
                 </button>
               </div>
+
             </div>
           </div>
         </div>
