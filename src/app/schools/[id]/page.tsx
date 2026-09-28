@@ -1,54 +1,38 @@
 "use client";
 
-import { ChangeEvent, FormEvent, useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
   ArrowLeft,
-  Download,
-  FileSpreadsheet,
-  GraduationCap,
-  Home,
-  Loader2,
-  Plus,
-  Shield,
-  Trash2,
-  Upload,
   UserPlus,
+  Upload,
   Users,
+  Trash2,
+  Search,
   X,
+  FileSpreadsheet,
+  CheckCircle2,
+  AlertCircle,
+  Loader2,
 } from "lucide-react";
 
 interface School {
   id: string;
   name: string;
+  email?: string;
+  phone?: string;
+  address?: string;
   city?: string;
   state?: string;
   active?: boolean;
-  admin?: {
-    id: string;
-    name: string;
-    email: string;
-    active?: boolean;
-  } | null;
-  educatorsCount?: number;
-  studentsCount?: number;
-}
-
-interface UserData {
-  id: string;
-  name: string;
-  email: string;
-  role: "super_admin" | "admin" | "educator" | "student";
-  schoolId?: string | null;
 }
 
 interface Student {
   id: string;
   name: string;
   email: string;
-  points?: number;
+  points: number;
   active?: boolean;
-  schoolId?: string | null;
 }
 
 interface ImportError {
@@ -56,81 +40,113 @@ interface ImportError {
   message: string;
 }
 
-export default function SchoolDetailsPage() {
+interface ImportResult {
+  message?: string;
+  imported?: number;
+  errors?: ImportError[];
+  error?: string;
+}
+
+export default function SchoolPage() {
   const params = useParams();
   const router = useRouter();
 
   const schoolId = String(params.id);
 
-  const [user, setUser] = useState<UserData | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
   const [school, setSchool] = useState<School | null>(null);
   const [students, setStudents] = useState<Student[]>([]);
 
   const [loading, setLoading] = useState(true);
-  const [studentsLoading, setStudentsLoading] = useState(false);
+  const [loadingStudents, setLoadingStudents] = useState(false);
 
-  const [savingStudent, setSavingStudent] = useState(false);
-  const [deletingStudentId, setDeletingStudentId] = useState<string | null>(
-    null
-  );
+  const [error, setError] = useState("");
+  const [search, setSearch] = useState("");
 
-  const [showStudentForm, setShowStudentForm] = useState(false);
-  const [showImportForm, setShowImportForm] = useState(false);
+  const [showAddStudent, setShowAddStudent] = useState(false);
 
   const [studentName, setStudentName] = useState("");
   const [studentEmail, setStudentEmail] = useState("");
   const [studentPassword, setStudentPassword] = useState("");
 
-  const [importFile, setImportFile] = useState<File | null>(null);
-  const [importingStudents, setImportingStudents] = useState(false);
-  const [importedCount, setImportedCount] = useState<number | null>(null);
-  const [importErrors, setImportErrors] = useState<ImportError[]>([]);
+  const [addingStudent, setAddingStudent] = useState(false);
 
-  const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
+  const [showImport, setShowImport] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [importing, setImporting] = useState(false);
 
-  async function loadUser() {
-    const response = await fetch("/api/auth/me", {
-      credentials: "include",
-      cache: "no-store",
-    });
+  const [importResult, setImportResult] =
+    useState<ImportResult | null>(null);
 
-    if (!response.ok) {
-      router.push("/");
+  const [deletingStudentId, setDeletingStudentId] = useState<string | null>(
+    null
+  );
+
+  const [currentUser, setCurrentUser] = useState<{
+    id: string;
+    role: string;
+  } | null>(null);
+
+  const canManageStudents =
+    currentUser?.role === "super_admin" ||
+    currentUser?.role === "admin" ||
+    currentUser?.role === "educator";
+
+  async function loadCurrentUser() {
+    try {
+      const response = await fetch("/api/auth/me", {
+        credentials: "include",
+      });
+
+      if (!response.ok) {
+        router.push("/login");
+        return null;
+      }
+
+      const data = await response.json();
+
+      const user = data.user || data;
+
+      setCurrentUser({
+        id: user.id,
+        role: user.role,
+      });
+
+      return user;
+    } catch {
+      router.push("/login");
       return null;
     }
-
-    const data = await response.json();
-
-    setUser(data.user);
-
-    return data.user as UserData;
   }
 
   async function loadSchool() {
-    const response = await fetch(`/api/schools/${schoolId}`, {
-      credentials: "include",
-      cache: "no-store",
-    });
+    try {
+      const response = await fetch(`/api/schools/${schoolId}`, {
+        credentials: "include",
+      });
 
-    if (!response.ok) {
-      throw new Error("Não foi possível carregar os dados da escola.");
+      if (!response.ok) {
+        throw new Error("Não foi possível carregar a escola.");
+      }
+
+      const data = await response.json();
+
+      setSchool(data.school || data);
+    } catch (err) {
+      console.error(err);
+      setError("Não foi possível carregar os dados da escola.");
     }
-
-    const data = await response.json();
-
-    setSchool(data.school || data);
   }
 
   async function loadStudents() {
-    setStudentsLoading(true);
-
     try {
+      setLoadingStudents(true);
+
       const response = await fetch(
         `/api/students?schoolId=${encodeURIComponent(schoolId)}`,
         {
           credentials: "include",
-          cache: "no-store",
         }
       );
 
@@ -140,12 +156,17 @@ export default function SchoolDetailsPage() {
 
       const data = await response.json();
 
-      setStudents(data.students || []);
+      const list =
+        data.students ||
+        data.data ||
+        (Array.isArray(data) ? data : []);
+
+      setStudents(list);
     } catch (err) {
       console.error(err);
       setStudents([]);
     } finally {
-      setStudentsLoading(false);
+      setLoadingStudents(false);
     }
   }
 
@@ -153,66 +174,58 @@ export default function SchoolDetailsPage() {
     setLoading(true);
     setError("");
 
-    try {
-      const currentUser = await loadUser();
+    const user = await loadCurrentUser();
 
-      if (!currentUser) {
-        return;
-      }
-
-      if (
-        currentUser.role !== "super_admin" &&
-        currentUser.role !== "admin" &&
-        currentUser.role !== "educator"
-      ) {
-        router.push("/dashboard");
-        return;
-      }
-
-      await loadSchool();
-      await loadStudents();
-    } catch (err) {
-      console.error(err);
-
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Erro ao carregar os dados da escola."
-      );
-    } finally {
+    if (!user) {
       setLoading(false);
+      return;
     }
+
+    const allowed =
+      user.role === "super_admin" ||
+      user.role === "admin" ||
+      user.role === "educator";
+
+    if (!allowed) {
+      router.push("/dashboard");
+      return;
+    }
+
+    await Promise.all([loadSchool(), loadStudents()]);
+
+    setLoading(false);
   }
 
   useEffect(() => {
-    if (schoolId) {
-      loadData();
-    }
+    loadData();
   }, [schoolId]);
 
-  async function handleCreateStudent(event: FormEvent<HTMLFormElement>) {
+  async function handleAddStudent(event: React.FormEvent) {
     event.preventDefault();
 
-    setError("");
-    setSuccess("");
-
-    const name = studentName.trim();
-    const email = studentEmail.trim().toLowerCase();
-    const password = studentPassword;
-
-    if (!name || !email || !password) {
-      setError("Preencha nome, e-mail e senha.");
+    if (!studentName.trim()) {
+      alert("Informe o nome do aluno.");
       return;
     }
 
-    if (password.length < 6) {
-      setError("A senha deve ter pelo menos 6 caracteres.");
+    if (!studentEmail.trim()) {
+      alert("Informe o e-mail do aluno.");
       return;
     }
 
-    setSavingStudent(true);
+    if (!studentPassword.trim()) {
+      alert("Informe uma senha para o aluno.");
+      return;
+    }
+
+    if (studentPassword.length < 6) {
+      alert("A senha deve ter pelo menos 6 caracteres.");
+      return;
+    }
 
     try {
+      setAddingStudent(true);
+
       const response = await fetch("/api/students", {
         method: "POST",
         credentials: "include",
@@ -220,87 +233,83 @@ export default function SchoolDetailsPage() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          name,
-          email,
-          password,
+          name: studentName.trim(),
+          email: studentEmail.trim().toLowerCase(),
+          password: studentPassword,
           schoolId,
         }),
       });
 
-      const data = await response.json().catch(() => ({}));
+      const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(
-          data.error || data.message || "Não foi possível cadastrar o aluno."
-        );
+        throw new Error(data.error || "Não foi possível adicionar o aluno.");
       }
 
       setStudentName("");
       setStudentEmail("");
       setStudentPassword("");
-      setShowStudentForm(false);
-
-      setSuccess("Aluno cadastrado com sucesso.");
+      setShowAddStudent(false);
 
       await loadStudents();
-      await loadSchool();
+
+      alert("Aluno adicionado com sucesso.");
     } catch (err) {
       console.error(err);
 
-      setError(
-        err instanceof Error ? err.message : "Erro ao cadastrar o aluno."
+      alert(
+        err instanceof Error
+          ? err.message
+          : "Não foi possível adicionar o aluno."
       );
     } finally {
-      setSavingStudent(false);
+      setAddingStudent(false);
     }
   }
 
-  function handleImportFile(event: ChangeEvent<HTMLInputElement>) {
-    setError("");
-    setSuccess("");
-    setImportedCount(null);
-    setImportErrors([]);
+  function handleFileChange(
+    event: React.ChangeEvent<HTMLInputElement>
+  ) {
+    const file = event.target.files?.[0] || null;
 
-    const file = event.target.files?.[0];
+    setImportResult(null);
 
     if (!file) {
-      setImportFile(null);
+      setSelectedFile(null);
       return;
     }
+
+    const validExtensions = [".xlsx", ".xls", ".csv"];
 
     const fileName = file.name.toLowerCase();
 
-    const validExtension =
-      fileName.endsWith(".xlsx") ||
-      fileName.endsWith(".xls") ||
-      fileName.endsWith(".csv");
+    const valid = validExtensions.some((extension) =>
+      fileName.endsWith(extension)
+    );
 
-    if (!validExtension) {
-      setImportFile(null);
-      setError("Selecione uma planilha Excel (.xlsx/.xls) ou CSV.");
+    if (!valid) {
+      alert("Selecione um arquivo .xlsx, .xls ou .csv.");
       event.target.value = "";
+      setSelectedFile(null);
       return;
     }
 
-    setImportFile(file);
+    setSelectedFile(file);
   }
 
   async function handleImportStudents() {
-    if (!importFile) {
-      setError("Selecione uma planilha antes de importar.");
+    if (!selectedFile) {
+      alert("Selecione uma planilha.");
       return;
     }
 
-    setError("");
-    setSuccess("");
-    setImportedCount(null);
-    setImportErrors([]);
-    setImportingStudents(true);
-
     try {
+      setImporting(true);
+      setImportResult(null);
+
       const formData = new FormData();
 
-      formData.append("file", importFile);
+      formData.append("file", selectedFile);
       formData.append("schoolId", schoolId);
 
       const response = await fetch("/api/students/import", {
@@ -309,77 +318,30 @@ export default function SchoolDetailsPage() {
         body: formData,
       });
 
-      const data = await response.json().catch(() => ({}));
+      const data: ImportResult = await response.json();
+
+      setImportResult(data);
 
       if (!response.ok) {
-        setImportErrors(data.errors || []);
-
-        throw new Error(
-          data.error || data.message || "Não foi possível importar os alunos."
-        );
+        return;
       }
 
-      const imported = Number(data.imported || 0);
+      setSelectedFile(null);
 
-      setImportedCount(imported);
-      setImportErrors(data.errors || []);
-      setImportFile(null);
-
-      if (imported > 0) {
-        setSuccess(
-          `${imported} ${
-            imported === 1 ? "aluno foi importado" : "alunos foram importados"
-          } com sucesso.`
-        );
-      } else {
-        setSuccess("A importação foi concluída.");
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
       }
 
       await loadStudents();
-      await loadSchool();
     } catch (err) {
       console.error(err);
 
-      if (err instanceof Error) {
-        setError(err.message);
-      } else {
-        setError("Erro ao importar os alunos.");
-      }
+      setImportResult({
+        error: "Não foi possível realizar a importação.",
+      });
     } finally {
-      setImportingStudents(false);
+      setImporting(false);
     }
-  }
-
-  function closeImportForm() {
-    if (importingStudents) {
-      return;
-    }
-
-    setShowImportForm(false);
-    setImportFile(null);
-    setImportedCount(null);
-    setImportErrors([]);
-  }
-
-  function downloadTemplate() {
-    const csvContent =
-      "nome,email,senha\nJoão da Silva,joao@email.com,123456\nMaria Souza,maria@email.com,123456";
-
-    const blob = new Blob([csvContent], {
-      type: "text/csv;charset=utf-8;",
-    });
-
-    const url = URL.createObjectURL(blob);
-
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = "modelo-importacao-alunos.csv";
-
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-
-    URL.revokeObjectURL(url);
   }
 
   async function handleDeleteStudent(student: Student) {
@@ -391,66 +353,78 @@ export default function SchoolDetailsPage() {
       return;
     }
 
-    setError("");
-    setSuccess("");
-    setDeletingStudentId(student.id);
-
     try {
-      const response = await fetch(`/api/students/${student.id}`, {
-        method: "DELETE",
-        credentials: "include",
-      });
+      setDeletingStudentId(student.id);
 
-      const data = await response.json().catch(() => ({}));
+      const response = await fetch(
+        `/api/students/${student.id}`,
+        {
+          method: "DELETE",
+          credentials: "include",
+        }
+      );
+
+      const data = await response.json();
 
       if (!response.ok) {
         throw new Error(
-          data.error || data.message || "Não foi possível excluir o aluno."
+          data.error || "Não foi possível excluir o aluno."
         );
       }
 
-      setSuccess("Aluno excluído com sucesso.");
-
       await loadStudents();
-      await loadSchool();
     } catch (err) {
       console.error(err);
 
-      setError(
-        err instanceof Error ? err.message : "Erro ao excluir o aluno."
+      alert(
+        err instanceof Error
+          ? err.message
+          : "Não foi possível excluir o aluno."
       );
     } finally {
       setDeletingStudentId(null);
     }
   }
 
+  const filteredStudents = students.filter((student) => {
+    const searchTerm = search.toLowerCase().trim();
+
+    if (!searchTerm) {
+      return true;
+    }
+
+    return (
+      student.name.toLowerCase().includes(searchTerm) ||
+      student.email.toLowerCase().includes(searchTerm)
+    );
+  });
+
   if (loading) {
     return (
       <main className="min-h-screen bg-slate-50 flex items-center justify-center">
         <div className="flex items-center gap-3 text-slate-600">
-          <Loader2 className="w-6 h-6 animate-spin" />
+          <Loader2 className="h-6 w-6 animate-spin" />
           <span>Carregando escola...</span>
         </div>
       </main>
     );
   }
 
-  if (!school) {
+  if (error && !school) {
     return (
       <main className="min-h-screen bg-slate-50 p-6">
         <div className="max-w-4xl mx-auto">
           <button
             onClick={() => router.push("/schools")}
-            className="inline-flex items-center gap-2 text-slate-600 hover:text-slate-900"
+            className="flex items-center gap-2 text-slate-600 hover:text-slate-900 mb-6"
           >
-            <ArrowLeft className="w-5 h-5" />
+            <ArrowLeft className="h-5 w-5" />
             Voltar para escolas
           </button>
 
-          <div className="mt-8 bg-white rounded-2xl shadow-sm border border-slate-200 p-8 text-center">
-            <p className="text-red-600 font-medium">
-              {error || "Escola não encontrada."}
-            </p>
+          <div className="bg-white rounded-2xl border border-red-200 p-8 text-center">
+            <AlertCircle className="h-10 w-10 text-red-500 mx-auto mb-3" />
+            <p className="text-red-600">{error}</p>
           </div>
         </div>
       </main>
@@ -459,532 +433,237 @@ export default function SchoolDetailsPage() {
 
   return (
     <main className="min-h-screen bg-slate-50">
-      <header className="bg-white border-b border-slate-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <div>
-              <button
-                onClick={() => router.push("/dashboard")}
-                className="inline-flex items-center gap-2 text-sm text-slate-500 hover:text-slate-900 mb-3"
-              >
-                <Home className="w-4 h-4" />
-                Início
-              </button>
-
-              <div className="flex items-center gap-3">
-                <div className="w-11 h-11 rounded-xl bg-orange-100 flex items-center justify-center">
-                  <Shield className="w-6 h-6 text-orange-600" />
-                </div>
-
-                <div>
-                  <h1 className="text-2xl font-bold text-slate-900">
-                    {school.name}
-                  </h1>
-
-                  <p className="text-sm text-slate-500">
-                    {school.city && school.state
-                      ? `${school.city} - ${school.state}`
-                      : "Gerenciamento da escola"}
-                  </p>
-                </div>
-              </div>
-            </div>
-
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
+        {/* Cabeçalho */}
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-8">
+          <div>
             <button
               onClick={() => router.push("/schools")}
-              className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 transition"
+              className="flex items-center gap-2 text-slate-500 hover:text-slate-900 mb-4 transition"
             >
-              <ArrowLeft className="w-4 h-4" />
+              <ArrowLeft className="h-5 w-5" />
               Voltar para escolas
             </button>
+
+            <h1 className="text-3xl font-bold text-slate-900">
+              {school?.name || "Escola"}
+            </h1>
+
+            <div className="flex flex-wrap gap-3 mt-2 text-sm text-slate-500">
+              {school?.city && (
+                <span>
+                  {school.city}
+                  {school.state ? ` - ${school.state}` : ""}
+                </span>
+              )}
+
+              {school?.email && <span>{school.email}</span>}
+
+              {school?.phone && <span>{school.phone}</span>}
+            </div>
+          </div>
+
+          {school && (
+            <div
+              className={`inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium ${
+                school.active === false
+                  ? "bg-red-100 text-red-700"
+                  : "bg-green-100 text-green-700"
+              }`}
+            >
+              <span
+                className={`h-2 w-2 rounded-full ${
+                  school.active === false
+                    ? "bg-red-500"
+                    : "bg-green-500"
+                }`}
+              />
+              {school.active === false ? "Desativada" : "Ativa"}
+            </div>
+          )}
+        </div>
+
+        {/* Resumo */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
+          <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-slate-500">
+                  Alunos cadastrados
+                </p>
+
+                <p className="text-3xl font-bold text-slate-900 mt-1">
+                  {students.length}
+                </p>
+              </div>
+
+              <div className="h-12 w-12 rounded-xl bg-blue-100 flex items-center justify-center">
+                <Users className="h-6 w-6 text-blue-600" />
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-slate-500">
+                  Alunos ativos
+                </p>
+
+                <p className="text-3xl font-bold text-slate-900 mt-1">
+                  {
+                    students.filter(
+                      (student) => student.active !== false
+                    ).length
+                  }
+                </p>
+              </div>
+
+              <div className="h-12 w-12 rounded-xl bg-green-100 flex items-center justify-center">
+                <CheckCircle2 className="h-6 w-6 text-green-600" />
+              </div>
+            </div>
           </div>
         </div>
-      </header>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {error && (
-          <div className="mb-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-            {error}
-          </div>
-        )}
-
-        {success && (
-          <div className="mb-6 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
-            {success}
-          </div>
-        )}
-
-        <section className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-          <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center">
-                <Shield className="w-5 h-5 text-blue-600" />
-              </div>
-
-              <div>
-                <p className="text-sm text-slate-500">Administrador</p>
-                <p className="font-semibold text-slate-900">
-                  {school.admin?.name || "Não cadastrado"}
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-purple-100 flex items-center justify-center">
-                <Users className="w-5 h-5 text-purple-600" />
-              </div>
-
-              <div>
-                <p className="text-sm text-slate-500">Educadores</p>
-                <p className="font-semibold text-slate-900">
-                  {school.educatorsCount ?? 0}
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-green-100 flex items-center justify-center">
-                <GraduationCap className="w-5 h-5 text-green-600" />
-              </div>
-
-              <div>
-                <p className="text-sm text-slate-500">Alunos</p>
-                <p className="font-semibold text-slate-900">
-                  {school.studentsCount ?? students.length}
-                </p>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
-          <div className="px-6 py-5 border-b border-slate-200">
+        {/* Área de alunos */}
+        <section className="bg-white rounded-2xl border border-slate-200 shadow-sm">
+          <div className="p-6 border-b border-slate-200">
             <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
               <div>
-                <div className="flex items-center gap-3">
-                  <GraduationCap className="w-6 h-6 text-green-600" />
-
-                  <h2 className="text-xl font-bold text-slate-900">
-                    Alunos
-                  </h2>
-
-                  <span className="inline-flex items-center justify-center min-w-7 h-7 px-2 rounded-full bg-green-100 text-green-700 text-sm font-bold">
-                    {school.studentsCount ?? students.length}
-                  </span>
-                </div>
+                <h2 className="text-xl font-bold text-slate-900">
+                  Alunos
+                </h2>
 
                 <p className="text-sm text-slate-500 mt-1">
-                  Alunos vinculados a esta escola.
+                  Gerencie os alunos vinculados a esta escola.
                 </p>
               </div>
 
-              <div className="flex flex-col sm:flex-row gap-2">
-                <button
-                  onClick={() => {
-                    setShowImportForm(false);
-                    setShowStudentForm(true);
-                    setError("");
-                    setSuccess("");
-                  }}
-                  className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-orange-500 text-white font-semibold hover:bg-orange-600 transition"
-                >
-                  <UserPlus className="w-5 h-5" />
-                  Adicionar aluno
-                </button>
+              {canManageStudents && (
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <button
+                    onClick={() => {
+                      setShowAddStudent(true);
+                      setShowImport(false);
+                      setImportResult(null);
+                    }}
+                    className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-orange-500 hover:bg-orange-600 text-white font-semibold transition"
+                  >
+                    <UserPlus className="h-5 w-5" />
+                    Adicionar aluno
+                  </button>
 
-                <button
-                  onClick={() => {
-                    setShowStudentForm(false);
-                    setShowImportForm(true);
-                    setError("");
-                    setSuccess("");
-                  }}
-                  className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-orange-300 bg-orange-50 text-orange-700 font-semibold hover:bg-orange-100 transition"
-                >
-                  <FileSpreadsheet className="w-5 h-5" />
-                  Importar planilha
-                </button>
-              </div>
+                  <button
+                    onClick={() => {
+                      setShowImport(true);
+                      setShowAddStudent(false);
+                      setImportResult(null);
+                    }}
+                    className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 font-semibold transition"
+                  >
+                    <Upload className="h-5 w-5" />
+                    Importar planilha
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Busca */}
+            <div className="relative mt-6">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" />
+
+              <input
+                type="text"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Pesquisar aluno por nome ou e-mail..."
+                className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+              />
             </div>
           </div>
 
-          {showStudentForm && (
-            <div className="border-b border-slate-200 bg-slate-50 px-6 py-6">
-              <div className="max-w-2xl">
-                <div className="flex items-center justify-between mb-5">
-                  <div>
-                    <h3 className="font-bold text-slate-900">
-                      Novo aluno
-                    </h3>
-
-                    <p className="text-sm text-slate-500">
-                      O aluno será cadastrado diretamente nesta escola.
-                    </p>
-                  </div>
-
-                  <button
-                    onClick={() => setShowStudentForm(false)}
-                    className="p-2 rounded-lg text-slate-500 hover:bg-white hover:text-slate-900"
-                  >
-                    <X className="w-5 h-5" />
-                  </button>
-                </div>
-
-                <form
-                  onSubmit={handleCreateStudent}
-                  className="grid grid-cols-1 md:grid-cols-2 gap-4"
-                >
-                  <div className="md:col-span-2">
-                    <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                      Nome completo
-                    </label>
-
-                    <input
-                      type="text"
-                      value={studentName}
-                      onChange={(e) => setStudentName(e.target.value)}
-                      placeholder="Nome do aluno"
-                      className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
-                      disabled={savingStudent}
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                      E-mail
-                    </label>
-
-                    <input
-                      type="email"
-                      value={studentEmail}
-                      onChange={(e) => setStudentEmail(e.target.value)}
-                      placeholder="aluno@email.com"
-                      className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
-                      disabled={savingStudent}
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                      Senha inicial
-                    </label>
-
-                    <input
-                      type="password"
-                      value={studentPassword}
-                      onChange={(e) => setStudentPassword(e.target.value)}
-                      placeholder="Mínimo 6 caracteres"
-                      className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
-                      disabled={savingStudent}
-                    />
-                  </div>
-
-                  <div className="md:col-span-2 flex justify-end gap-3">
-                    <button
-                      type="button"
-                      onClick={() => setShowStudentForm(false)}
-                      disabled={savingStudent}
-                      className="px-4 py-2.5 rounded-xl border border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
-                    >
-                      Cancelar
-                    </button>
-
-                    <button
-                      type="submit"
-                      disabled={savingStudent}
-                      className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-orange-500 text-white font-semibold hover:bg-orange-600 disabled:opacity-60"
-                    >
-                      {savingStudent ? (
-                        <>
-                          <Loader2 className="w-5 h-5 animate-spin" />
-                          Cadastrando...
-                        </>
-                      ) : (
-                        <>
-                          <Plus className="w-5 h-5" />
-                          Cadastrar aluno
-                        </>
-                      )}
-                    </button>
-                  </div>
-                </form>
-              </div>
-            </div>
-          )}
-
-          {showImportForm && (
-            <div className="border-b border-slate-200 bg-slate-50 px-6 py-6">
-              <div className="max-w-4xl">
-                <div className="flex items-center justify-between mb-5">
-                  <div>
-                    <h3 className="font-bold text-slate-900 text-lg">
-                      Importar alunos por planilha
-                    </h3>
-
-                    <p className="text-sm text-slate-500 mt-1">
-                      Cadastre vários alunos de uma só vez.
-                    </p>
-                  </div>
-
-                  <button
-                    onClick={closeImportForm}
-                    disabled={importingStudents}
-                    className="p-2 rounded-lg text-slate-500 hover:bg-white hover:text-slate-900 disabled:opacity-50"
-                  >
-                    <X className="w-5 h-5" />
-                  </button>
-                </div>
-
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-                  <div className="bg-white border border-slate-200 rounded-2xl p-5">
-                    <div className="flex items-center gap-3 mb-4">
-                      <div className="w-10 h-10 rounded-xl bg-green-100 flex items-center justify-center">
-                        <FileSpreadsheet className="w-5 h-5 text-green-600" />
-                      </div>
-
-                      <div>
-                        <h4 className="font-semibold text-slate-900">
-                          Formato da planilha
-                        </h4>
-
-                        <p className="text-xs text-slate-500">
-                          Primeira linha deve conter os títulos.
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="overflow-x-auto border border-slate-200 rounded-xl">
-                      <table className="w-full text-sm">
-                        <thead className="bg-slate-100">
-                          <tr>
-                            <th className="text-left px-3 py-2 font-semibold text-slate-700">
-                              nome
-                            </th>
-
-                            <th className="text-left px-3 py-2 font-semibold text-slate-700">
-                              email
-                            </th>
-
-                            <th className="text-left px-3 py-2 font-semibold text-slate-700">
-                              senha
-                            </th>
-                          </tr>
-                        </thead>
-
-                        <tbody>
-                          <tr className="border-t border-slate-200">
-                            <td className="px-3 py-2 text-slate-600">
-                              João Silva
-                            </td>
-
-                            <td className="px-3 py-2 text-slate-600">
-                              joao@email.com
-                            </td>
-
-                            <td className="px-3 py-2 text-slate-600">
-                              123456
-                            </td>
-                          </tr>
-
-                          <tr className="border-t border-slate-200">
-                            <td className="px-3 py-2 text-slate-600">
-                              Maria Souza
-                            </td>
-
-                            <td className="px-3 py-2 text-slate-600">
-                              maria@email.com
-                            </td>
-
-                            <td className="px-3 py-2 text-slate-600">
-                              123456
-                            </td>
-                          </tr>
-                        </tbody>
-                      </table>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={downloadTemplate}
-                      className="mt-4 inline-flex items-center gap-2 text-sm font-semibold text-orange-600 hover:text-orange-700"
-                    >
-                      <Download className="w-4 h-4" />
-                      Baixar modelo de planilha
-                    </button>
-
-                    <p className="text-xs text-slate-500 mt-3">
-                      O arquivo pode ser .xlsx, .xls ou .csv. E-mails já
-                      cadastrados serão ignorados e aparecerão no relatório.
-                    </p>
-                  </div>
-
-                  <div className="bg-white border border-slate-200 rounded-2xl p-5">
-                    <label className="block text-sm font-semibold text-slate-700 mb-2">
-                      Selecione a planilha
-                    </label>
-
-                    <label className="border-2 border-dashed border-slate-300 rounded-2xl p-8 flex flex-col items-center justify-center text-center cursor-pointer hover:border-orange-400 hover:bg-orange-50 transition">
-                      <Upload className="w-10 h-10 text-orange-500 mb-3" />
-
-                      <span className="font-semibold text-slate-800">
-                        Clique para selecionar
-                      </span>
-
-                      <span className="text-xs text-slate-500 mt-1">
-                        Excel ou CSV
-                      </span>
-
-                      <input
-                        type="file"
-                        accept=".xlsx,.xls,.csv"
-                        onChange={handleImportFile}
-                        disabled={importingStudents}
-                        className="hidden"
-                      />
-                    </label>
-
-                    {importFile && (
-                      <div className="mt-4 rounded-xl bg-green-50 border border-green-200 p-4">
-                        <div className="flex items-center gap-3">
-                          <FileSpreadsheet className="w-5 h-5 text-green-600" />
-
-                          <div className="min-w-0">
-                            <p className="font-semibold text-green-800 truncate">
-                              {importFile.name}
-                            </p>
-
-                            <p className="text-xs text-green-700">
-                              {(importFile.size / 1024).toFixed(1)} KB
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    <button
-                      type="button"
-                      onClick={handleImportStudents}
-                      disabled={!importFile || importingStudents}
-                      className="mt-4 w-full inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-green-600 text-white font-semibold hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      {importingStudents ? (
-                        <>
-                          <Loader2 className="w-5 h-5 animate-spin" />
-                          Importando alunos...
-                        </>
-                      ) : (
-                        <>
-                          <Upload className="w-5 h-5" />
-                          Importar alunos
-                        </>
-                      )}
-                    </button>
-                  </div>
-                </div>
-
-                {importedCount !== null && (
-                  <div className="mt-5 rounded-xl border border-green-200 bg-green-50 px-4 py-3">
-                    <p className="font-semibold text-green-800">
-                      Importação concluída: {importedCount}{" "}
-                      {importedCount === 1
-                        ? "aluno cadastrado."
-                        : "alunos cadastrados."}
-                    </p>
-                  </div>
-                )}
-
-                {importErrors.length > 0 && (
-                  <div className="mt-5 rounded-xl border border-yellow-200 bg-yellow-50 p-4">
-                    <p className="font-semibold text-yellow-800 mb-3">
-                      Algumas linhas não foram importadas:
-                    </p>
-
-                    <div className="space-y-2 max-h-60 overflow-y-auto">
-                      {importErrors.map((item, index) => (
-                        <div
-                          key={`${item.row}-${index}`}
-                          className="text-sm text-yellow-800 bg-yellow-100 rounded-lg px-3 py-2"
-                        >
-                          <strong>Linha {item.row}:</strong> {item.message}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
+          {/* Lista */}
           <div className="p-6">
-            {studentsLoading ? (
-              <div className="py-12 flex items-center justify-center gap-3 text-slate-500">
-                <Loader2 className="w-5 h-5 animate-spin" />
-                Carregando alunos...
+            {loadingStudents ? (
+              <div className="flex justify-center py-12">
+                <Loader2 className="h-7 w-7 text-orange-500 animate-spin" />
               </div>
-            ) : students.length === 0 ? (
+            ) : filteredStudents.length === 0 ? (
               <div className="py-12 text-center">
-                <GraduationCap className="w-12 h-12 text-slate-300 mx-auto mb-3" />
+                <Users className="h-12 w-12 text-slate-300 mx-auto mb-3" />
 
-                <p className="font-medium text-slate-700">
-                  Nenhum aluno cadastrado nesta escola.
-                </p>
+                <h3 className="font-semibold text-slate-700">
+                  {search
+                    ? "Nenhum aluno encontrado"
+                    : "Nenhum aluno cadastrado"}
+                </h3>
 
                 <p className="text-sm text-slate-500 mt-1">
-                  Adicione um aluno ou importe vários por planilha.
+                  {search
+                    ? "Tente pesquisar por outro nome ou e-mail."
+                    : "Adicione um aluno individualmente ou importe uma planilha."}
                 </p>
               </div>
             ) : (
               <div className="space-y-3">
-                {students.map((student) => (
+                {filteredStudents.map((student) => (
                   <div
                     key={student.id}
-                    className="border border-slate-200 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4"
+                    className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 p-4 rounded-xl border border-slate-200 hover:border-slate-300 transition"
                   >
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center">
-                        <GraduationCap className="w-5 h-5 text-green-600" />
+                    <div className="flex items-center gap-4 min-w-0">
+                      <div className="h-11 w-11 rounded-full bg-orange-100 flex items-center justify-center shrink-0">
+                        <span className="text-orange-600 font-bold">
+                          {student.name
+                            .charAt(0)
+                            .toUpperCase()}
+                        </span>
                       </div>
 
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <p className="font-semibold text-slate-900">
-                            {student.name}
-                          </p>
-
-                          {student.active !== false && (
-                            <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-green-100 text-green-700">
-                              Ativo
-                            </span>
-                          )}
-                        </div>
-
-                        <p className="text-sm text-slate-500">
-                          {student.email}
+                      <div className="min-w-0">
+                        <p className="font-semibold text-slate-900 truncate">
+                          {student.name}
                         </p>
 
-                        <p className="text-xs text-slate-400 mt-1">
-                          {student.points ?? 0} pontos
+                        <p className="text-sm text-slate-500 truncate">
+                          {student.email}
                         </p>
                       </div>
                     </div>
 
-                    <button
-                      onClick={() => handleDeleteStudent(student)}
-                      disabled={deletingStudentId === student.id}
-                      className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-60"
-                    >
-                      {deletingStudentId === student.id ? (
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                      ) : (
-                        <Trash2 className="w-4 h-4" />
-                      )}
+                    <div className="flex items-center justify-between sm:justify-end gap-5">
+                      <div className="text-right">
+                        <p className="text-xs text-slate-400">
+                          Pontos
+                        </p>
 
-                      Excluir
-                    </button>
+                        <p className="font-bold text-slate-900">
+                          {(student.points || 0).toLocaleString(
+                            "pt-BR"
+                          )}
+                        </p>
+                      </div>
+
+                      {canManageStudents && (
+                        <button
+                          onClick={() =>
+                            handleDeleteStudent(student)
+                          }
+                          disabled={
+                            deletingStudentId === student.id
+                          }
+                          className="h-10 w-10 rounded-lg flex items-center justify-center text-red-500 hover:bg-red-50 transition disabled:opacity-50"
+                          title="Excluir aluno"
+                        >
+                          {deletingStudentId === student.id ? (
+                            <Loader2 className="h-5 w-5 animate-spin" />
+                          ) : (
+                            <Trash2 className="h-5 w-5" />
+                          )}
+                        </button>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -992,6 +671,377 @@ export default function SchoolDetailsPage() {
           </div>
         </section>
       </div>
+
+      {/* Modal - Adicionar aluno */}
+      {showAddStudent && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+          <div className="w-full max-w-lg bg-white rounded-2xl shadow-xl">
+            <div className="flex items-center justify-between p-6 border-b border-slate-200">
+              <div>
+                <h2 className="text-xl font-bold text-slate-900">
+                  Adicionar aluno
+                </h2>
+
+                <p className="text-sm text-slate-500 mt-1">
+                  Cadastre um novo aluno nesta escola.
+                </p>
+              </div>
+
+              <button
+                onClick={() => setShowAddStudent(false)}
+                className="h-9 w-9 rounded-lg hover:bg-slate-100 flex items-center justify-center"
+              >
+                <X className="h-5 w-5 text-slate-500" />
+              </button>
+            </div>
+
+            <form
+              onSubmit={handleAddStudent}
+              className="p-6 space-y-4"
+            >
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Nome
+                </label>
+
+                <input
+                  type="text"
+                  value={studentName}
+                  onChange={(event) =>
+                    setStudentName(event.target.value)
+                  }
+                  placeholder="Nome completo do aluno"
+                  className="w-full px-4 py-3 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-orange-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  E-mail
+                </label>
+
+                <input
+                  type="email"
+                  value={studentEmail}
+                  onChange={(event) =>
+                    setStudentEmail(event.target.value)
+                  }
+                  placeholder="aluno@email.com"
+                  className="w-full px-4 py-3 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-orange-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Senha
+                </label>
+
+                <input
+                  type="password"
+                  value={studentPassword}
+                  onChange={(event) =>
+                    setStudentPassword(event.target.value)
+                  }
+                  placeholder="Mínimo de 6 caracteres"
+                  className="w-full px-4 py-3 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-orange-500"
+                />
+              </div>
+
+              <div className="flex justify-end gap-3 pt-3">
+                <button
+                  type="button"
+                  onClick={() => setShowAddStudent(false)}
+                  className="px-4 py-2.5 rounded-xl border border-slate-300 text-slate-700 font-medium hover:bg-slate-50"
+                >
+                  Cancelar
+                </button>
+
+                <button
+                  type="submit"
+                  disabled={addingStudent}
+                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-orange-500 hover:bg-orange-600 text-white font-semibold disabled:opacity-50"
+                >
+                  {addingStudent && (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  )}
+
+                  {addingStudent
+                    ? "Adicionando..."
+                    : "Adicionar aluno"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal - Importar planilha */}
+      {showImport && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+          <div className="w-full max-w-2xl bg-white rounded-2xl shadow-xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-6 border-b border-slate-200">
+              <div>
+                <h2 className="text-xl font-bold text-slate-900">
+                  Importar alunos
+                </h2>
+
+                <p className="text-sm text-slate-500 mt-1">
+                  Cadastre vários alunos de uma vez usando uma planilha.
+                </p>
+              </div>
+
+              <button
+                onClick={() => {
+                  setShowImport(false);
+                  setImportResult(null);
+                  setSelectedFile(null);
+
+                  if (fileInputRef.current) {
+                    fileInputRef.current.value = "";
+                  }
+                }}
+                className="h-9 w-9 rounded-lg hover:bg-slate-100 flex items-center justify-center"
+              >
+                <X className="h-5 w-5 text-slate-500" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-6">
+              {/* Formato */}
+              <div className="rounded-xl bg-blue-50 border border-blue-200 p-4">
+                <div className="flex gap-3">
+                  <FileSpreadsheet className="h-6 w-6 text-blue-600 shrink-0" />
+
+                  <div>
+                    <p className="font-semibold text-blue-900">
+                      Formato da planilha
+                    </p>
+
+                    <p className="text-sm text-blue-800 mt-1">
+                      A primeira linha deve conter as colunas:
+                    </p>
+
+                    <div className="flex flex-wrap gap-2 mt-3">
+                      <span className="px-3 py-1 rounded-lg bg-white border border-blue-200 text-sm font-medium text-blue-900">
+                        nome
+                      </span>
+
+                      <span className="px-3 py-1 rounded-lg bg-white border border-blue-200 text-sm font-medium text-blue-900">
+                        email
+                      </span>
+
+                      <span className="px-3 py-1 rounded-lg bg-white border border-blue-200 text-sm font-medium text-blue-900">
+                        senha
+                      </span>
+                    </div>
+
+                    <p className="text-xs text-blue-700 mt-3">
+                      Formatos aceitos: .xlsx, .xls e .csv
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Exemplo */}
+              <div>
+                <p className="text-sm font-semibold text-slate-700 mb-2">
+                  Exemplo:
+                </p>
+
+                <div className="overflow-x-auto rounded-xl border border-slate-200">
+                  <table className="w-full text-sm">
+                    <thead className="bg-slate-50">
+                      <tr>
+                        <th className="text-left px-4 py-3 font-semibold">
+                          nome
+                        </th>
+
+                        <th className="text-left px-4 py-3 font-semibold">
+                          email
+                        </th>
+
+                        <th className="text-left px-4 py-3 font-semibold">
+                          senha
+                        </th>
+                      </tr>
+                    </thead>
+
+                    <tbody>
+                      <tr className="border-t border-slate-200">
+                        <td className="px-4 py-3">
+                          João da Silva
+                        </td>
+
+                        <td className="px-4 py-3">
+                          joao@email.com
+                        </td>
+
+                        <td className="px-4 py-3">
+                          123456
+                        </td>
+                      </tr>
+
+                      <tr className="border-t border-slate-200">
+                        <td className="px-4 py-3">
+                          Maria Souza
+                        </td>
+
+                        <td className="px-4 py-3">
+                          maria@email.com
+                        </td>
+
+                        <td className="px-4 py-3">
+                          123456
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Upload */}
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">
+                  Selecione a planilha
+                </label>
+
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".xlsx,.xls,.csv"
+                  onChange={handleFileChange}
+                  className="block w-full text-sm text-slate-600 file:mr-4 file:py-2.5 file:px-4 file:rounded-lg file:border-0 file:bg-orange-50 file:text-orange-700 file:font-semibold hover:file:bg-orange-100"
+                />
+
+                {selectedFile && (
+                  <div className="mt-3 flex items-center gap-3 rounded-xl bg-slate-50 border border-slate-200 p-3">
+                    <FileSpreadsheet className="h-5 w-5 text-green-600" />
+
+                    <div className="min-w-0">
+                      <p className="font-medium text-slate-800 truncate">
+                        {selectedFile.name}
+                      </p>
+
+                      <p className="text-xs text-slate-500">
+                        {(selectedFile.size / 1024).toFixed(1)} KB
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Resultado */}
+              {importResult && (
+                <div
+                  className={`rounded-xl border p-4 ${
+                    importResult.error
+                      ? "bg-red-50 border-red-200"
+                      : "bg-green-50 border-green-200"
+                  }`}
+                >
+                  {importResult.error ? (
+                    <>
+                      <div className="flex gap-3">
+                        <AlertCircle className="h-5 w-5 text-red-600 shrink-0" />
+
+                        <div>
+                          <p className="font-semibold text-red-800">
+                            Importação não concluída
+                          </p>
+
+                          <p className="text-sm text-red-700 mt-1">
+                            {importResult.error}
+                          </p>
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="flex gap-3">
+                        <CheckCircle2 className="h-5 w-5 text-green-600 shrink-0" />
+
+                        <div>
+                          <p className="font-semibold text-green-800">
+                            Importação concluída
+                          </p>
+
+                          <p className="text-sm text-green-700 mt-1">
+                            {importResult.imported || 0} aluno(s)
+                            importado(s) com sucesso.
+                          </p>
+                        </div>
+                      </div>
+                    </>
+                  )}
+
+                  {importResult.errors &&
+                    importResult.errors.length > 0 && (
+                      <div className="mt-4">
+                        <p className="text-sm font-semibold text-slate-700 mb-2">
+                          Problemas encontrados:
+                        </p>
+
+                        <div className="max-h-48 overflow-y-auto space-y-2">
+                          {importResult.errors.map(
+                            (item, index) => (
+                              <div
+                                key={`${item.row}-${index}`}
+                                className="text-sm bg-white border border-slate-200 rounded-lg p-3"
+                              >
+                                <span className="font-semibold">
+                                  Linha {item.row}:
+                                </span>{" "}
+                                {item.message}
+                              </div>
+                            )
+                          )}
+                        </div>
+                      </div>
+                    )}
+                </div>
+              )}
+
+              {/* Botões */}
+              <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowImport(false);
+                    setImportResult(null);
+                    setSelectedFile(null);
+
+                    if (fileInputRef.current) {
+                      fileInputRef.current.value = "";
+                    }
+                  }}
+                  className="px-5 py-2.5 rounded-xl border border-slate-300 text-slate-700 font-medium hover:bg-slate-50"
+                >
+                  Fechar
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleImportStudents}
+                  disabled={!selectedFile || importing}
+                  className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-orange-500 hover:bg-orange-600 text-white font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {importing ? (
+                    <>
+                      <Loader2 className="h-5 w-5 animate-spin" />
+                      Importando...
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="h-5 w-5" />
+                      Importar alunos
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
