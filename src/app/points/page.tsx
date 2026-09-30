@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowLeft,
@@ -28,17 +28,18 @@ interface Category {
   icon?: string;
 }
 
-export default function PointsPage() {
+function PointsPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
   const [students, setStudents] = useState<Student[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
 
-  const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
-  const [selectedCategory, setSelectedCategory] = useState<Category | null>(
-    null
-  );
+  const [selectedStudent, setSelectedStudent] =
+    useState<Student | null>(null);
+
+  const [selectedCategory, setSelectedCategory] =
+    useState<Category | null>(null);
 
   const [search, setSearch] = useState("");
   const [points, setPoints] = useState<number>(10);
@@ -82,16 +83,14 @@ export default function PointsPage() {
       const studentsData = await studentsResponse.json();
       const categoriesData = await categoriesResponse.json();
 
-      /*
-       * Aceita tanto:
-       * { students: [...] }
-       * quanto diretamente [...]
-       */
-      const studentsList = Array.isArray(studentsData)
+      // Aceita tanto:
+      // { students: [...] }
+      // quanto diretamente [...]
+      const studentsList: Student[] = Array.isArray(studentsData)
         ? studentsData
         : studentsData.students || studentsData.data || [];
 
-      const categoriesList = Array.isArray(categoriesData)
+      const categoriesList: Category[] = Array.isArray(categoriesData)
         ? categoriesData
         : categoriesData.categories || categoriesData.data || [];
 
@@ -100,7 +99,7 @@ export default function PointsPage() {
 
       if (queryStudentId) {
         const preselectedStudent = studentsList.find(
-          (student: Student) => student.id === queryStudentId
+          (student) => student.id === queryStudentId
         );
 
         if (preselectedStudent) {
@@ -125,10 +124,14 @@ export default function PointsPage() {
   const filteredStudents = useMemo(() => {
     const term = search.trim().toLowerCase();
 
-    if (!term) return [];
+    if (!term) {
+      return [];
+    }
 
     return students
-      .filter((student) => student.name.toLowerCase().includes(term))
+      .filter((student) =>
+        student.name.toLowerCase().includes(term)
+      )
       .slice(0, 8);
   }, [students, search]);
 
@@ -169,7 +172,9 @@ export default function PointsPage() {
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.error || "Não foi possível lançar os pontos.");
+        throw new Error(
+          data.error || "Não foi possível lançar os pontos."
+        );
       }
 
       setMessage(
@@ -177,7 +182,7 @@ export default function PointsPage() {
       );
 
       // Atualiza o total local do aluno
-      const updatedStudent = {
+      const updatedStudent: Student = {
         ...selectedStudent,
         points: selectedStudent.points + totalPoints,
       };
@@ -186,7 +191,9 @@ export default function PointsPage() {
 
       setStudents((currentStudents) =>
         currentStudents.map((student) =>
-          student.id === updatedStudent.id ? updatedStudent : student
+          student.id === updatedStudent.id
+            ? updatedStudent
+            : student
         )
       );
 
@@ -219,6 +226,7 @@ export default function PointsPage() {
           <div>
             <div className="flex items-center gap-2">
               <Trophy className="text-orange-500" size={24} />
+
               <h1 className="text-xl font-bold text-slate-900">
                 Pontuar aluno
               </h1>
@@ -247,6 +255,7 @@ export default function PointsPage() {
                 <h2 className="text-lg font-bold text-slate-900">
                   Lançamento de pontos
                 </h2>
+
                 <p className="mt-1 text-sm text-slate-500">
                   Selecione o aluno, a categoria e a quantidade de pontos.
                 </p>
@@ -311,7 +320,6 @@ export default function PointsPage() {
                               onClick={() => {
                                 setSelectedStudent(student);
                                 setSearch("");
-                                setError("");
                               }}
                               className="flex w-full items-center justify-between border-b border-slate-100 px-4 py-3 text-left transition last:border-0 hover:bg-orange-50"
                             >
@@ -407,7 +415,9 @@ export default function PointsPage() {
                     <input
                       type="checkbox"
                       checked={extraPoints}
-                      onChange={(e) => setExtraPoints(e.target.checked)}
+                      onChange={(e) =>
+                        setExtraPoints(e.target.checked)
+                      }
                       className="h-4 w-4 accent-orange-500"
                     />
 
@@ -417,7 +427,8 @@ export default function PointsPage() {
                       </p>
 
                       <p className="text-xs text-slate-500">
-                        Os 10 pontos serão adicionados à categoria selecionada.
+                        Os 10 pontos serão adicionados à categoria
+                        selecionada.
                       </p>
                     </div>
                   </label>
@@ -427,14 +438,20 @@ export default function PointsPage() {
               {/* Mensagens */}
               {error && (
                 <div className="mb-5 flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-                  <XCircle size={20} className="mt-0.5 shrink-0" />
+                  <XCircle
+                    size={20}
+                    className="mt-0.5 shrink-0"
+                  />
                   <span>{error}</span>
                 </div>
               )}
 
               {message && (
                 <div className="mb-5 flex items-start gap-3 rounded-xl border border-green-200 bg-green-50 p-4 text-sm text-green-700">
-                  <CheckCircle2 size={20} className="mt-0.5 shrink-0" />
+                  <CheckCircle2
+                    size={20}
+                    className="mt-0.5 shrink-0"
+                  />
                   <span>{message}</span>
                 </div>
               )}
@@ -442,7 +459,9 @@ export default function PointsPage() {
               <button
                 onClick={handleSubmit}
                 disabled={
-                  submitting || !selectedStudent || !selectedCategory
+                  submitting ||
+                  !selectedStudent ||
+                  !selectedCategory
                 }
                 className="flex w-full items-center justify-center gap-2 rounded-xl bg-orange-500 px-5 py-3.5 font-bold text-white transition hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-50"
               >
@@ -486,7 +505,8 @@ export default function PointsPage() {
                     </p>
 
                     <p className="mt-1 font-semibold text-slate-800">
-                      {selectedStudent?.name || "Nenhum aluno selecionado"}
+                      {selectedStudent?.name ||
+                        "Nenhum aluno selecionado"}
                     </p>
                   </div>
 
@@ -535,7 +555,9 @@ export default function PointsPage() {
                       +{totalPoints}
                     </p>
 
-                    <p className="mt-1 text-sm text-orange-700">pontos</p>
+                    <p className="mt-1 text-sm text-orange-700">
+                      pontos
+                    </p>
                   </div>
 
                   {selectedStudent && (
@@ -559,5 +581,22 @@ export default function PointsPage() {
         )}
       </div>
     </main>
+  );
+}
+
+export default function PointsPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="flex min-h-screen items-center justify-center bg-slate-50">
+          <div className="flex items-center gap-3 text-slate-500">
+            <Loader2 className="animate-spin" size={24} />
+            Carregando...
+          </div>
+        </main>
+      }
+    >
+      <PointsPageContent />
+    </Suspense>
   );
 }
