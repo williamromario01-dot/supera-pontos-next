@@ -27,7 +27,8 @@ import {
   UserCircle,
   UserPlus,
   ShoppingBag,
-  ShoppingCart,
+  GraduationCap,
+  UserCheck,
 } from "lucide-react";
 
 interface User {
@@ -37,6 +38,7 @@ interface User {
   role: string;
   points: number;
   avatar: string | null;
+  schoolId?: string | null;
 }
 
 interface Category {
@@ -92,6 +94,8 @@ interface WeeklyCategory {
 }
 
 interface WeeklyData {
+  schoolId?: string;
+  studentCount?: number;
   summary: {
     currentPoints: number;
     previousPoints: number;
@@ -99,6 +103,7 @@ interface WeeklyData {
     evolutionMessage: string;
     evolutionEmoji: string;
     rewardPoints: number;
+    studentCount?: number;
   };
   categories: WeeklyCategory[];
 }
@@ -119,6 +124,28 @@ export default function DashboardPage() {
     loadDashboard();
   }, []);
 
+  useEffect(() => {
+    if (loading || !user) {
+      return;
+    }
+
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const hash = window.location.hash;
+
+    if (!hash) {
+      return;
+    }
+
+    const target = document.getElementById(hash.slice(1));
+
+    if (target) {
+      target.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [loading, user, weekly]);
+
   async function loadDashboard() {
     try {
       setLoading(true);
@@ -137,11 +164,16 @@ export default function DashboardPage() {
 
       setUser(meData.user);
 
+      const weeklyUrl =
+        meData.user.role === "admin" || meData.user.role === "educator"
+          ? "/api/weekly?scope=unit"
+          : `/api/weekly?studentId=${meData.user.id}`;
+
       const [rankingResponse, weeklyResponse] = await Promise.all([
         fetch("/api/rankings", {
           credentials: "include",
         }),
-        fetch(`/api/weekly?studentId=${meData.user.id}`, {
+        fetch(weeklyUrl, {
           credentials: "include",
         }),
       ]);
@@ -279,10 +311,35 @@ export default function DashboardPage() {
   const canManageSchools =
     user?.role === "super_admin";
 
+  const ownUnitPath =
+    user?.schoolId ? `/schools/${user.schoolId}` : "";
+
+  const canAccessOwnUnit =
+    (user?.role === "admin" || user?.role === "educator") &&
+    Boolean(ownUnitPath);
+
   const canManageStudents =
     user?.role === "super_admin" ||
     user?.role === "admin" ||
     user?.role === "educator";
+
+  const canAccessClasses =
+    canManageStudents &&
+    (Boolean(ownUnitPath) || user?.role === "super_admin");
+
+  const classesPath = ownUnitPath
+    ? `${ownUnitPath}#turmas`
+    : "/schools";
+
+  const canManageEducators =
+    user?.role === "admin" && Boolean(ownUnitPath);
+
+  const educatorsPath = ownUnitPath
+    ? `${ownUnitPath}#educadores`
+    : "";
+
+  const canAccessUnitEvolution =
+    user?.role === "admin" || user?.role === "educator";
 
   const canManageCategories =
     user?.role === "super_admin" ||
@@ -333,8 +390,18 @@ export default function DashboardPage() {
   const currentPoints =
     weekly?.summary.currentPoints || 0;
 
+  const previousPoints =
+    weekly?.summary.previousPoints || 0;
+
   const evolution =
     weekly?.summary.evolutionPercentage || 0;
+
+  const unitStudentCount =
+    weekly?.studentCount ??
+    weekly?.summary.studentCount;
+
+  const isUnitWeekly =
+    user.role === "admin" || user.role === "educator";
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -391,7 +458,47 @@ export default function DashboardPage() {
                   className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-slate-500 hover:bg-slate-100 text-sm font-bold transition"
                 >
                   <School size={17} />
-                  Escolas
+                  Unidades
+                </button>
+              )}
+
+              {canAccessOwnUnit && (
+                <button
+                  onClick={() => router.push(ownUnitPath)}
+                  className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-slate-500 hover:bg-slate-100 text-sm font-bold transition"
+                >
+                  <School size={17} />
+                  Unidade
+                </button>
+              )}
+
+              {canAccessClasses && (
+                <button
+                  onClick={() => router.push(classesPath)}
+                  className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-slate-500 hover:bg-slate-100 text-sm font-bold transition"
+                >
+                  <GraduationCap size={17} />
+                  Turmas
+                </button>
+              )}
+
+              {canManageStudents && (
+                <button
+                  onClick={() => router.push("/students")}
+                  className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-slate-500 hover:bg-slate-100 text-sm font-bold transition"
+                >
+                  <Users size={17} />
+                  Alunos
+                </button>
+              )}
+
+              {canManagePoints && (
+                <button
+                  onClick={() => router.push("/points")}
+                  className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-orange-500 text-white hover:bg-orange-600 text-sm font-bold transition shadow-sm"
+                >
+                  <Award size={17} />
+                  Pontuação
                 </button>
               )}
 
@@ -411,13 +518,23 @@ export default function DashboardPage() {
                 Ranking
               </button>
 
-              {canManageStudents && (
+              {canAccessUnitEvolution && (
                 <button
-                  onClick={() => router.push("/students")}
+                  onClick={() => router.push("/dashboard#evolucao-unidade")}
                   className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-slate-500 hover:bg-slate-100 text-sm font-bold transition"
                 >
-                  <Users size={17} />
-                  Alunos
+                  <TrendingUp size={17} />
+                  Evolução da unidade
+                </button>
+              )}
+
+              {canManageEducators && (
+                <button
+                  onClick={() => router.push(educatorsPath)}
+                  className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-slate-500 hover:bg-slate-100 text-sm font-bold transition"
+                >
+                  <UserCheck size={17} />
+                  Educadores
                 </button>
               )}
 
@@ -428,18 +545,6 @@ export default function DashboardPage() {
                 >
                   <Tags size={17} />
                   Categorias
-                </button>
-              )}
-
-              {/* PONTUAR ALUNO */}
-
-              {canManagePoints && (
-                <button
-                  onClick={() => router.push("/points")}
-                  className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-orange-500 text-white hover:bg-orange-600 text-sm font-bold transition shadow-sm"
-                >
-                  <Award size={17} />
-                  Pontuar aluno
                 </button>
               )}
 
@@ -571,7 +676,59 @@ export default function DashboardPage() {
                     className="flex items-center gap-3 px-4 py-3 rounded-xl text-slate-600 hover:bg-slate-100 font-bold text-sm"
                   >
                     <School size={18} />
-                    Escolas
+                    Unidades
+                  </button>
+                )}
+
+                {canAccessOwnUnit && (
+                  <button
+                    onClick={() => {
+                      setMenuOpen(false);
+                      router.push(ownUnitPath);
+                    }}
+                    className="flex items-center gap-3 px-4 py-3 rounded-xl text-slate-600 hover:bg-slate-100 font-bold text-sm"
+                  >
+                    <School size={18} />
+                    Unidade
+                  </button>
+                )}
+
+                {canAccessClasses && (
+                  <button
+                    onClick={() => {
+                      setMenuOpen(false);
+                      router.push(classesPath);
+                    }}
+                    className="flex items-center gap-3 px-4 py-3 rounded-xl text-slate-600 hover:bg-slate-100 font-bold text-sm"
+                  >
+                    <GraduationCap size={18} />
+                    Turmas
+                  </button>
+                )}
+
+                {canManageStudents && (
+                  <button
+                    onClick={() => {
+                      setMenuOpen(false);
+                      router.push("/students");
+                    }}
+                    className="flex items-center gap-3 px-4 py-3 rounded-xl text-slate-600 hover:bg-slate-100 font-bold text-sm"
+                  >
+                    <Users size={18} />
+                    Alunos
+                  </button>
+                )}
+
+                {canManagePoints && (
+                  <button
+                    onClick={() => {
+                      setMenuOpen(false);
+                      router.push("/points");
+                    }}
+                    className="flex items-center gap-3 px-4 py-3 rounded-xl bg-orange-500 text-white hover:bg-orange-600 font-bold text-sm transition"
+                  >
+                    <Award size={18} />
+                    Pontuação
                   </button>
                 )}
 
@@ -597,16 +754,29 @@ export default function DashboardPage() {
                   Ranking
                 </button>
 
-                {canManageStudents && (
+                {canAccessUnitEvolution && (
                   <button
                     onClick={() => {
                       setMenuOpen(false);
-                      router.push("/students");
+                      router.push("/dashboard#evolucao-unidade");
                     }}
                     className="flex items-center gap-3 px-4 py-3 rounded-xl text-slate-600 hover:bg-slate-100 font-bold text-sm"
                   >
-                    <Users size={18} />
-                    Alunos
+                    <TrendingUp size={18} />
+                    Evolução da unidade
+                  </button>
+                )}
+
+                {canManageEducators && (
+                  <button
+                    onClick={() => {
+                      setMenuOpen(false);
+                      router.push(educatorsPath);
+                    }}
+                    className="flex items-center gap-3 px-4 py-3 rounded-xl text-slate-600 hover:bg-slate-100 font-bold text-sm"
+                  >
+                    <UserCheck size={18} />
+                    Educadores
                   </button>
                 )}
 
@@ -620,21 +790,6 @@ export default function DashboardPage() {
                   >
                     <Tags size={18} />
                     Categorias
-                  </button>
-                )}
-
-                {/* PONTUAR ALUNO - MOBILE */}
-
-                {canManagePoints && (
-                  <button
-                    onClick={() => {
-                      setMenuOpen(false);
-                      router.push("/points");
-                    }}
-                    className="flex items-center gap-3 px-4 py-3 rounded-xl bg-orange-500 text-white hover:bg-orange-600 font-bold text-sm transition"
-                  >
-                    <Award size={18} />
-                    Pontuar aluno
                   </button>
                 )}
 
@@ -838,7 +993,9 @@ export default function DashboardPage() {
             </p>
 
             <p className="text-xs text-slate-500 mt-1">
-              pontos nesta semana
+              {isUnitWeekly
+                ? "pontos da unidade nesta semana"
+                : "pontos nesta semana"}
             </p>
 
           </div>
@@ -899,7 +1056,10 @@ export default function DashboardPage() {
         ========================================= */}
 
         {weekly && (
-          <section className="mt-6 bg-white rounded-2xl border border-slate-200 shadow-sm p-5 sm:p-6">
+          <section
+            id={isUnitWeekly ? "evolucao-unidade" : "evolucao"}
+            className="mt-6 bg-white rounded-2xl border border-slate-200 shadow-sm p-5 sm:p-6"
+          >
 
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
 
@@ -912,7 +1072,9 @@ export default function DashboardPage() {
                 <div>
 
                   <p className="text-[10px] uppercase tracking-wider font-black text-slate-400">
-                    Sua evolução
+                    {isUnitWeekly
+                      ? "Evolução da unidade"
+                      : "Sua evolução"}
                   </p>
 
                   <h3 className="text-lg sm:text-xl font-black text-slate-800 mt-1">
@@ -935,6 +1097,39 @@ export default function DashboardPage() {
               </div>
 
             </div>
+
+            {isUnitWeekly && (
+              <div className="mt-5 grid grid-cols-2 sm:grid-cols-3 gap-3">
+                <div className="rounded-xl bg-slate-50 px-4 py-3">
+                  <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">
+                    Semana atual
+                  </p>
+                  <p className="mt-1 text-lg font-black text-slate-800">
+                    {currentPoints.toLocaleString("pt-BR")}
+                  </p>
+                </div>
+
+                <div className="rounded-xl bg-slate-50 px-4 py-3">
+                  <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">
+                    Semana anterior
+                  </p>
+                  <p className="mt-1 text-lg font-black text-slate-800">
+                    {previousPoints.toLocaleString("pt-BR")}
+                  </p>
+                </div>
+
+                {typeof unitStudentCount === "number" && (
+                  <div className="rounded-xl bg-slate-50 px-4 py-3">
+                    <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">
+                      Alunos
+                    </p>
+                    <p className="mt-1 text-lg font-black text-slate-800">
+                      {unitStudentCount.toLocaleString("pt-BR")}
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
 
           </section>
         )}
@@ -1455,7 +1650,111 @@ export default function DashboardPage() {
               </button>
             )}
 
-            {/* ESCOLAS */}
+            {/* UNIDADES */}
+
+            {canAccessOwnUnit && (
+              <button
+                onClick={() => router.push(ownUnitPath)}
+                className="group bg-white border border-slate-200 rounded-2xl p-5 text-left hover:border-orange-200 hover:shadow-md transition"
+              >
+
+                <div className="w-11 h-11 rounded-xl bg-orange-50 text-orange-600 flex items-center justify-center mb-4">
+                  <School size={21} />
+                </div>
+
+                <h3 className="font-black text-slate-800">
+                  Unidade
+                </h3>
+
+                <p className="text-xs text-slate-400 mt-1">
+                  Acesse turmas, alunos e a gestão da sua unidade.
+                </p>
+
+                <div className="mt-4 flex items-center gap-1 text-xs font-bold text-orange-500">
+                  Acessar
+                  <ChevronRight size={14} />
+                </div>
+
+              </button>
+            )}
+
+            {canAccessClasses && (
+              <button
+                onClick={() => router.push(classesPath)}
+                className="group bg-white border border-slate-200 rounded-2xl p-5 text-left hover:border-orange-200 hover:shadow-md transition"
+              >
+
+                <div className="w-11 h-11 rounded-xl bg-orange-50 text-orange-600 flex items-center justify-center mb-4">
+                  <GraduationCap size={21} />
+                </div>
+
+                <h3 className="font-black text-slate-800">
+                  Turmas
+                </h3>
+
+                <p className="text-xs text-slate-400 mt-1">
+                  Consulte as turmas já cadastradas na unidade.
+                </p>
+
+                <div className="mt-4 flex items-center gap-1 text-xs font-bold text-orange-500">
+                  Acessar
+                  <ChevronRight size={14} />
+                </div>
+
+              </button>
+            )}
+
+            {canAccessUnitEvolution && (
+              <button
+                onClick={() => router.push("/dashboard#evolucao-unidade")}
+                className="group bg-white border border-slate-200 rounded-2xl p-5 text-left hover:border-orange-200 hover:shadow-md transition"
+              >
+
+                <div className="w-11 h-11 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center mb-4">
+                  <TrendingUp size={21} />
+                </div>
+
+                <h3 className="font-black text-slate-800">
+                  Evolução da unidade
+                </h3>
+
+                <p className="text-xs text-slate-400 mt-1">
+                  Veja o desempenho semanal da unidade.
+                </p>
+
+                <div className="mt-4 flex items-center gap-1 text-xs font-bold text-orange-500">
+                  Acessar
+                  <ChevronRight size={14} />
+                </div>
+
+              </button>
+            )}
+
+            {canManageEducators && (
+              <button
+                onClick={() => router.push(educatorsPath)}
+                className="group bg-white border border-slate-200 rounded-2xl p-5 text-left hover:border-orange-200 hover:shadow-md transition"
+              >
+
+                <div className="w-11 h-11 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center mb-4">
+                  <UserCheck size={21} />
+                </div>
+
+                <h3 className="font-black text-slate-800">
+                  Educadores
+                </h3>
+
+                <p className="text-xs text-slate-400 mt-1">
+                  Gerencie os educadores da sua unidade.
+                </p>
+
+                <div className="mt-4 flex items-center gap-1 text-xs font-bold text-orange-500">
+                  Acessar
+                  <ChevronRight size={14} />
+                </div>
+
+              </button>
+            )}
 
             {canManageSchools && (
               <button
@@ -1468,11 +1767,11 @@ export default function DashboardPage() {
                 </div>
 
                 <h3 className="font-black text-slate-800">
-                  Escolas
+                  Unidades
                 </h3>
 
                 <p className="text-xs text-slate-400 mt-1">
-                  Cadastre e gerencie as escolas do sistema.
+                  Cadastre e gerencie as unidades do sistema.
                 </p>
 
                 <div className="mt-4 flex items-center gap-1 text-xs font-bold text-orange-500">
@@ -1524,7 +1823,7 @@ export default function DashboardPage() {
                 </div>
 
                 <h3 className="font-black text-slate-800">
-                  Pontuar aluno
+                  Pontuação
                 </h3>
 
                 <p className="text-xs text-slate-400 mt-1">

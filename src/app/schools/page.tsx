@@ -58,12 +58,12 @@ export default function SchoolsPage() {
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.error || "Erro ao carregar escolas.");
+        throw new Error(data.error || "Erro ao carregar unidades.");
       }
 
       setSchools(data.schools || []);
     } catch (err: any) {
-      setError(err.message || "Erro ao carregar escolas.");
+      setError(err.message || "Erro ao carregar unidades.");
     } finally {
       setLoading(false);
     }
@@ -87,7 +87,7 @@ export default function SchoolsPage() {
     setError("");
 
     if (!form.name.trim()) {
-      setError("Informe o nome da escola.");
+      setError("Informe o nome da unidade.");
       return;
     }
 
@@ -106,10 +106,10 @@ export default function SchoolsPage() {
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.error || "Erro ao criar escola.");
+        throw new Error(data.error || "Erro ao criar unidade.");
       }
 
-      setMessage("Escola criada com sucesso.");
+      setMessage("Unidade criada com sucesso.");
 
       setForm({
         name: "",
@@ -123,7 +123,7 @@ export default function SchoolsPage() {
 
       await loadSchools();
     } catch (err: any) {
-      setError(err.message || "Erro ao criar escola.");
+      setError(err.message || "Erro ao criar unidade.");
     } finally {
       setSaving(false);
     }
@@ -154,10 +154,10 @@ export default function SchoolsPage() {
 
               <div>
                 <h1 className="text-xl font-bold text-slate-900">
-                  Escolas
+                  Unidades
                 </h1>
                 <p className="text-sm text-slate-500">
-                  Gerencie as escolas do sistema
+                  Gerencie as unidades do sistema
                 </p>
               </div>
             </div>
@@ -171,7 +171,7 @@ export default function SchoolsPage() {
               className="flex items-center justify-center gap-2 rounded-xl bg-orange-500 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-orange-500/20 transition hover:bg-orange-600"
             >
               <Plus size={18} />
-              Nova escola
+              Nova unidade
             </button>
           </div>
         </div>
@@ -195,7 +195,7 @@ export default function SchoolsPage() {
             <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-orange-100 text-orange-600">
               <Building2 size={20} />
             </div>
-            <p className="text-sm text-slate-500">Escolas</p>
+            <p className="text-sm text-slate-500">Unidades</p>
             <p className="mt-1 text-3xl font-bold text-slate-900">
               {schools.length}
             </p>
@@ -255,11 +255,11 @@ export default function SchoolsPage() {
             </div>
 
             <h2 className="mt-5 text-xl font-bold text-slate-900">
-              Nenhuma escola cadastrada
+              Nenhuma unidade cadastrada
             </h2>
 
             <p className="mx-auto mt-2 max-w-md text-sm text-slate-500">
-              Comece cadastrando a primeira escola para depois adicionar
+              Comece cadastrando a primeira unidade para depois adicionar
               administradores, educadores e alunos.
             </p>
 
@@ -267,7 +267,7 @@ export default function SchoolsPage() {
               onClick={() => setShowForm(true)}
               className="mt-6 rounded-xl bg-orange-500 px-5 py-3 text-sm font-semibold text-white transition hover:bg-orange-600"
             >
-              Criar primeira escola
+              Criar primeira unidade
             </button>
           </div>
         ) : (
@@ -345,7 +345,7 @@ export default function SchoolsPage() {
                   <div className="mt-6 grid grid-cols-3 gap-2 border-t border-slate-100 pt-5">
                     <div className="rounded-xl bg-slate-50 p-3 text-center">
                       <p className="text-lg font-bold text-slate-900">
-                        {school.administrators}
+                        {school.administrators}/2
                       </p>
                       <p className="text-xs text-slate-500">
                         Admin.
@@ -377,7 +377,7 @@ export default function SchoolsPage() {
                     }
                     className="mt-5 w-full rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 text-sm font-semibold text-orange-700 transition hover:bg-orange-100"
                   >
-                    Gerenciar escola
+                    Gerenciar unidade
                   </button>
                 </div>
               </article>
@@ -392,10 +392,10 @@ export default function SchoolsPage() {
             <div className="sticky top-0 flex items-center justify-between border-b border-slate-200 bg-white px-6 py-5">
               <div>
                 <h2 className="text-xl font-bold text-slate-900">
-                  Nova escola
+                  Nova unidade
                 </h2>
                 <p className="mt-1 text-sm text-slate-500">
-                  Cadastre uma nova escola no sistema
+                  Cadastre uma nova unidade no sistema
                 </p>
               </div>
 
@@ -413,7 +413,7 @@ export default function SchoolsPage() {
             >
               <div>
                 <label className="mb-2 block text-sm font-semibold text-slate-700">
-                  Nome da escola *
+                  Nome da unidade *
                 </label>
 
                 <input
@@ -437,7 +437,7 @@ export default function SchoolsPage() {
                     updateField("description", e.target.value)
                   }
                   rows={3}
-                  placeholder="Descrição ou informações da escola"
+                  placeholder="Descrição ou informações da unidade"
                   className="w-full resize-none rounded-xl border border-slate-300 px-4 py-3 text-sm outline-none transition focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
                 />
               </div>
@@ -452,7 +452,7 @@ export default function SchoolsPage() {
                   onChange={(e) =>
                     updateField("address", e.target.value)
                   }
-                  placeholder="Endereço da escola"
+                  placeholder="Endereço da unidade"
                   className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm outline-none transition focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
                 />
               </div>
@@ -507,7 +507,7 @@ export default function SchoolsPage() {
                   {saving && (
                     <Loader2 size={17} className="animate-spin" />
                   )}
-                  {saving ? "Criando..." : "Criar escola"}
+                  {saving ? "Criando..." : "Criar unidade"}
                 </button>
               </div>
             </form>

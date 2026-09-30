@@ -38,8 +38,34 @@ async function getAuthenticatedUser(request: NextRequest) {
   return user || null;
 }
 
+const MAX_ADMINS_PER_SCHOOL = 2;
+
 function getSchoolId(id: string) {
   return ObjectId.isValid(id) ? new ObjectId(id) : null;
+}
+
+function formatAdmin(admin: {
+  _id: ObjectId;
+  name?: string;
+  email?: string;
+  role?: string;
+  schoolId?: ObjectId | string;
+  points?: number;
+  active?: boolean;
+  createdAt?: Date;
+  updatedAt?: Date;
+}) {
+  return {
+    id: admin._id.toString(),
+    name: admin.name,
+    email: admin.email,
+    role: admin.role,
+    schoolId: admin.schoolId ? admin.schoolId.toString() : null,
+    points: admin.points || 0,
+    active: admin.active !== false,
+    createdAt: admin.createdAt,
+    updatedAt: admin.updatedAt,
+  };
 }
 
 // GET — buscar administrador da escola
@@ -87,35 +113,27 @@ export async function GET(
       );
     }
 
-    const admin = await db.collection("users").findOne(
-      {
-        role: "admin",
-        schoolId,
-      },
-      {
-        projection: {
-          passwordHash: 0,
+    const adminDocuments = await db
+      .collection("users")
+      .find(
+        {
+          role: "admin",
+          schoolId,
         },
-      }
-    );
+        {
+          projection: {
+            passwordHash: 0,
+          },
+        }
+      )
+      .sort({ createdAt: 1, _id: 1 })
+      .toArray();
 
-    if (!admin) {
-      return NextResponse.json({
-        admin: null,
-      });
-    }
+    const admins = adminDocuments.map(formatAdmin);
 
     return NextResponse.json({
-      admin: {
-        id: admin._id.toString(),
-        name: admin.name,
-        email: admin.email,
-        role: admin.role,
-        schoolId: admin.schoolId?.toString(),
-        points: admin.points || 0,
-        createdAt: admin.createdAt,
-        updatedAt: admin.updatedAt,
-      },
+      admin: admins[0] || null,
+      admins,
     });
   } catch (error) {
     console.error("Erro ao buscar administrador:", error);
@@ -230,16 +248,16 @@ export async function POST(
       );
     }
 
-    const existingAdmin = await db.collection("users").findOne({
+    const adminCount = await db.collection("users").countDocuments({
       role: "admin",
       schoolId,
     });
 
-    if (existingAdmin) {
+    if (adminCount >= MAX_ADMINS_PER_SCHOOL) {
       return NextResponse.json(
         {
           error:
-            "Esta escola já possui um administrador. Exclua o administrador atual antes de cadastrar outro.",
+            "Esta unidade já possui o máximo de 2 administradores.",
         },
         { status: 409 }
       );
@@ -315,17 +333,40 @@ export async function DELETE(
       );
     }
 
+    const requestedAdminId =
+      request.nextUrl.searchParams.get("adminId") ||
+      request.nextUrl.searchParams.get("id");
+
     const client = await clientPromise;
     const db = client.db(DB_NAME);
 
-    const admin = await db.collection("users").findOne({
+    const adminFilter: Record<string, unknown> = {
       role: "admin",
       schoolId,
+    };
+
+    if (requestedAdminId) {
+      if (!ObjectId.isValid(requestedAdminId)) {
+        return NextResponse.json(
+          { error: "ID do administrador inválido." },
+          { status: 400 }
+        );
+      }
+
+      adminFilter._id = new ObjectId(requestedAdminId);
+    }
+
+    const admin = await db.collection("users").findOne(adminFilter, {
+      sort: { createdAt: 1, _id: 1 },
     });
 
     if (!admin) {
       return NextResponse.json(
-        { error: "Esta escola não possui administrador cadastrado." },
+        {
+          error: requestedAdminId
+            ? "Administrador não encontrado nesta unidade."
+            : "Esta escola não possui administrador cadastrado.",
+        },
         { status: 404 }
       );
     }

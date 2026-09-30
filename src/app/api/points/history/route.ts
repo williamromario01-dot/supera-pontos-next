@@ -74,15 +74,14 @@ export async function GET(request: NextRequest) {
     const query: Record<string, unknown> = {};
 
     /*
-     * Educadores e superadministradores podem consultar
-     * o histórico de qualquer aluno.
-     *
-     * Alunos só podem consultar o próprio histórico.
+     * Alunos só consultam o próprio histórico.
+     * Super admin consulta qualquer aluno (filtro opcional).
+     * Admin e educador só consultam alunos da própria unidade,
+     * usando schoolId da sessão — nunca o da query.
      */
-    if (
-      user.role === "educator" ||
-      user.role === "super_admin"
-    ) {
+    if (user.role === "student") {
+      query.studentId = user._id;
+    } else if (user.role === "super_admin") {
       if (studentId) {
         const studentObjectId = validObjectId(studentId);
 
@@ -95,8 +94,78 @@ export async function GET(request: NextRequest) {
 
         query.studentId = studentObjectId;
       }
-    } else if (user.role === "student") {
-      query.studentId = user._id;
+    } else if (
+      user.role === "admin" ||
+      user.role === "educator"
+    ) {
+      if (!user.schoolId) {
+        return NextResponse.json(
+          {
+            error:
+              "Seu usuário não está vinculado a uma unidade.",
+          },
+          { status: 403 }
+        );
+      }
+
+      const unitSchoolId = user.schoolId;
+
+      if (studentId) {
+        const studentObjectId = validObjectId(studentId);
+
+        if (!studentObjectId) {
+          return NextResponse.json(
+            { error: "ID do aluno inválido." },
+            { status: 400 }
+          );
+        }
+
+        const student = await db.collection("users").findOne({
+          _id: studentObjectId,
+          role: "student",
+        });
+
+        if (!student) {
+          return NextResponse.json(
+            { error: "Aluno não encontrado." },
+            { status: 404 }
+          );
+        }
+
+        if (
+          !student.schoolId ||
+          String(student.schoolId) !== String(unitSchoolId)
+        ) {
+          return NextResponse.json(
+            {
+              error:
+                "Você só pode consultar o histórico de alunos da sua própria unidade.",
+            },
+            { status: 403 }
+          );
+        }
+
+        query.studentId = studentObjectId;
+      } else {
+        const unitStudents = await db
+          .collection("users")
+          .find(
+            {
+              role: "student",
+              schoolId: unitSchoolId,
+            },
+            {
+              projection: {
+                _id: 1,
+              },
+            }
+          )
+          .toArray();
+
+        query.studentId = {
+          $in: unitStudents.map((student) => student._id),
+        };
+      }
     } else {
       return NextResponse.json(
         {

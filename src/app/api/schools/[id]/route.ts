@@ -116,17 +116,27 @@ export async function GET(
       }
     }
 
-    const admin = await users.findOne(
-      {
-        schoolId: objectId,
-        role: "admin",
-      },
-      {
-        projection: {
-          passwordHash: 0,
+    const adminDocuments = await users
+      .find(
+        {
+          schoolId: objectId,
+          role: "admin",
         },
-      }
-    );
+        {
+          projection: {
+            passwordHash: 0,
+          },
+        }
+      )
+      .sort({ createdAt: 1, _id: 1 })
+      .toArray();
+
+    const admins = adminDocuments.map((admin) => ({
+      id: admin._id.toString(),
+      name: admin.name,
+      email: admin.email,
+      active: admin.active !== false,
+    }));
 
     const educatorsCount = await users.countDocuments({
       schoolId: objectId,
@@ -147,14 +157,9 @@ export async function GET(
           state: school.state || "",
           active: school.active !== false,
 
-          admin: admin
-            ? {
-                id: admin._id.toString(),
-                name: admin.name,
-                email: admin.email,
-                active: admin.active !== false,
-              }
-            : null,
+          admin: admins[0] || null,
+          admins,
+          administratorsCount: admins.length,
 
           educatorsCount,
           studentsCount,

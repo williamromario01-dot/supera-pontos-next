@@ -4,7 +4,7 @@ import clientPromise from "@/lib/mongodb";
 
 const DB_NAME = "supera_pontos";
 
-const ALLOWED_ROLES = ["super_admin", "educator"];
+const ALLOWED_ROLES = ["super_admin", "admin", "educator"];
 
 const MAX_POINTS_PER_LAUNCH = 100000;
 
@@ -187,6 +187,31 @@ export async function POST(request: NextRequest) {
         },
         { status: 400 }
       );
+    }
+
+    if (user.role === "admin" || user.role === "educator") {
+      if (!user.schoolId) {
+        return NextResponse.json(
+          {
+            error:
+              "Seu usuário não está vinculado a uma unidade.",
+          },
+          { status: 403 }
+        );
+      }
+
+      if (
+        !student.schoolId ||
+        String(student.schoolId) !== String(user.schoolId)
+      ) {
+        return NextResponse.json(
+          {
+            error:
+              "Você só pode pontuar alunos da sua própria unidade.",
+          },
+          { status: 403 }
+        );
+      }
     }
 
     // 9. Verificar categoria

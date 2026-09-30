@@ -4,7 +4,7 @@ import clientPromise from "@/lib/mongodb";
 
 const DB_NAME = "supera_pontos";
 
-const ALLOWED_ROLES = ["super_admin", "educator"];
+const ALLOWED_ROLES = ["super_admin", "admin", "educator"];
 
 async function getAuthenticatedUser(request: NextRequest) {
   const sessionToken = request.cookies.get("supera_session")?.value;

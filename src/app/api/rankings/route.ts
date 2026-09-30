@@ -41,6 +41,46 @@ function validObjectId(id: string) {
   return ObjectId.isValid(id) ? new ObjectId(id) : null;
 }
 
+function getSessionSchoolId(user: { schoolId?: unknown }) {
+  if (!user.schoolId) {
+    return null;
+  }
+
+  if (user.schoolId instanceof ObjectId) {
+    return user.schoolId;
+  }
+
+  const value = String(user.schoolId);
+
+  if (!ObjectId.isValid(value)) {
+    return null;
+  }
+
+  return new ObjectId(value);
+}
+
+function emptyCategoryRanking(category: {
+  _id: ObjectId;
+  name?: string;
+  description?: string;
+  icon?: string;
+  color?: string;
+  participatesInRanking?: boolean;
+}) {
+  return {
+    category: {
+      id: category._id.toString(),
+      name: category.name,
+      description: category.description || "",
+      icon: category.icon || "⭐",
+      color: category.color || "#3B82F6",
+      participatesInRanking: category.participatesInRanking === true,
+    },
+    ranking: [] as unknown[],
+    totalStudents: 0,
+  };
+}
+
 export async function GET(request: NextRequest) {
   try {
     const user = await getAuthenticatedUser(request);
@@ -55,6 +95,47 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
 
     const categoryId = searchParams.get("categoryId");
+    const requestedSchoolId = searchParams.get("schoolId");
+
+    let schoolFilter: ObjectId | null = null;
+
+    if (user.role === "super_admin") {
+      if (requestedSchoolId) {
+        schoolFilter = validObjectId(requestedSchoolId);
+
+        if (!schoolFilter) {
+          return NextResponse.json(
+            { error: "schoolId inválido." },
+            { status: 400 }
+          );
+        }
+      }
+    } else if (
+      user.role === "admin" ||
+      user.role === "educator" ||
+      user.role === "student"
+    ) {
+      schoolFilter = getSessionSchoolId(user);
+
+      if (!schoolFilter) {
+        if (categoryId) {
+          return NextResponse.json({
+            ranking: [],
+            totalStudents: 0,
+          });
+        }
+
+        return NextResponse.json({
+          rankings: [],
+          totalCategories: 0,
+        });
+      }
+    } else {
+      return NextResponse.json(
+        { error: "Você não tem permissão para consultar o ranking." },
+        { status: 403 }
+      );
+    }
 
     const client = await clientPromise;
     const db = client.db(DB_NAME);
@@ -62,6 +143,29 @@ export async function GET(request: NextRequest) {
     const categories = db.collection("categories");
     const pointEvents = db.collection("pointEvents");
     const users = db.collection("users");
+
+    let allowedStudentIds: ObjectId[] | null = null;
+
+    if (schoolFilter) {
+      const schoolStudents = await users
+        .find(
+          {
+            role: "student",
+            $or: [
+              { schoolId: schoolFilter },
+              { schoolId: schoolFilter.toString() },
+            ],
+          },
+          {
+            projection: {
+              _id: 1,
+            },
+          }
+        )
+        .toArray();
+
+      allowedStudentIds = schoolStudents.map((student) => student._id);
+    }
 
     /*
      * Se foi informada uma categoria específica,
@@ -103,15 +207,27 @@ export async function GET(request: NextRequest) {
         });
       }
 
+      if (allowedStudentIds && allowedStudentIds.length === 0) {
+        return NextResponse.json(emptyCategoryRanking(category));
+      }
+
       /*
        * Soma os pontos de cada aluno dentro
-       * desta categoria.
+       * desta categoria, restrito à unidade
+       * quando o perfil não for super_admin.
        */
       const rankingData = await pointEvents
         .aggregate([
           {
             $match: {
               categoryId: categoryObjectId,
+              ...(allowedStudentIds
+                ? {
+                    studentId: {
+                      $in: allowedStudentIds,
+                    },
+                  }
+                : {}),
             },
           },
           {
@@ -141,6 +257,14 @@ export async function GET(request: NextRequest) {
               $in: studentIds,
             },
             role: "student",
+            ...(schoolFilter
+              ? {
+                  $or: [
+                    { schoolId: schoolFilter },
+                    { schoolId: schoolFilter.toString() },
+                  ],
+                }
+              : {}),
           },
           {
             projection: {
@@ -224,12 +348,28 @@ export async function GET(request: NextRequest) {
 
     const rankings = [];
 
+    if (allowedStudentIds && allowedStudentIds.length === 0) {
+      return NextResponse.json({
+        rankings: rankingCategories.map((category) =>
+          emptyCategoryRanking(category)
+        ),
+        totalCategories: rankingCategories.length,
+      });
+    }
+
     for (const category of rankingCategories) {
       const rankingData = await pointEvents
         .aggregate([
           {
             $match: {
               categoryId: category._id,
+              ...(allowedStudentIds
+                ? {
+                    studentId: {
+                      $in: allowedStudentIds,
+                    },
+                  }
+                : {}),
             },
           },
           {
@@ -262,6 +402,14 @@ export async function GET(request: NextRequest) {
               $in: studentIds,
             },
             role: "student",
+            ...(schoolFilter
+              ? {
+                  $or: [
+                    { schoolId: schoolFilter },
+                    { schoolId: schoolFilter.toString() },
+                  ],
+                }
+              : {}),
           },
           {
             projection: {

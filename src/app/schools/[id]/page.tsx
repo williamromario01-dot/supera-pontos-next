@@ -17,6 +17,9 @@ import {
   GraduationCap,
   Plus,
   Settings,
+  Pencil,
+  ShieldCheck,
+  UserCheck,
 } from "lucide-react";
 
 interface School {
@@ -64,6 +67,15 @@ interface ClassItem {
   active: boolean;
 }
 
+interface StaffMember {
+  id: string;
+  name: string;
+  email: string;
+  active?: boolean;
+}
+
+const MAX_ADMINS_PER_UNIT = 2;
+
 export default function SchoolPage() {
   const params = useParams();
   const router = useRouter();
@@ -106,11 +118,36 @@ export default function SchoolPage() {
   const [currentUser, setCurrentUser] = useState<{
     id: string;
     role: string;
+    schoolId?: string | null;
   } | null>(null);
 
   const [showCreateClass, setShowCreateClass] = useState(false);
   const [newClassName, setNewClassName] = useState("");
   const [creatingClass, setCreatingClass] = useState(false);
+
+  const [admins, setAdmins] = useState<StaffMember[]>([]);
+  const [educators, setEducators] = useState<StaffMember[]>([]);
+  const [loadingAdmins, setLoadingAdmins] = useState(false);
+  const [loadingEducators, setLoadingEducators] = useState(false);
+
+  const [showAdminForm, setShowAdminForm] = useState(false);
+  const [editingAdmin, setEditingAdmin] = useState<StaffMember | null>(null);
+  const [adminName, setAdminName] = useState("");
+  const [adminEmail, setAdminEmail] = useState("");
+  const [adminPassword, setAdminPassword] = useState("");
+  const [savingAdmin, setSavingAdmin] = useState(false);
+  const [deletingAdminId, setDeletingAdminId] = useState<string | null>(null);
+
+  const [showEducatorForm, setShowEducatorForm] = useState(false);
+  const [editingEducator, setEditingEducator] =
+    useState<StaffMember | null>(null);
+  const [educatorName, setEducatorName] = useState("");
+  const [educatorEmail, setEducatorEmail] = useState("");
+  const [educatorPassword, setEducatorPassword] = useState("");
+  const [savingEducator, setSavingEducator] = useState(false);
+  const [deletingEducatorId, setDeletingEducatorId] = useState<string | null>(
+    null
+  );
 
   const canManageStudents =
     currentUser?.role === "super_admin" ||
@@ -118,6 +155,14 @@ export default function SchoolPage() {
     currentUser?.role === "educator";
 
   const canManageClasses = canManageStudents;
+
+  const canManageAdmins = currentUser?.role === "super_admin";
+
+  const canManageEducators =
+    currentUser?.role === "super_admin" ||
+    currentUser?.role === "admin";
+
+  const canCreateAdmin = admins.length < MAX_ADMINS_PER_UNIT;
 
   async function loadCurrentUser() {
     try {
@@ -137,6 +182,7 @@ export default function SchoolPage() {
       setCurrentUser({
         id: user.id,
         role: user.role,
+        schoolId: user.schoolId || null,
       });
 
       return user;
@@ -153,7 +199,7 @@ export default function SchoolPage() {
       });
 
       if (!response.ok) {
-        throw new Error("Não foi possível carregar a escola.");
+        throw new Error("Não foi possível carregar a unidade.");
       }
 
       const data = await response.json();
@@ -161,7 +207,7 @@ export default function SchoolPage() {
       setSchool(data.school || data);
     } catch (err) {
       console.error(err);
-      setError("Não foi possível carregar os dados da escola.");
+      setError("Não foi possível carregar os dados da unidade.");
     }
   }
 
@@ -227,6 +273,59 @@ export default function SchoolPage() {
     }
   }
 
+  async function loadAdmins() {
+    try {
+      setLoadingAdmins(true);
+
+      const response = await fetch(`/api/schools/${schoolId}/admin`, {
+        credentials: "include",
+      });
+
+      if (!response.ok) {
+        throw new Error("Não foi possível carregar os administradores.");
+      }
+
+      const data = await response.json();
+      const list = Array.isArray(data.admins)
+        ? data.admins
+        : data.admin
+          ? [data.admin]
+          : [];
+
+      setAdmins(list);
+    } catch (err) {
+      console.error(err);
+      setAdmins([]);
+    } finally {
+      setLoadingAdmins(false);
+    }
+  }
+
+  async function loadEducators() {
+    try {
+      setLoadingEducators(true);
+
+      const response = await fetch(
+        `/api/educators?schoolId=${encodeURIComponent(schoolId)}`,
+        {
+          credentials: "include",
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error("Não foi possível carregar os educadores.");
+      }
+
+      const data = await response.json();
+      setEducators(data.educators || []);
+    } catch (err) {
+      console.error(err);
+      setEducators([]);
+    } finally {
+      setLoadingEducators(false);
+    }
+  }
+
   async function loadData() {
     setLoading(true);
     setError("");
@@ -248,11 +347,17 @@ export default function SchoolPage() {
       return;
     }
 
-    await Promise.all([
-      loadSchool(),
-      loadStudents(),
-      loadClasses(),
-    ]);
+    const loaders = [loadSchool(), loadStudents(), loadClasses()];
+
+    if (user.role === "super_admin") {
+      loaders.push(loadAdmins());
+    }
+
+    if (user.role === "super_admin" || user.role === "admin") {
+      loaders.push(loadEducators());
+    }
+
+    await Promise.all(loaders);
 
     setLoading(false);
   }
@@ -260,6 +365,28 @@ export default function SchoolPage() {
   useEffect(() => {
     loadData();
   }, [schoolId]);
+
+  useEffect(() => {
+    if (loading) {
+      return;
+    }
+
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const hash = window.location.hash;
+
+    if (!hash) {
+      return;
+    }
+
+    const target = document.getElementById(hash.slice(1));
+
+    if (target) {
+      target.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [loading, school, admins, educators, classes, students]);
 
   async function handleAddStudent(event: React.FormEvent) {
     event.preventDefault();
@@ -501,6 +628,288 @@ export default function SchoolPage() {
     }
   }
 
+  function openCreateAdmin() {
+    setEditingAdmin(null);
+    setAdminName("");
+    setAdminEmail("");
+    setAdminPassword("");
+    setShowAdminForm(true);
+  }
+
+  function openEditAdmin(admin: StaffMember) {
+    setEditingAdmin(admin);
+    setAdminName(admin.name);
+    setAdminEmail(admin.email);
+    setAdminPassword("");
+    setShowAdminForm(true);
+  }
+
+  async function handleSaveAdmin(event: React.FormEvent) {
+    event.preventDefault();
+
+    if (!adminName.trim() || !adminEmail.trim()) {
+      alert("Informe nome e e-mail do administrador.");
+      return;
+    }
+
+    if (!editingAdmin && adminPassword.length < 6) {
+      alert("A senha deve ter pelo menos 6 caracteres.");
+      return;
+    }
+
+    if (editingAdmin && adminPassword && adminPassword.length < 6) {
+      alert("A senha deve ter pelo menos 6 caracteres.");
+      return;
+    }
+
+    try {
+      setSavingAdmin(true);
+
+      if (editingAdmin) {
+        const body: Record<string, string> = {
+          name: adminName.trim(),
+          email: adminEmail.trim().toLowerCase(),
+        };
+
+        if (adminPassword) {
+          body.password = adminPassword;
+        }
+
+        const response = await fetch(`/api/admins/${editingAdmin.id}`, {
+          method: "PATCH",
+          credentials: "include",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(body),
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(
+            data.error || "Não foi possível atualizar o administrador."
+          );
+        }
+      } else {
+        const response = await fetch(`/api/schools/${schoolId}/admin`, {
+          method: "POST",
+          credentials: "include",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            name: adminName.trim(),
+            email: adminEmail.trim().toLowerCase(),
+            password: adminPassword,
+          }),
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(
+            data.error || "Não foi possível cadastrar o administrador."
+          );
+        }
+      }
+
+      setShowAdminForm(false);
+      setEditingAdmin(null);
+      await loadAdmins();
+    } catch (err) {
+      alert(
+        err instanceof Error
+          ? err.message
+          : "Não foi possível salvar o administrador."
+      );
+    } finally {
+      setSavingAdmin(false);
+    }
+  }
+
+  async function handleDeleteAdmin(admin: StaffMember) {
+    const confirmed = window.confirm(
+      `Deseja realmente excluir o administrador "${admin.name}"?`
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      setDeletingAdminId(admin.id);
+
+      const response = await fetch(`/api/admins/${admin.id}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          data.error || "Não foi possível excluir o administrador."
+        );
+      }
+
+      await loadAdmins();
+    } catch (err) {
+      alert(
+        err instanceof Error
+          ? err.message
+          : "Não foi possível excluir o administrador."
+      );
+    } finally {
+      setDeletingAdminId(null);
+    }
+  }
+
+  function openCreateEducator() {
+    setEditingEducator(null);
+    setEducatorName("");
+    setEducatorEmail("");
+    setEducatorPassword("");
+    setShowEducatorForm(true);
+  }
+
+  function openEditEducator(educator: StaffMember) {
+    setEditingEducator(educator);
+    setEducatorName(educator.name);
+    setEducatorEmail(educator.email);
+    setEducatorPassword("");
+    setShowEducatorForm(true);
+  }
+
+  async function handleSaveEducator(event: React.FormEvent) {
+    event.preventDefault();
+
+    if (!educatorName.trim() || !educatorEmail.trim()) {
+      alert("Informe nome e e-mail do educador.");
+      return;
+    }
+
+    if (!editingEducator && educatorPassword.length < 6) {
+      alert("A senha deve ter pelo menos 6 caracteres.");
+      return;
+    }
+
+    if (
+      editingEducator &&
+      educatorPassword &&
+      educatorPassword.length < 6
+    ) {
+      alert("A senha deve ter pelo menos 6 caracteres.");
+      return;
+    }
+
+    try {
+      setSavingEducator(true);
+
+      if (editingEducator) {
+        const body: Record<string, string> = {
+          name: educatorName.trim(),
+          email: educatorEmail.trim().toLowerCase(),
+        };
+
+        if (educatorPassword) {
+          body.password = educatorPassword;
+        }
+
+        const response = await fetch(
+          `/api/educators/${editingEducator.id}`,
+          {
+            method: "PATCH",
+            credentials: "include",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(body),
+          }
+        );
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(
+            data.error || "Não foi possível atualizar o educador."
+          );
+        }
+      } else {
+        const response = await fetch("/api/educators", {
+          method: "POST",
+          credentials: "include",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            name: educatorName.trim(),
+            email: educatorEmail.trim().toLowerCase(),
+            password: educatorPassword,
+            schoolId,
+          }),
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(
+            data.error || "Não foi possível cadastrar o educador."
+          );
+        }
+      }
+
+      setShowEducatorForm(false);
+      setEditingEducator(null);
+      await loadEducators();
+    } catch (err) {
+      alert(
+        err instanceof Error
+          ? err.message
+          : "Não foi possível salvar o educador."
+      );
+    } finally {
+      setSavingEducator(false);
+    }
+  }
+
+  async function handleDeleteEducator(educator: StaffMember) {
+    const confirmed = window.confirm(
+      `Deseja realmente excluir o educador "${educator.name}"?`
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      setDeletingEducatorId(educator.id);
+
+      const response = await fetch(`/api/educators/${educator.id}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          data.error || "Não foi possível excluir o educador."
+        );
+      }
+
+      await loadEducators();
+    } catch (err) {
+      alert(
+        err instanceof Error
+          ? err.message
+          : "Não foi possível excluir o educador."
+      );
+    } finally {
+      setDeletingEducatorId(null);
+    }
+  }
+
   const filteredStudents = students.filter((student) => {
     const searchTerm = search.toLowerCase().trim();
 
@@ -529,7 +938,7 @@ export default function SchoolPage() {
       <main className="min-h-screen bg-slate-50 flex items-center justify-center">
         <div className="flex items-center gap-3 text-slate-600">
           <Loader2 className="h-6 w-6 animate-spin" />
-          <span>Carregando escola...</span>
+          <span>Carregando unidade...</span>
         </div>
       </main>
     );
@@ -540,11 +949,17 @@ export default function SchoolPage() {
       <main className="min-h-screen bg-slate-50 p-6">
         <div className="max-w-4xl mx-auto">
           <button
-            onClick={() => router.push("/schools")}
+            onClick={() =>
+              router.push(
+                currentUser?.role === "super_admin" ? "/schools" : "/dashboard"
+              )
+            }
             className="flex items-center gap-2 text-slate-600 hover:text-slate-900 mb-6"
           >
             <ArrowLeft className="h-5 w-5" />
-            Voltar para escolas
+            {currentUser?.role === "super_admin"
+              ? "Voltar para unidades"
+              : "Voltar ao dashboard"}
           </button>
 
           <div className="bg-white rounded-2xl border border-red-200 p-8 text-center">
@@ -564,15 +979,23 @@ export default function SchoolPage() {
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-8">
           <div>
             <button
-              onClick={() => router.push("/schools")}
+              onClick={() =>
+                router.push(
+                  currentUser?.role === "super_admin"
+                    ? "/schools"
+                    : "/dashboard"
+                )
+              }
               className="flex items-center gap-2 text-slate-500 hover:text-slate-900 mb-4 transition"
             >
               <ArrowLeft className="h-5 w-5" />
-              Voltar para escolas
+              {currentUser?.role === "super_admin"
+                ? "Voltar para unidades"
+                : "Voltar ao dashboard"}
             </button>
 
             <h1 className="text-3xl font-bold text-slate-900">
-              {school?.name || "Escola"}
+              {school?.name || "Unidade"}
             </h1>
 
             <div className="flex flex-wrap gap-3 mt-2 text-sm text-slate-500">
@@ -671,8 +1094,184 @@ export default function SchoolPage() {
           </div>
         </div>
 
+        {canManageAdmins && (
+          <section
+            id="administradores"
+            className="bg-white rounded-2xl border border-slate-200 shadow-sm mb-8"
+          >
+            <div className="p-6 border-b border-slate-200">
+              <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-xl bg-blue-100 flex items-center justify-center">
+                    <ShieldCheck className="h-5 w-5 text-blue-600" />
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-bold text-slate-900">
+                      Administradores
+                    </h2>
+                    <p className="text-sm text-slate-500 mt-1">
+                      Cada unidade pode ter no máximo {MAX_ADMINS_PER_UNIT}{" "}
+                      administradores.
+                    </p>
+                  </div>
+                </div>
+
+                {canCreateAdmin && (
+                  <button
+                    onClick={openCreateAdmin}
+                    className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold transition"
+                  >
+                    <UserPlus className="h-5 w-5" />
+                    Adicionar administrador
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="p-6">
+              {loadingAdmins ? (
+                <div className="flex justify-center py-8">
+                  <Loader2 className="h-7 w-7 text-blue-500 animate-spin" />
+                </div>
+              ) : admins.length === 0 ? (
+                <p className="text-sm text-slate-500 text-center py-6">
+                  Nenhum administrador cadastrado nesta unidade.
+                </p>
+              ) : (
+                <div className="space-y-3">
+                  {admins.map((admin) => (
+                    <div
+                      key={admin.id}
+                      className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-xl border border-slate-200 p-4"
+                    >
+                      <div>
+                        <p className="font-semibold text-slate-900">
+                          {admin.name}
+                        </p>
+                        <p className="text-sm text-slate-500">{admin.email}</p>
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => openEditAdmin(admin)}
+                          className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50"
+                        >
+                          <Pencil className="h-4 w-4" />
+                          Editar
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteAdmin(admin)}
+                          disabled={deletingAdminId === admin.id}
+                          className="inline-flex items-center gap-2 px-3 py-2 rounded-lg text-red-600 hover:bg-red-50 disabled:opacity-50"
+                        >
+                          {deletingAdminId === admin.id ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Trash2 className="h-4 w-4" />
+                          )}
+                          Excluir
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </section>
+        )}
+
+        {canManageEducators && (
+          <section
+            id="educadores"
+            className="bg-white rounded-2xl border border-slate-200 shadow-sm mb-8"
+          >
+            <div className="p-6 border-b border-slate-200">
+              <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-xl bg-purple-100 flex items-center justify-center">
+                    <UserCheck className="h-5 w-5 text-purple-600" />
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-bold text-slate-900">
+                      Educadores
+                    </h2>
+                    <p className="text-sm text-slate-500 mt-1">
+                      Gerencie os educadores desta unidade.
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  onClick={openCreateEducator}
+                  className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-semibold transition"
+                >
+                  <UserPlus className="h-5 w-5" />
+                  Adicionar educador
+                </button>
+              </div>
+            </div>
+
+            <div className="p-6">
+              {loadingEducators ? (
+                <div className="flex justify-center py-8">
+                  <Loader2 className="h-7 w-7 text-purple-500 animate-spin" />
+                </div>
+              ) : educators.length === 0 ? (
+                <p className="text-sm text-slate-500 text-center py-6">
+                  Nenhum educador cadastrado nesta unidade.
+                </p>
+              ) : (
+                <div className="space-y-3">
+                  {educators.map((educator) => (
+                    <div
+                      key={educator.id}
+                      className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-xl border border-slate-200 p-4"
+                    >
+                      <div>
+                        <p className="font-semibold text-slate-900">
+                          {educator.name}
+                        </p>
+                        <p className="text-sm text-slate-500">
+                          {educator.email}
+                        </p>
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => openEditEducator(educator)}
+                          className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50"
+                        >
+                          <Pencil className="h-4 w-4" />
+                          Editar
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteEducator(educator)}
+                          disabled={deletingEducatorId === educator.id}
+                          className="inline-flex items-center gap-2 px-3 py-2 rounded-lg text-red-600 hover:bg-red-50 disabled:opacity-50"
+                        >
+                          {deletingEducatorId === educator.id ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Trash2 className="h-4 w-4" />
+                          )}
+                          Excluir
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </section>
+        )}
+
         {/* TURMAS */}
-        <section className="bg-white rounded-2xl border border-slate-200 shadow-sm mb-8">
+        <section
+          id="turmas"
+          className="bg-white rounded-2xl border border-slate-200 shadow-sm mb-8"
+        >
 
           <div className="p-6 border-b border-slate-200">
             <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
@@ -745,7 +1344,7 @@ export default function SchoolPage() {
                 <p className="text-sm text-slate-500 mt-1">
                   {classSearch
                     ? "Tente pesquisar por outro nome."
-                    : "Crie a primeira turma desta escola para começar a organizar os alunos."}
+                    : "Crie a primeira turma desta unidade para começar a organizar os alunos."}
                 </p>
 
                 {!classSearch && canManageClasses && (
@@ -845,7 +1444,10 @@ export default function SchoolPage() {
         </section>
 
         {/* Área de alunos */}
-        <section className="bg-white rounded-2xl border border-slate-200 shadow-sm">
+        <section
+          id="alunos"
+          className="bg-white rounded-2xl border border-slate-200 shadow-sm"
+        >
           <div className="p-6 border-b border-slate-200">
             <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
               <div>
@@ -854,7 +1456,7 @@ export default function SchoolPage() {
                 </h2>
 
                 <p className="text-sm text-slate-500 mt-1">
-                  Gerencie os alunos vinculados a esta escola.
+                  Gerencie os alunos vinculados a esta unidade.
                 </p>
               </div>
 
@@ -990,6 +1592,172 @@ export default function SchoolPage() {
         </section>
       </div>
 
+      {/* Modal - Administrador */}
+      {showAdminForm && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+          <div className="w-full max-w-lg bg-white rounded-2xl shadow-xl">
+            <div className="flex items-center justify-between p-6 border-b border-slate-200">
+              <div>
+                <h2 className="text-xl font-bold text-slate-900">
+                  {editingAdmin
+                    ? "Editar administrador"
+                    : "Cadastrar administrador"}
+                </h2>
+                <p className="text-sm text-slate-500 mt-1">
+                  {editingAdmin
+                    ? "Atualize os dados deste administrador."
+                    : "Cadastre um administrador para esta unidade."}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowAdminForm(false)}
+                className="h-9 w-9 rounded-lg hover:bg-slate-100 flex items-center justify-center"
+              >
+                <X className="h-5 w-5 text-slate-500" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveAdmin} className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Nome
+                </label>
+                <input
+                  type="text"
+                  value={adminName}
+                  onChange={(event) => setAdminName(event.target.value)}
+                  className="w-full px-4 py-3 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  E-mail
+                </label>
+                <input
+                  type="email"
+                  value={adminEmail}
+                  onChange={(event) => setAdminEmail(event.target.value)}
+                  className="w-full px-4 py-3 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  {editingAdmin ? "Nova senha (opcional)" : "Senha"}
+                </label>
+                <input
+                  type="password"
+                  value={adminPassword}
+                  onChange={(event) => setAdminPassword(event.target.value)}
+                  className="w-full px-4 py-3 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div className="flex justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowAdminForm(false)}
+                  className="px-4 py-2.5 rounded-xl border border-slate-300 text-slate-700 font-medium hover:bg-slate-50"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingAdmin}
+                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold disabled:opacity-50"
+                >
+                  {savingAdmin && <Loader2 className="h-4 w-4 animate-spin" />}
+                  Salvar
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal - Educador */}
+      {showEducatorForm && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+          <div className="w-full max-w-lg bg-white rounded-2xl shadow-xl">
+            <div className="flex items-center justify-between p-6 border-b border-slate-200">
+              <div>
+                <h2 className="text-xl font-bold text-slate-900">
+                  {editingEducator ? "Editar educador" : "Cadastrar educador"}
+                </h2>
+                <p className="text-sm text-slate-500 mt-1">
+                  {editingEducator
+                    ? "Atualize os dados deste educador."
+                    : "Cadastre um educador para esta unidade."}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowEducatorForm(false)}
+                className="h-9 w-9 rounded-lg hover:bg-slate-100 flex items-center justify-center"
+              >
+                <X className="h-5 w-5 text-slate-500" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveEducator} className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Nome
+                </label>
+                <input
+                  type="text"
+                  value={educatorName}
+                  onChange={(event) => setEducatorName(event.target.value)}
+                  className="w-full px-4 py-3 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  E-mail
+                </label>
+                <input
+                  type="email"
+                  value={educatorEmail}
+                  onChange={(event) => setEducatorEmail(event.target.value)}
+                  className="w-full px-4 py-3 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  {editingEducator ? "Nova senha (opcional)" : "Senha"}
+                </label>
+                <input
+                  type="password"
+                  value={educatorPassword}
+                  onChange={(event) =>
+                    setEducatorPassword(event.target.value)
+                  }
+                  className="w-full px-4 py-3 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                />
+              </div>
+              <div className="flex justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowEducatorForm(false)}
+                  className="px-4 py-2.5 rounded-xl border border-slate-300 text-slate-700 font-medium hover:bg-slate-50"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingEducator}
+                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-semibold disabled:opacity-50"
+                >
+                  {savingEducator && (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  )}
+                  Salvar
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* Modal - Criar turma */}
       {showCreateClass && (
         <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
@@ -1002,7 +1770,7 @@ export default function SchoolPage() {
                 </h2>
 
                 <p className="text-sm text-slate-500 mt-1">
-                  Crie uma nova turma para esta escola.
+                  Crie uma nova turma para esta unidade.
                 </p>
               </div>
 
@@ -1092,7 +1860,7 @@ export default function SchoolPage() {
                 </h2>
 
                 <p className="text-sm text-slate-500 mt-1">
-                  Cadastre um novo aluno nesta escola.
+                  Cadastre um novo aluno nesta unidade.
                 </p>
               </div>
 

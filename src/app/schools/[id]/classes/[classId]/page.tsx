@@ -697,9 +697,17 @@ export default function ClassManagementPage() {
                                 </span>
                               </div>
 
-                              <span className="font-medium text-gray-900">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  router.push(
+                                    `/points?studentId=${student.id}`
+                                  )
+                                }
+                                className="font-medium text-orange-600 hover:text-orange-700 hover:underline text-left"
+                              >
                                 {student.name}
-                              </span>
+                              </button>
                             </div>
                           </td>
 

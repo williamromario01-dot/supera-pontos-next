@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowLeft,
   Award,
@@ -30,6 +30,7 @@ interface Category {
 
 export default function PointsPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   const [students, setStudents] = useState<Student[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -50,10 +51,11 @@ export default function PointsPage() {
   const [error, setError] = useState("");
 
   const totalPoints = points + (extraPoints ? 10 : 0);
+  const queryStudentId = searchParams.get("studentId");
 
   useEffect(() => {
     loadData();
-  }, []);
+  }, [queryStudentId]);
 
   async function loadData() {
     try {
@@ -95,6 +97,16 @@ export default function PointsPage() {
 
       setStudents(studentsList);
       setCategories(categoriesList);
+
+      if (queryStudentId) {
+        const preselectedStudent = studentsList.find(
+          (student: Student) => student.id === queryStudentId
+        );
+
+        if (preselectedStudent) {
+          setSelectedStudent(preselectedStudent);
+        }
+      }
 
       if (categoriesList.length > 0) {
         setSelectedCategory(categoriesList[0]);

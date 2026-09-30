@@ -176,6 +176,168 @@ function calculateWeeklyReward(
   };
 }
 
+function getSessionSchoolId(user: { schoolId?: unknown }) {
+  if (!user.schoolId) {
+    return null;
+  }
+
+  if (user.schoolId instanceof ObjectId) {
+    return user.schoolId;
+  }
+
+  const value = String(user.schoolId);
+
+  if (!ObjectId.isValid(value)) {
+    return null;
+  }
+
+  return new ObjectId(value);
+}
+
+function belongsToSchool(
+  recordSchoolId: unknown,
+  sessionSchoolId: ObjectId
+) {
+  return (
+    Boolean(recordSchoolId) &&
+    String(recordSchoolId) === String(sessionSchoolId)
+  );
+}
+
+async function buildWeeklyCategories(
+  pointEvents: any,
+  rankingCategories: any[],
+  studentIdFilter: ObjectId | { $in: ObjectId[] },
+  currentWeekStart: Date,
+  currentWeekEnd: Date,
+  previousWeekStart: Date,
+  previousWeekEnd: Date
+) {
+  const results = [];
+
+  for (const category of rankingCategories) {
+    const currentWeekEvents = await pointEvents
+      .find({
+        studentId: studentIdFilter,
+        categoryId: category._id,
+        createdAt: {
+          $gte: currentWeekStart,
+          $lt: currentWeekEnd,
+        },
+      })
+      .toArray();
+
+    const previousWeekEvents = await pointEvents
+      .find({
+        studentId: studentIdFilter,
+        categoryId: category._id,
+        createdAt: {
+          $gte: previousWeekStart,
+          $lt: previousWeekEnd,
+        },
+      })
+      .toArray();
+
+    const currentPoints = currentWeekEvents.reduce(
+      (total, event) => total + Number(event.points || 0),
+      0
+    );
+
+    const previousPoints = previousWeekEvents.reduce(
+      (total, event) => total + Number(event.points || 0),
+      0
+    );
+
+    const weeklyGoal = Number(category.weeklyGoal || 0);
+
+    const reward = calculateWeeklyReward(
+      currentPoints,
+      weeklyGoal
+    );
+
+    const evolution = getEvolutionMessage(
+      currentPoints,
+      previousPoints
+    );
+
+    results.push({
+      category: {
+        id: category._id.toString(),
+        name: category.name,
+        description: category.description || "",
+        icon: category.icon || "⭐",
+        color: category.color || "#3B82F6",
+        weeklyGoal,
+      },
+
+      currentWeek: {
+        points: currentPoints,
+        start: currentWeekStart,
+        end: currentWeekEnd,
+      },
+
+      previousWeek: {
+        points: previousPoints,
+        start: previousWeekStart,
+        end: previousWeekEnd,
+      },
+
+      evolution: {
+        percentage:
+          Math.round(evolution.percentage * 100) / 100,
+        message: evolution.message,
+        emoji: evolution.emoji,
+      },
+
+      reward: {
+        points: reward.rewardPoints,
+        level: reward.level,
+        bonusApplied: reward.bonusApplied,
+      },
+    });
+  }
+
+  return results;
+}
+
+function buildWeeklySummary(
+  results: Array<{
+    currentWeek: { points: number };
+    previousWeek: { points: number };
+    reward: { points: number };
+  }>
+) {
+  const totalCurrentPoints = results.reduce(
+    (total, item) => total + item.currentWeek.points,
+    0
+  );
+
+  const totalPreviousPoints = results.reduce(
+    (total, item) => total + item.previousWeek.points,
+    0
+  );
+
+  const totalRewardPoints = results.reduce(
+    (total, item) => total + item.reward.points,
+    0
+  );
+
+  const overallEvolution = getEvolutionMessage(
+    totalCurrentPoints,
+    totalPreviousPoints
+  );
+
+  return {
+    currentPoints: totalCurrentPoints,
+    previousPoints: totalPreviousPoints,
+    evolutionPercentage:
+      Math.round(overallEvolution.percentage * 100) / 100,
+    evolutionMessage: overallEvolution.message,
+    evolutionEmoji: overallEvolution.emoji,
+    rewardPoints: totalRewardPoints,
+  };
+}
+
 export async function GET(request: NextRequest) {
   try {
     const user = await getAuthenticatedUser(request);
@@ -192,12 +354,164 @@ export async function GET(request: NextRequest) {
     const requestedStudentId =
       searchParams.get("studentId");
 
+    const scope = searchParams.get("scope");
+
+    const client = await clientPromise;
+    const db = client.db(DB_NAME);
+
+    const students = db.collection("users");
+    const categories = db.collection("categories");
+    const pointEvents = db.collection("pointEvents");
+
+    const now = new Date();
+
+    const currentWeekStart = getWeekStart(now);
+    const currentWeekEnd = getWeekEnd(
+      currentWeekStart
+    );
+
+    const previousWeekStart =
+      getPreviousWeekStart(currentWeekStart);
+
+    const previousWeekEnd = new Date(
+      currentWeekStart
+    );
+
+    const rankingCategories = await categories
+      .find({
+        participatesInRanking: true,
+      })
+      .sort({
+        name: 1,
+      })
+      .toArray();
+
+    if (scope === "unit") {
+      if (user.role === "student") {
+        return NextResponse.json(
+          {
+            error:
+              "Você não tem permissão para consultar a evolução semanal da unidade.",
+          },
+          { status: 403 }
+        );
+      }
+
+      let unitSchoolId: ObjectId | null = null;
+
+      if (
+        user.role === "admin" ||
+        user.role === "educator"
+      ) {
+        unitSchoolId = getSessionSchoolId(user);
+
+        if (!unitSchoolId) {
+          return NextResponse.json(
+            {
+              error:
+                "Seu usuário não está vinculado a uma unidade.",
+            },
+            { status: 403 }
+          );
+        }
+      } else if (user.role === "super_admin") {
+        const requestedSchoolId =
+          searchParams.get("schoolId");
+
+        if (!requestedSchoolId) {
+          return NextResponse.json(
+            {
+              error:
+                "Informe o ID da unidade.",
+            },
+            { status: 400 }
+          );
+        }
+
+        if (!ObjectId.isValid(requestedSchoolId)) {
+          return NextResponse.json(
+            {
+              error: "ID da unidade inválido.",
+            },
+            { status: 400 }
+          );
+        }
+
+        unitSchoolId = new ObjectId(requestedSchoolId);
+      } else {
+        return NextResponse.json(
+          {
+            error:
+              "Você não tem permissão para consultar as regras semanais.",
+          },
+          { status: 403 }
+        );
+      }
+
+      const unitStudentDocs = await students
+        .find(
+          {
+            role: "student",
+            schoolId: unitSchoolId,
+          },
+          {
+            projection: {
+              _id: 1,
+            },
+          }
+        )
+        .toArray();
+
+      const unitStudentIds = unitStudentDocs.map(
+        (student) => student._id
+      );
+
+      const results = await buildWeeklyCategories(
+        pointEvents,
+        rankingCategories,
+        { $in: unitStudentIds },
+        currentWeekStart,
+        currentWeekEnd,
+        previousWeekStart,
+        previousWeekEnd
+      );
+
+      const summary = buildWeeklySummary(results);
+
+      return NextResponse.json({
+        schoolId: unitSchoolId.toString(),
+        studentCount: unitStudentIds.length,
+
+        week: {
+          current: {
+            start: currentWeekStart,
+            end: currentWeekEnd,
+          },
+
+          previous: {
+            start: previousWeekStart,
+            end: previousWeekEnd,
+          },
+        },
+
+        summary: {
+          ...summary,
+          studentCount: unitStudentIds.length,
+          currentPoints: summary.currentPoints,
+          previousPoints: summary.previousPoints,
+        },
+
+        categories: results,
+      });
+    }
+
     let studentId: ObjectId;
 
     /*
      * Aluno só pode consultar seus próprios dados.
-     * Educador e superadministrador podem consultar
-     * qualquer aluno.
+     * Educador, administrador e superadministrador
+     * consultam por studentId. Admin/educador só da
+     * própria unidade (validado após localizar o aluno).
      */
     if (user.role === "student") {
       studentId = user._id;
@@ -216,6 +530,7 @@ export async function GET(request: NextRequest) {
       }
     } else if (
       user.role === "educator" ||
+      user.role === "admin" ||
       user.role === "super_admin"
     ) {
       if (!requestedStudentId) {
@@ -249,13 +564,6 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const client = await clientPromise;
-    const db = client.db(DB_NAME);
-
-    const students = db.collection("users");
-    const categories = db.collection("categories");
-    const pointEvents = db.collection("pointEvents");
-
     const student = await students.findOne({
       _id: studentId,
       role: "student",
@@ -270,159 +578,41 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const now = new Date();
+    if (user.role === "admin" || user.role === "educator") {
+      const sessionSchoolId = getSessionSchoolId(user);
 
-    const currentWeekStart = getWeekStart(now);
-    const currentWeekEnd = getWeekEnd(
-      currentWeekStart
-    );
-
-    const previousWeekStart =
-      getPreviousWeekStart(currentWeekStart);
-
-    const previousWeekEnd = new Date(
-      currentWeekStart
-    );
-
-    /*
-     * Busca somente categorias que participam
-     * do ranking semanal.
-     */
-    const rankingCategories = await categories
-      .find({
-        participatesInRanking: true,
-      })
-      .sort({
-        name: 1,
-      })
-      .toArray();
-
-    const results = [];
-
-    for (const category of rankingCategories) {
-      const currentWeekEvents =
-        await pointEvents
-          .find({
-            studentId,
-            categoryId: category._id,
-            createdAt: {
-              $gte: currentWeekStart,
-              $lt: currentWeekEnd,
-            },
-          })
-          .toArray();
-
-      const previousWeekEvents =
-        await pointEvents
-          .find({
-            studentId,
-            categoryId: category._id,
-            createdAt: {
-              $gte: previousWeekStart,
-              $lt: previousWeekEnd,
-            },
-          })
-          .toArray();
-
-      const currentPoints =
-        currentWeekEvents.reduce(
-          (total, event) =>
-            total + Number(event.points || 0),
-          0
+      if (!sessionSchoolId) {
+        return NextResponse.json(
+          {
+            error:
+              "Seu usuário não está vinculado a uma unidade.",
+          },
+          { status: 403 }
         );
+      }
 
-      const previousPoints =
-        previousWeekEvents.reduce(
-          (total, event) =>
-            total + Number(event.points || 0),
-          0
+      if (!belongsToSchool(student.schoolId, sessionSchoolId)) {
+        return NextResponse.json(
+          {
+            error:
+              "Você só pode consultar a evolução semanal de alunos da sua própria unidade.",
+          },
+          { status: 403 }
         );
-
-      const weeklyGoal = Number(
-        category.weeklyGoal || 0
-      );
-
-      const reward = calculateWeeklyReward(
-        currentPoints,
-        weeklyGoal
-      );
-
-      const evolution = getEvolutionMessage(
-        currentPoints,
-        previousPoints
-      );
-
-      results.push({
-        category: {
-          id: category._id.toString(),
-          name: category.name,
-          description:
-            category.description || "",
-          icon: category.icon || "⭐",
-          color:
-            category.color || "#3B82F6",
-          weeklyGoal,
-        },
-
-        currentWeek: {
-          points: currentPoints,
-          start: currentWeekStart,
-          end: currentWeekEnd,
-        },
-
-        previousWeek: {
-          points: previousPoints,
-          start: previousWeekStart,
-          end: previousWeekEnd,
-        },
-
-        evolution: {
-          percentage:
-            Math.round(
-              evolution.percentage * 100
-            ) / 100,
-          message: evolution.message,
-          emoji: evolution.emoji,
-        },
-
-        reward: {
-          points: reward.rewardPoints,
-          level: reward.level,
-          bonusApplied:
-            reward.bonusApplied,
-        },
-      });
+      }
     }
 
-    /*
-     * Resumo geral do aluno.
-     */
-    const totalCurrentPoints =
-      results.reduce(
-        (total, item) =>
-          total + item.currentWeek.points,
-        0
-      );
+    const results = await buildWeeklyCategories(
+      pointEvents,
+      rankingCategories,
+      studentId,
+      currentWeekStart,
+      currentWeekEnd,
+      previousWeekStart,
+      previousWeekEnd
+    );
 
-    const totalPreviousPoints =
-      results.reduce(
-        (total, item) =>
-          total + item.previousWeek.points,
-        0
-      );
-
-    const totalRewardPoints =
-      results.reduce(
-        (total, item) =>
-          total + item.reward.points,
-        0
-      );
-
-    const overallEvolution =
-      getEvolutionMessage(
-        totalCurrentPoints,
-        totalPreviousPoints
-      );
+    const summary = buildWeeklySummary(results);
 
     return NextResponse.json({
       student: {
@@ -443,28 +633,7 @@ export async function GET(request: NextRequest) {
         },
       },
 
-      summary: {
-        currentPoints:
-          totalCurrentPoints,
-
-        previousPoints:
-          totalPreviousPoints,
-
-        evolutionPercentage:
-          Math.round(
-            overallEvolution.percentage * 100
-          ) / 100,
-
-        evolutionMessage:
-          overallEvolution.message,
-
-        evolutionEmoji:
-          overallEvolution.emoji,
-
-        rewardPoints:
-          totalRewardPoints,
-      },
-
+      summary,
       categories: results,
     });
   } catch (error) {
