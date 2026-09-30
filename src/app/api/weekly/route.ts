@@ -403,7 +403,9 @@ export async function GET(request: NextRequest) {
         user.role === "admin" ||
         user.role === "educator"
       ) {
-        unitSchoolId = getSessionSchoolId(user);
+        unitSchoolId = getSessionSchoolId({
+          schoolId: user.schoolId,
+        });
 
         if (!unitSchoolId) {
           return NextResponse.json(
