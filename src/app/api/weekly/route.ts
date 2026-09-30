@@ -244,7 +244,7 @@ async function buildWeeklyCategories(
     );
 
     const previousPoints = previousWeekEvents.reduce(
-      (total, event) => total + Number(event.points || 0),
+      (total: number, event: any) => total + Number(event.points || 0),
       0
     );
 
