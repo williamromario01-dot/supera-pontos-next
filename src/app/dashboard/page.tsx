@@ -27,6 +27,7 @@ import {
   UserCircle,
   UserPlus,
   ShoppingBag,
+  ShoppingCart,
   GraduationCap,
   UserCheck,
 } from "lucide-react";
