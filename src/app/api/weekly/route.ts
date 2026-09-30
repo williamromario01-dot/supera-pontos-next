@@ -581,7 +581,9 @@ export async function GET(request: NextRequest) {
     }
 
     if (user.role === "admin" || user.role === "educator") {
-      const sessionSchoolId = getSessionSchoolId(user);
+      const sessionSchoolId = getSessionSchoolId({
+        schoolId: user.schoolId,
+      });
 
       if (!sessionSchoolId) {
         return NextResponse.json(
