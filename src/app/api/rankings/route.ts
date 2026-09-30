@@ -115,7 +115,9 @@ export async function GET(request: NextRequest) {
       user.role === "educator" ||
       user.role === "student"
     ) {
-      schoolFilter = getSessionSchoolId(user);
+      schoolFilter = getSessionSchoolId({
+        schoolId: user.schoolId,
+      });
 
       if (!schoolFilter) {
         if (categoryId) {
