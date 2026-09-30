@@ -13,6 +13,7 @@ import {
   Loader2,
   GraduationCap,
   AlertCircle,
+  Award,
 } from "lucide-react";
 
 interface Student {
@@ -232,6 +233,12 @@ export default function ClassManagementPage() {
     }
   }
 
+  function goToPointStudent(studentId: string) {
+    router.push(
+      `/points?studentId=${encodeURIComponent(studentId)}`
+    );
+  }
+
   const filteredAvailableStudents =
     classData?.availableStudents.filter(
       (student) => {
@@ -286,9 +293,7 @@ export default function ClassManagementPage() {
             className="animate-spin"
             size={24}
           />
-          <span>
-            Carregando turma...
-          </span>
+          <span>Carregando turma...</span>
         </div>
       </main>
     );
@@ -344,6 +349,7 @@ export default function ClassManagementPage() {
   return (
     <main className="min-h-screen bg-gray-50">
       <div className="max-w-7xl mx-auto px-4 py-6 sm:px-6 lg:px-8">
+
         {/* Navegação */}
         <div className="flex items-center justify-between mb-4">
           <button
@@ -371,6 +377,7 @@ export default function ClassManagementPage() {
         <div className="mb-6">
           <div className="bg-white rounded-2xl border border-gray-200 p-6 shadow-sm">
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+
               <div className="flex items-center gap-4">
                 <div className="w-12 h-12 rounded-xl bg-orange-100 flex items-center justify-center">
                   <GraduationCap
@@ -406,6 +413,7 @@ export default function ClassManagementPage() {
                   </p>
                 </div>
               </div>
+
             </div>
           </div>
         </div>
@@ -435,8 +443,10 @@ export default function ClassManagementPage() {
 
         {/* Seleção de alunos */}
         <section className="bg-white rounded-2xl border border-gray-200 shadow-sm mb-6">
+
           <div className="p-6 border-b border-gray-200">
             <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+
               <div>
                 <div className="flex items-center gap-2">
                   <UserPlus
@@ -490,10 +500,13 @@ export default function ClassManagementPage() {
                   )}
                 </button>
               </div>
+
             </div>
           </div>
 
           <div className="p-6">
+
+            {/* Busca */}
             <div className="relative mb-5">
               <Search
                 size={19}
@@ -513,8 +526,7 @@ export default function ClassManagementPage() {
               />
             </div>
 
-            {filteredAvailableStudents.length ===
-            0 ? (
+            {filteredAvailableStudents.length === 0 ? (
               <div className="text-center py-10 text-gray-500">
                 <Users
                   size={38}
@@ -526,12 +538,13 @@ export default function ClassManagementPage() {
                 </p>
 
                 <p className="text-sm mt-1">
-                  Todos os alunos da escola podem
-                  já estar alocados em turmas.
+                  Todos os alunos da escola podem já
+                  estar alocados em turmas.
                 </p>
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+
                 {filteredAvailableStudents.map(
                   (student) => {
                     const selected =
@@ -562,6 +575,7 @@ export default function ClassManagementPage() {
                         }`}
                       >
                         <div className="flex items-start gap-3">
+
                           <div
                             className={`w-6 h-6 rounded-md border-2 flex items-center justify-center flex-shrink-0 mt-0.5 ${
                               selected
@@ -586,20 +600,25 @@ export default function ClassManagementPage() {
                               {student.email}
                             </p>
                           </div>
+
                         </div>
                       </button>
                     );
                   }
                 )}
+
               </div>
             )}
+
           </div>
         </section>
 
         {/* Alunos da turma */}
         <section className="bg-white rounded-2xl border border-gray-200 shadow-sm">
+
           <div className="p-6 border-b border-gray-200">
             <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+
               <div>
                 <div className="flex items-center gap-2">
                   <Users
@@ -636,12 +655,13 @@ export default function ClassManagementPage() {
                   className="w-full border border-gray-300 rounded-xl pl-10 pr-4 py-2.5 outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
                 />
               </div>
+
             </div>
           </div>
 
           <div className="p-6">
-            {filteredAllocatedStudents.length ===
-            0 ? (
+
+            {filteredAllocatedStudents.length === 0 ? (
               <div className="text-center py-10 text-gray-500">
                 <Users
                   size={40}
@@ -659,9 +679,12 @@ export default function ClassManagementPage() {
               </div>
             ) : (
               <div className="overflow-x-auto">
+
                 <table className="w-full">
+
                   <thead>
                     <tr className="border-b border-gray-200">
+
                       <th className="text-left py-3 px-3 text-sm font-semibold text-gray-600">
                         Aluno
                       </th>
@@ -675,21 +698,26 @@ export default function ClassManagementPage() {
                       </th>
 
                       <th className="text-right py-3 px-3 text-sm font-semibold text-gray-600">
-                        Ação
+                        Ações
                       </th>
+
                     </tr>
                   </thead>
 
                   <tbody>
+
                     {filteredAllocatedStudents.map(
                       (student) => (
                         <tr
                           key={student.id}
                           className="border-b border-gray-100 last:border-0 hover:bg-gray-50"
                         >
+
+                          {/* ALUNO */}
                           <td className="py-4 px-3">
                             <div className="flex items-center gap-3">
-                              <div className="w-9 h-9 rounded-full bg-orange-100 flex items-center justify-center">
+
+                              <div className="w-9 h-9 rounded-full bg-orange-100 flex items-center justify-center flex-shrink-0">
                                 <span className="text-sm font-bold text-orange-700">
                                   {student.name
                                     .charAt(0)
@@ -700,21 +728,31 @@ export default function ClassManagementPage() {
                               <button
                                 type="button"
                                 onClick={() =>
-                                  router.push(
-                                    `/points?studentId=${student.id}`
+                                  goToPointStudent(
+                                    student.id
                                   )
                                 }
-                                className="font-medium text-orange-600 hover:text-orange-700 hover:underline text-left"
+                                className="text-left group"
+                                title="Pontuar este aluno"
                               >
-                                {student.name}
+                                <span className="font-medium text-gray-900 group-hover:text-orange-600 transition">
+                                  {student.name}
+                                </span>
+
+                                <span className="block text-xs text-orange-500 opacity-0 group-hover:opacity-100 transition">
+                                  Clique para pontuar
+                                </span>
                               </button>
+
                             </div>
                           </td>
 
+                          {/* E-MAIL */}
                           <td className="py-4 px-3 text-sm text-gray-600">
                             {student.email}
                           </td>
 
+                          {/* STATUS */}
                           <td className="py-4 px-3 text-center">
                             {student.active ? (
                               <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-700">
@@ -727,45 +765,77 @@ export default function ClassManagementPage() {
                             )}
                           </td>
 
-                          <td className="py-4 px-3 text-right">
-                            <button
-                              onClick={() =>
-                                removeStudent(
-                                  student.id
-                                )
-                              }
-                              disabled={
-                                removing ===
-                                student.id
-                              }
-                              className="inline-flex items-center gap-2 px-3 py-2 rounded-lg text-red-600 hover:bg-red-50 disabled:opacity-50 transition"
-                            >
-                              {removing ===
-                              student.id ? (
-                                <Loader2
-                                  size={17}
-                                  className="animate-spin"
-                                />
-                              ) : (
-                                <UserMinus
-                                  size={17}
-                                />
-                              )}
+                          {/* AÇÕES */}
+                          <td className="py-4 px-3">
+                            <div className="flex items-center justify-end gap-2">
 
-                              <span className="hidden sm:inline">
-                                Remover
-                              </span>
-                            </button>
+                              {/* BOTÃO PONTUAR */}
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  goToPointStudent(
+                                    student.id
+                                  )
+                                }
+                                className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-orange-500 text-white hover:bg-orange-600 transition font-medium"
+                                title="Pontuar aluno"
+                              >
+                                <Award size={17} />
+
+                                <span>
+                                  Pontuar
+                                </span>
+                              </button>
+
+                              {/* BOTÃO REMOVER */}
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  removeStudent(
+                                    student.id
+                                  )
+                                }
+                                disabled={
+                                  removing ===
+                                  student.id
+                                }
+                                className="inline-flex items-center gap-2 px-3 py-2 rounded-lg text-red-600 hover:bg-red-50 disabled:opacity-50 transition"
+                                title="Remover aluno da turma"
+                              >
+                                {removing ===
+                                student.id ? (
+                                  <Loader2
+                                    size={17}
+                                    className="animate-spin"
+                                  />
+                                ) : (
+                                  <UserMinus
+                                    size={17}
+                                  />
+                                )}
+
+                                <span className="hidden sm:inline">
+                                  Remover
+                                </span>
+                              </button>
+
+                            </div>
                           </td>
+
                         </tr>
                       )
                     )}
+
                   </tbody>
+
                 </table>
+
               </div>
             )}
+
           </div>
         </section>
+
       </div>
     </main>
   );
