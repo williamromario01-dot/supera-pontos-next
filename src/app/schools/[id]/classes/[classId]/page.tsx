@@ -317,7 +317,7 @@ export default function ClassManagementPage() {
             </button>
 
             <button
-              onClick={() => router.push("/")}
+              onClick={() => router.push("/dashboard")}
               className="flex items-center gap-2 px-4 py-2 rounded-lg bg-gray-900 text-white hover:bg-gray-800 transition"
             >
               <Home size={18} />

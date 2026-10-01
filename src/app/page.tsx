@@ -557,7 +557,7 @@ export default function LoginPage() {
               marginTop: "4px",
             }}
           >
-            Estimulação cognitiva •
+            GFarS Soluções Inteligentes •
             Aprendizagem • Conquistas
           </div>
         </div>
