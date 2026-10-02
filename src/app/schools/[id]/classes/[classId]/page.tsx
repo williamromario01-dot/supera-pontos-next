@@ -14,6 +14,9 @@ import {
   GraduationCap,
   AlertCircle,
   Award,
+  ChevronDown,
+  ChevronRight,
+  Trophy,
 } from "lucide-react";
 
 interface Student {
@@ -21,6 +24,13 @@ interface Student {
   name: string;
   email: string;
   active: boolean;
+  points?: number;
+}
+
+interface Category {
+  id: string;
+  name: string;
+  icon?: string;
 }
 
 interface ClassData {
@@ -42,15 +52,21 @@ export default function ClassManagementPage() {
   const [classData, setClassData] =
     useState<ClassData | null>(null);
 
-  const [loading, setLoading] = useState(true);
-  const [allocating, setAllocating] = useState(false);
-  const [removing, setRemoving] = useState<string | null>(
-    null
-  );
+  const [categories, setCategories] =
+    useState<Category[]>([]);
 
-  const [selectedStudents, setSelectedStudents] = useState<
-    string[]
-  >([]);
+  const [loading, setLoading] = useState(true);
+  const [loadingCategories, setLoadingCategories] =
+    useState(true);
+
+  const [allocating, setAllocating] =
+    useState(false);
+
+  const [removing, setRemoving] =
+    useState<string | null>(null);
+
+  const [selectedStudents, setSelectedStudents] =
+    useState<string[]>([]);
 
   const [searchAvailable, setSearchAvailable] =
     useState("");
@@ -60,6 +76,32 @@ export default function ClassManagementPage() {
 
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+
+  // ============================================================
+  // PONTUAÇÃO RÁPIDA
+  // ============================================================
+
+  const [expandedStudentId, setExpandedStudentId] =
+    useState<string | null>(null);
+
+  const [quickPoints, setQuickPoints] =
+    useState<number | null>(null);
+
+  const [quickCategoryId, setQuickCategoryId] =
+    useState("");
+
+  const [quickObservation, setQuickObservation] =
+    useState("");
+
+  const [registeringPoints, setRegisteringPoints] =
+    useState(false);
+
+  const [quickSuccess, setQuickSuccess] =
+    useState<string | null>(null);
+
+  // ============================================================
+  // CARREGAR TURMA
+  // ============================================================
 
   async function loadClass() {
     try {
@@ -93,11 +135,57 @@ export default function ClassManagementPage() {
     }
   }
 
+  // ============================================================
+  // CARREGAR CATEGORIAS
+  // ============================================================
+
+  async function loadCategories() {
+    try {
+      setLoadingCategories(true);
+
+      const response = await fetch(
+        "/api/categories",
+        {
+          credentials: "include",
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          data.error ||
+            "Não foi possível carregar as categorias."
+        );
+      }
+
+      const categoriesList = Array.isArray(data)
+        ? data
+        : data.categories ||
+          data.data ||
+          [];
+
+      setCategories(categoriesList);
+    } catch (err: any) {
+      setError(
+        err.message ||
+          "Erro ao carregar as categorias."
+      );
+    } finally {
+      setLoadingCategories(false);
+    }
+  }
+
   useEffect(() => {
     if (classId) {
       loadClass();
+      loadCategories();
     }
   }, [classId]);
+
+  // ============================================================
+  // SELEÇÃO DE ALUNOS PARA ALOCAR
+  // ============================================================
 
   function toggleStudent(studentId: string) {
     setError("");
@@ -121,6 +209,10 @@ export default function ClassManagementPage() {
       return [...current, studentId];
     });
   }
+
+  // ============================================================
+  // ALOCAR ALUNOS
+  // ============================================================
 
   async function allocateStudents() {
     if (selectedStudents.length === 0) {
@@ -175,6 +267,10 @@ export default function ClassManagementPage() {
     }
   }
 
+  // ============================================================
+  // REMOVER ALUNO
+  // ============================================================
+
   async function removeStudent(studentId: string) {
     const student = classData?.students.find(
       (item) => item.id === studentId
@@ -222,6 +318,13 @@ export default function ClassManagementPage() {
         `${student?.name || "Aluno"} foi retirado da turma.`
       );
 
+      if (expandedStudentId === studentId) {
+        setExpandedStudentId(null);
+        setQuickPoints(null);
+        setQuickCategoryId("");
+        setQuickObservation("");
+      }
+
       await loadClass();
     } catch (err: any) {
       setError(
@@ -233,11 +336,137 @@ export default function ClassManagementPage() {
     }
   }
 
+  // ============================================================
+  // IR PARA A TELA COMPLETA DE PONTUAÇÃO
+  // ============================================================
+
   function goToPointStudent(studentId: string) {
     router.push(
       `/points?studentId=${encodeURIComponent(studentId)}`
     );
   }
+
+  // ============================================================
+  // ABRIR/FECHAR PONTUAÇÃO RÁPIDA
+  // ============================================================
+
+  function toggleQuickPoints(studentId: string) {
+    setError("");
+    setSuccess("");
+    setQuickSuccess(null);
+
+    if (expandedStudentId === studentId) {
+      setExpandedStudentId(null);
+      setQuickPoints(null);
+      setQuickCategoryId("");
+      setQuickObservation("");
+      return;
+    }
+
+    setExpandedStudentId(studentId);
+    setQuickPoints(null);
+    setQuickCategoryId("");
+    setQuickObservation("");
+  }
+
+  // ============================================================
+  // REGISTRAR PONTUAÇÃO RÁPIDA
+  // ============================================================
+
+  async function registerQuickPoints(
+    student: Student
+  ) {
+    if (!quickPoints) {
+      setError(
+        "Selecione uma quantidade de pontos."
+      );
+      return;
+    }
+
+    if (!quickCategoryId) {
+      setError(
+        "Selecione uma categoria antes de registrar a pontuação."
+      );
+      return;
+    }
+
+    try {
+      setRegisteringPoints(true);
+      setError("");
+      setSuccess("");
+      setQuickSuccess(null);
+
+      const response = await fetch(
+        "/api/points",
+        {
+          method: "POST",
+          credentials: "include",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            studentId: student.id,
+            categoryId: quickCategoryId,
+            points: quickPoints,
+            observation:
+              quickObservation.trim() || undefined,
+          }),
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          data.error ||
+            "Não foi possível registrar a pontuação."
+        );
+      }
+
+      // Atualiza os dados localmente sem recarregar a página.
+      setClassData((current) => {
+        if (!current) {
+          return current;
+        }
+
+        return {
+          ...current,
+          students: current.students.map(
+            (item) =>
+              item.id === student.id
+                ? {
+                    ...item,
+                    points:
+                      (item.points || 0) +
+                      quickPoints,
+                  }
+                : item
+          ),
+        };
+      });
+
+      setQuickSuccess(
+        `${quickPoints} pontos registrados para ${student.name}!`
+      );
+
+      setQuickPoints(null);
+      setQuickObservation("");
+
+      // Mantém a categoria selecionada para facilitar
+      // o próximo lançamento para o mesmo aluno.
+    } catch (err: any) {
+      setError(
+        err.message ||
+          "Erro ao registrar a pontuação."
+      );
+    } finally {
+      setRegisteringPoints(false);
+    }
+  }
+
+  // ============================================================
+  // FILTROS
+  // ============================================================
 
   const filteredAvailableStudents =
     classData?.availableStudents.filter(
@@ -285,6 +514,10 @@ export default function ClassManagementPage() {
       }
     ) || [];
 
+  // ============================================================
+  // LOADING
+  // ============================================================
+
   if (loading) {
     return (
       <main className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -299,11 +532,17 @@ export default function ClassManagementPage() {
     );
   }
 
+  // ============================================================
+  // ERRO AO CARREGAR TURMA
+  // ============================================================
+
   if (!classData) {
     return (
       <main className="min-h-screen bg-gray-50 p-6">
         <div className="max-w-4xl mx-auto">
+
           <div className="flex items-center justify-between mb-6">
+
             <button
               onClick={() =>
                 router.push(
@@ -317,15 +556,19 @@ export default function ClassManagementPage() {
             </button>
 
             <button
-              onClick={() => router.push("/dashboard")}
+              onClick={() =>
+                router.push("/dashboard")
+              }
               className="flex items-center gap-2 px-4 py-2 rounded-lg bg-gray-900 text-white hover:bg-gray-800 transition"
             >
               <Home size={18} />
               Home
             </button>
+
           </div>
 
           <div className="bg-white rounded-xl border border-red-200 p-8 text-center">
+
             <AlertCircle
               className="mx-auto text-red-500 mb-3"
               size={40}
@@ -340,18 +583,29 @@ export default function ClassManagementPage() {
                 {error}
               </p>
             )}
+
           </div>
+
         </div>
       </main>
     );
   }
 
+  // ============================================================
+  // PÁGINA
+  // ============================================================
+
   return (
     <main className="min-h-screen bg-gray-50">
+
       <div className="max-w-7xl mx-auto px-4 py-6 sm:px-6 lg:px-8">
 
-        {/* Navegação */}
+        {/* ======================================================
+            NAVEGAÇÃO
+        ====================================================== */}
+
         <div className="flex items-center justify-between mb-4">
+
           <button
             onClick={() =>
               router.push(
@@ -365,28 +619,40 @@ export default function ClassManagementPage() {
           </button>
 
           <button
-            onClick={() => router.push("/")}
+            onClick={() =>
+              router.push("/dashboard")
+            }
             className="flex items-center gap-2 px-4 py-2 rounded-lg bg-gray-900 text-white hover:bg-gray-800 transition shadow-sm"
           >
             <Home size={18} />
             Home
           </button>
+
         </div>
 
-        {/* Cabeçalho */}
+        {/* ======================================================
+            CABEÇALHO
+        ====================================================== */}
+
         <div className="mb-6">
+
           <div className="bg-white rounded-2xl border border-gray-200 p-6 shadow-sm">
+
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
 
               <div className="flex items-center gap-4">
+
                 <div className="w-12 h-12 rounded-xl bg-orange-100 flex items-center justify-center">
+
                   <GraduationCap
                     className="text-orange-600"
                     size={26}
                   />
+
                 </div>
 
                 <div>
+
                   <h1 className="text-2xl font-bold text-gray-900">
                     {classData.className}
                   </h1>
@@ -394,16 +660,20 @@ export default function ClassManagementPage() {
                   <p className="text-gray-500 mt-1">
                     Gerenciamento de alunos da turma
                   </p>
+
                 </div>
+
               </div>
 
               <div className="flex items-center gap-3 bg-gray-50 rounded-xl px-5 py-3">
+
                 <Users
                   className="text-orange-600"
                   size={22}
                 />
 
                 <div>
+
                   <p className="text-xs text-gray-500">
                     Alunos na turma
                   </p>
@@ -411,44 +681,61 @@ export default function ClassManagementPage() {
                   <p className="text-xl font-bold text-gray-900">
                     {classData.studentCount}
                   </p>
+
                 </div>
+
               </div>
 
             </div>
+
           </div>
+
         </div>
 
-        {/* Mensagens */}
+        {/* ======================================================
+            MENSAGENS
+        ====================================================== */}
+
         {error && (
           <div className="mb-5 bg-red-50 border border-red-200 text-red-700 rounded-xl p-4 flex items-start gap-3">
+
             <AlertCircle
               size={20}
               className="mt-0.5 flex-shrink-0"
             />
 
             <p>{error}</p>
+
           </div>
         )}
 
         {success && (
           <div className="mb-5 bg-green-50 border border-green-200 text-green-700 rounded-xl p-4 flex items-center gap-3">
+
             <Check
               size={20}
               className="flex-shrink-0"
             />
 
             <p>{success}</p>
+
           </div>
         )}
 
-        {/* Seleção de alunos */}
+        {/* ======================================================
+            SELEÇÃO DE ALUNOS
+        ====================================================== */}
+
         <section className="bg-white rounded-2xl border border-gray-200 shadow-sm mb-6">
 
           <div className="p-6 border-b border-gray-200">
+
             <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
 
               <div>
+
                 <div className="flex items-center gap-2">
+
                   <UserPlus
                     className="text-orange-600"
                     size={22}
@@ -457,15 +744,18 @@ export default function ClassManagementPage() {
                   <h2 className="text-xl font-bold text-gray-900">
                     Selecionar alunos
                   </h2>
+
                 </div>
 
                 <p className="text-sm text-gray-500 mt-1">
                   Selecione até 15 alunos por operação.
                   A turma não possui limite total de alunos.
                 </p>
+
               </div>
 
               <div className="flex items-center gap-3">
+
                 <div
                   className={`px-4 py-2 rounded-xl font-semibold ${
                     selectedStudents.length === 15
@@ -484,6 +774,7 @@ export default function ClassManagementPage() {
                   }
                   className="flex items-center justify-center gap-2 bg-orange-600 hover:bg-orange-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-semibold px-5 py-2.5 rounded-xl transition"
                 >
+
                   {allocating ? (
                     <>
                       <Loader2
@@ -498,16 +789,21 @@ export default function ClassManagementPage() {
                       Alocar na turma
                     </>
                   )}
+
                 </button>
+
               </div>
 
             </div>
+
           </div>
 
           <div className="p-6">
 
             {/* Busca */}
+
             <div className="relative mb-5">
+
               <Search
                 size={19}
                 className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
@@ -524,10 +820,13 @@ export default function ClassManagementPage() {
                 placeholder="Buscar aluno por nome ou e-mail..."
                 className="w-full border border-gray-300 rounded-xl pl-10 pr-4 py-3 outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
               />
+
             </div>
 
             {filteredAvailableStudents.length === 0 ? (
+
               <div className="text-center py-10 text-gray-500">
+
                 <Users
                   size={38}
                   className="mx-auto mb-3 text-gray-300"
@@ -541,12 +840,16 @@ export default function ClassManagementPage() {
                   Todos os alunos da escola podem já
                   estar alocados em turmas.
                 </p>
+
               </div>
+
             ) : (
+
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
 
                 {filteredAvailableStudents.map(
                   (student) => {
+
                     const selected =
                       selectedStudents.includes(
                         student.id
@@ -557,6 +860,7 @@ export default function ClassManagementPage() {
                         15 && !selected;
 
                     return (
+
                       <button
                         key={student.id}
                         type="button"
@@ -574,6 +878,7 @@ export default function ClassManagementPage() {
                             : "border-gray-200 hover:border-orange-300 hover:bg-orange-50/40"
                         }`}
                       >
+
                         <div className="flex items-start gap-3">
 
                           <div
@@ -583,15 +888,18 @@ export default function ClassManagementPage() {
                                 : "border-gray-300 bg-white"
                             }`}
                           >
+
                             {selected && (
                               <Check
                                 size={16}
                                 className="text-white"
                               />
                             )}
+
                           </div>
 
                           <div className="min-w-0">
+
                             <p className="font-semibold text-gray-900 truncate">
                               {student.name}
                             </p>
@@ -599,28 +907,39 @@ export default function ClassManagementPage() {
                             <p className="text-sm text-gray-500 truncate mt-1">
                               {student.email}
                             </p>
+
                           </div>
 
                         </div>
+
                       </button>
+
                     );
                   }
                 )}
 
               </div>
+
             )}
 
           </div>
+
         </section>
 
-        {/* Alunos da turma */}
+        {/* ======================================================
+            ALUNOS DA TURMA
+        ====================================================== */}
+
         <section className="bg-white rounded-2xl border border-gray-200 shadow-sm">
 
           <div className="p-6 border-b border-gray-200">
+
             <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
 
               <div>
+
                 <div className="flex items-center gap-2">
+
                   <Users
                     className="text-gray-700"
                     size={22}
@@ -629,15 +948,18 @@ export default function ClassManagementPage() {
                   <h2 className="text-xl font-bold text-gray-900">
                     Alunos da turma
                   </h2>
+
                 </div>
 
                 <p className="text-sm text-gray-500 mt-1">
                   {classData.studentCount} aluno(s)
                   atualmente nesta turma.
                 </p>
+
               </div>
 
               <div className="relative w-full lg:w-80">
+
                 <Search
                   size={18}
                   className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
@@ -654,15 +976,19 @@ export default function ClassManagementPage() {
                   placeholder="Buscar aluno..."
                   className="w-full border border-gray-300 rounded-xl pl-10 pr-4 py-2.5 outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
                 />
+
               </div>
 
             </div>
+
           </div>
 
           <div className="p-6">
 
             {filteredAllocatedStudents.length === 0 ? (
+
               <div className="text-center py-10 text-gray-500">
+
                 <Users
                   size={40}
                   className="mx-auto mb-3 text-gray-300"
@@ -676,84 +1002,105 @@ export default function ClassManagementPage() {
                   Selecione alunos acima para começar
                   a montar a turma.
                 </p>
+
               </div>
+
             ) : (
-              <div className="overflow-x-auto">
 
-                <table className="w-full">
+              <div className="space-y-3">
 
-                  <thead>
-                    <tr className="border-b border-gray-200">
+                {filteredAllocatedStudents.map(
+                  (student) => {
 
-                      <th className="text-left py-3 px-3 text-sm font-semibold text-gray-600">
-                        Aluno
-                      </th>
+                    const isExpanded =
+                      expandedStudentId ===
+                      student.id;
 
-                      <th className="text-left py-3 px-3 text-sm font-semibold text-gray-600">
-                        E-mail
-                      </th>
+                    return (
 
-                      <th className="text-center py-3 px-3 text-sm font-semibold text-gray-600">
-                        Status
-                      </th>
+                      <div
+                        key={student.id}
+                        className={`border rounded-xl overflow-hidden transition ${
+                          isExpanded
+                            ? "border-orange-300 shadow-sm"
+                            : "border-gray-200"
+                        }`}
+                      >
 
-                      <th className="text-right py-3 px-3 text-sm font-semibold text-gray-600">
-                        Ações
-                      </th>
+                        {/* ==================================================
+                            LINHA DO ALUNO
+                        ================================================== */}
 
-                    </tr>
-                  </thead>
-
-                  <tbody>
-
-                    {filteredAllocatedStudents.map(
-                      (student) => (
-                        <tr
-                          key={student.id}
-                          className="border-b border-gray-100 last:border-0 hover:bg-gray-50"
+                        <div
+                          className={`flex flex-col lg:flex-row lg:items-center gap-4 p-4 ${
+                            isExpanded
+                              ? "bg-orange-50"
+                              : "bg-white hover:bg-gray-50"
+                          } transition`}
                         >
 
-                          {/* ALUNO */}
-                          <td className="py-4 px-3">
-                            <div className="flex items-center gap-3">
+                          {/* Nome / expandir */}
 
-                              <div className="w-9 h-9 rounded-full bg-orange-100 flex items-center justify-center flex-shrink-0">
-                                <span className="text-sm font-bold text-orange-700">
-                                  {student.name
-                                    .charAt(0)
-                                    .toUpperCase()}
-                                </span>
-                              </div>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              toggleQuickPoints(
+                                student.id
+                              )
+                            }
+                            className="flex items-center gap-3 text-left flex-1 min-w-0"
+                          >
 
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  goToPointStudent(
-                                    student.id
-                                  )
-                                }
-                                className="text-left group"
-                                title="Pontuar este aluno"
-                              >
-                                <span className="font-medium text-gray-900 group-hover:text-orange-600 transition">
+                            <div className="w-10 h-10 rounded-full bg-orange-100 flex items-center justify-center flex-shrink-0">
+
+                              <span className="text-sm font-bold text-orange-700">
+                                {student.name
+                                  .charAt(0)
+                                  .toUpperCase()}
+                              </span>
+
+                            </div>
+
+                            <div className="min-w-0">
+
+                              <div className="flex items-center gap-2">
+
+                                {isExpanded ? (
+                                  <ChevronDown
+                                    size={18}
+                                    className="text-orange-600 flex-shrink-0"
+                                  />
+                                ) : (
+                                  <ChevronRight
+                                    size={18}
+                                    className="text-gray-400 flex-shrink-0"
+                                  />
+                                )}
+
+                                <span className="font-semibold text-gray-900 truncate">
                                   {student.name}
                                 </span>
 
-                                <span className="block text-xs text-orange-500 opacity-0 group-hover:opacity-100 transition">
-                                  Clique para pontuar
-                                </span>
-                              </button>
+                              </div>
+
+                              <span className="block text-xs text-gray-500 mt-1 ml-6">
+                                Clique para pontuação rápida
+                              </span>
 
                             </div>
-                          </td>
 
-                          {/* E-MAIL */}
-                          <td className="py-4 px-3 text-sm text-gray-600">
+                          </button>
+
+                          {/* E-mail */}
+
+                          <div className="hidden lg:block lg:w-64 text-sm text-gray-600 truncate">
                             {student.email}
-                          </td>
+                          </div>
 
-                          {/* STATUS */}
-                          <td className="py-4 px-3 text-center">
+                          {/* Status */}
+
+                          <div className="lg:w-24">
+
                             {student.active ? (
                               <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-700">
                                 Ativo
@@ -763,80 +1110,336 @@ export default function ClassManagementPage() {
                                 Inativo
                               </span>
                             )}
-                          </td>
 
-                          {/* AÇÕES */}
-                          <td className="py-4 px-3">
-                            <div className="flex items-center justify-end gap-2">
+                          </div>
 
-                              {/* BOTÃO PONTUAR */}
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  goToPointStudent(
-                                    student.id
-                                  )
-                                }
-                                className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-orange-500 text-white hover:bg-orange-600 transition font-medium"
-                                title="Pontuar aluno"
-                              >
-                                <Award size={17} />
+                          {/* Pontos */}
 
-                                <span>
-                                  Pontuar
-                                </span>
-                              </button>
+                          <div className="lg:w-28">
 
-                              {/* BOTÃO REMOVER */}
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  removeStudent(
-                                    student.id
-                                  )
-                                }
-                                disabled={
-                                  removing ===
-                                  student.id
-                                }
-                                className="inline-flex items-center gap-2 px-3 py-2 rounded-lg text-red-600 hover:bg-red-50 disabled:opacity-50 transition"
-                                title="Remover aluno da turma"
-                              >
-                                {removing ===
-                                student.id ? (
-                                  <Loader2
-                                    size={17}
-                                    className="animate-spin"
-                                  />
-                                ) : (
-                                  <UserMinus
-                                    size={17}
-                                  />
-                                )}
+                            <div className="flex items-center gap-1.5 text-sm font-semibold text-gray-700">
 
-                                <span className="hidden sm:inline">
-                                  Remover
-                                </span>
-                              </button>
+                              <Trophy
+                                size={16}
+                                className="text-orange-500"
+                              />
+
+                              {student.points ?? 0} pts
 
                             </div>
-                          </td>
 
-                        </tr>
-                      )
-                    )}
+                          </div>
 
-                  </tbody>
+                          {/* Ações */}
 
-                </table>
+                          <div className="flex items-center gap-2 lg:justify-end">
+
+                            {/* BOTÃO PONTUAR */}
+
+                            <button
+                              type="button"
+                              onClick={() =>
+                                goToPointStudent(
+                                  student.id
+                                )
+                              }
+                              className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-orange-500 text-white hover:bg-orange-600 transition font-medium"
+                              title="Abrir tela completa de pontuação"
+                            >
+
+                              <Award size={17} />
+
+                              <span>
+                                Pontuar
+                              </span>
+
+                            </button>
+
+                            {/* BOTÃO REMOVER */}
+
+                            <button
+                              type="button"
+                              onClick={() =>
+                                removeStudent(
+                                  student.id
+                                )
+                              }
+                              disabled={
+                                removing ===
+                                student.id
+                              }
+                              className="inline-flex items-center gap-2 px-3 py-2 rounded-lg text-red-600 hover:bg-red-50 disabled:opacity-50 transition"
+                              title="Remover aluno da turma"
+                            >
+
+                              {removing ===
+                              student.id ? (
+                                <Loader2
+                                  size={17}
+                                  className="animate-spin"
+                                />
+                              ) : (
+                                <UserMinus
+                                  size={17}
+                                />
+                              )}
+
+                              <span className="hidden sm:inline">
+                                Remover
+                              </span>
+
+                            </button>
+
+                          </div>
+
+                        </div>
+
+                        {/* ==================================================
+                            PAINEL DE PONTUAÇÃO RÁPIDA
+                        ================================================== */}
+
+                        {isExpanded && (
+
+                          <div className="border-t border-orange-200 bg-white p-5">
+
+                            <div className="max-w-4xl">
+
+                              <div className="flex items-center gap-2 mb-4">
+
+                                <Award
+                                  size={20}
+                                  className="text-orange-600"
+                                />
+
+                                <h3 className="font-bold text-gray-900">
+                                  Pontuação rápida
+                                </h3>
+
+                              </div>
+
+                              {/* CATEGORIA */}
+
+                              <div className="mb-4">
+
+                                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                                  Categoria
+                                  <span className="text-red-500 ml-1">
+                                    *
+                                  </span>
+                                </label>
+
+                                <select
+                                  value={quickCategoryId}
+                                  onChange={(e) =>
+                                    setQuickCategoryId(
+                                      e.target.value
+                                    )
+                                  }
+                                  disabled={
+                                    loadingCategories ||
+                                    registeringPoints
+                                  }
+                                  className="w-full border border-gray-300 rounded-xl px-4 py-3 bg-white outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500 disabled:bg-gray-100"
+                                >
+
+                                  <option value="">
+                                    {loadingCategories
+                                      ? "Carregando categorias..."
+                                      : "Selecione uma categoria"}
+                                  </option>
+
+                                  {categories.map(
+                                    (category) => (
+                                      <option
+                                        key={
+                                          category.id
+                                        }
+                                        value={
+                                          category.id
+                                        }
+                                      >
+                                        {category.icon
+                                          ? `${category.icon} `
+                                          : ""}
+                                        {
+                                          category.name
+                                        }
+                                      </option>
+                                    )
+                                  )}
+
+                                </select>
+
+                              </div>
+
+                              {/* OBSERVAÇÃO */}
+
+                              <div className="mb-4">
+
+                                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                                  Observação
+                                  <span className="text-gray-400 font-normal ml-1">
+                                    (opcional)
+                                  </span>
+                                </label>
+
+                                <input
+                                  type="text"
+                                  value={
+                                    quickObservation
+                                  }
+                                  onChange={(e) =>
+                                    setQuickObservation(
+                                      e.target.value
+                                    )
+                                  }
+                                  disabled={
+                                    registeringPoints
+                                  }
+                                  placeholder="Ex.: Excelente participação na atividade"
+                                  className="w-full border border-gray-300 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500 disabled:bg-gray-100"
+                                />
+
+                              </div>
+
+                              {/* BOTÕES DE PONTOS */}
+
+                              <div className="mb-5">
+
+                                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                                  Quantidade de pontos
+                                </label>
+
+                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+
+                                  {[5, 25, 50, 100].map(
+                                    (value) => {
+
+                                      const selected =
+                                        quickPoints ===
+                                        value;
+
+                                      return (
+
+                                        <button
+                                          key={value}
+                                          type="button"
+                                          onClick={() =>
+                                            setQuickPoints(
+                                              value
+                                            )
+                                          }
+                                          disabled={
+                                            registeringPoints
+                                          }
+                                          className={`py-3 px-4 rounded-xl border-2 font-bold text-lg transition ${
+                                            selected
+                                              ? "border-orange-600 bg-orange-600 text-white shadow-sm"
+                                              : "border-gray-200 bg-white text-gray-700 hover:border-orange-400 hover:bg-orange-50"
+                                          } disabled:opacity-50`}
+                                        >
+                                          +{value}
+                                        </button>
+
+                                      );
+                                    }
+                                  )}
+
+                                </div>
+
+                              </div>
+
+                              {/* MENSAGEM DE SUCESSO */}
+
+                              {quickSuccess && (
+
+                                <div className="mb-4 flex items-center gap-2 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm font-medium text-green-700">
+
+                                  <Check
+                                    size={18}
+                                  />
+
+                                  {quickSuccess}
+
+                                </div>
+
+                              )}
+
+                              {/* BOTÃO REGISTRAR */}
+
+                              <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    registerQuickPoints(
+                                      student
+                                    )
+                                  }
+                                  disabled={
+                                    registeringPoints ||
+                                    !quickPoints ||
+                                    !quickCategoryId
+                                  }
+                                  className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-orange-600 text-white font-semibold hover:bg-orange-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition"
+                                >
+
+                                  {registeringPoints ? (
+                                    <>
+                                      <Loader2
+                                        size={18}
+                                        className="animate-spin"
+                                      />
+                                      Registrando...
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Check
+                                        size={18}
+                                      />
+                                      Registrar Pontuação
+                                    </>
+                                  )}
+
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    goToPointStudent(
+                                      student.id
+                                    )
+                                  }
+                                  className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl border border-gray-300 text-gray-700 font-medium hover:bg-gray-50 transition"
+                                >
+                                  <Award size={18} />
+                                  Pontuação completa
+                                </button>
+
+                              </div>
+
+                            </div>
+
+                          </div>
+
+                        )}
+
+                      </div>
+
+                    );
+                  }
+                )}
 
               </div>
+
             )}
 
           </div>
+
         </section>
 
       </div>
+
     </main>
   );
 }
