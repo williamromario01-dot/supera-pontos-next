@@ -37,12 +37,24 @@ function normalizeWhatsApp(value: unknown) {
 }
 
 function isValidWhatsApp(value: string) {
-  return (
-    value.length >= 10 &&
-    value.length <= 15
-  );
+  return value.length >= 10 && value.length <= 15;
 }
 
+/**
+ * GET
+ *
+ * Consulta o WhatsApp da escola.
+ *
+ * Podem consultar:
+ * - super_admin
+ * - admin
+ * - educator
+ * - student
+ *
+ * Regras:
+ * - super_admin pode consultar qualquer escola
+ * - admin/educator/student somente a própria escola
+ */
 export async function GET(
   request: NextRequest,
   { params }: { params: { id: string } }
@@ -66,30 +78,32 @@ export async function GET(
       );
     }
 
-    if (
-      user.role !== "super_admin" &&
-      user.role !== "admin"
-    ) {
-      return NextResponse.json(
-        {
-          error:
-            "Você não tem permissão para consultar esta configuração.",
-        },
-        { status: 403 }
-      );
-    }
+    /**
+     * O super_admin pode consultar qualquer escola.
+     *
+     * Os demais usuários só podem consultar
+     * o WhatsApp da própria escola.
+     */
+    if (user.role !== "super_admin") {
+      if (!user.schoolId) {
+        return NextResponse.json(
+          {
+            error:
+              "Seu usuário não está vinculado a uma escola.",
+          },
+          { status: 403 }
+        );
+      }
 
-    if (
-      user.role === "admin" &&
-      String(user.schoolId) !== schoolId
-    ) {
-      return NextResponse.json(
-        {
-          error:
-            "Você só pode acessar a configuração da sua própria escola.",
-        },
-        { status: 403 }
-      );
+      if (String(user.schoolId) !== schoolId) {
+        return NextResponse.json(
+          {
+            error:
+              "Você só pode consultar o WhatsApp da sua própria escola.",
+          },
+          { status: 403 }
+        );
+      }
     }
 
     const client = await clientPromise;
@@ -126,6 +140,17 @@ export async function GET(
   }
 }
 
+/**
+ * PATCH
+ *
+ * Altera o WhatsApp da escola.
+ *
+ * Somente:
+ * - super_admin
+ * - admin
+ *
+ * podem alterar.
+ */
 export async function PATCH(
   request: NextRequest,
   { params }: { params: { id: string } }
