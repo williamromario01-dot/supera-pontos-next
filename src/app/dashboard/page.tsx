@@ -436,7 +436,7 @@ export default function DashboardPage() {
                 </h1>
 
                 <p className="text-[11px] text-slate-400 font-semibold">
-                  Supera Alunos
+                GFarS
                 </p>
               </div>
             </button>
@@ -1981,7 +1981,7 @@ export default function DashboardPage() {
           </div>
 
           <p className="text-[11px] text-slate-400 mt-2">
-            Estimulação cognitiva • Aprendizagem • Conquistas
+          GFarS - Soluções Inteligentes • Aprendizagem • Conquistas
           </p>
 
         </footer>
