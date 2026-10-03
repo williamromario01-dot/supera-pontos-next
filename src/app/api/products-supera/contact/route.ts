@@ -2,6 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
 import clientPromise from "@/lib/mongodb";
 
+const DB_NAME = "supera_pontos";
+
+const MANAGEMENT_ROLES = [
+  "super_admin",
+  "admin",
+  "educator",
+];
+
 async function getAuthenticatedUser(request: NextRequest) {
   const token = request.cookies.get("supera_session")?.value;
 
@@ -10,7 +18,7 @@ async function getAuthenticatedUser(request: NextRequest) {
   }
 
   const client = await clientPromise;
-  const db = client.db("supera_pontos");
+  const db = client.db(DB_NAME);
 
   const session = await db.collection("sessions").findOne({
     token,
@@ -32,6 +40,136 @@ async function getAuthenticatedUser(request: NextRequest) {
   return user;
 }
 
+function normalizeSchoolId(value: unknown) {
+  if (!value) {
+    return null;
+  }
+
+  const stringValue = String(value);
+
+  if (!ObjectId.isValid(stringValue)) {
+    return null;
+  }
+
+  return new ObjectId(stringValue);
+}
+
+/**
+ * GET
+ *
+ * Lista os produtos disponíveis para a escola do usuário.
+ *
+ * Super Admin:
+ * - pode informar ?schoolId=...
+ * - sem schoolId, retorna todos os produtos
+ *
+ * Admin/Educador/Aluno:
+ * - somente produtos da própria escola
+ */
+export async function GET(request: NextRequest) {
+  try {
+    const user = await getAuthenticatedUser(request);
+
+    if (!user) {
+      return NextResponse.json(
+        { error: "Não autorizado." },
+        { status: 401 }
+      );
+    }
+
+    const { searchParams } = new URL(request.url);
+    const requestedSchoolId = searchParams.get("schoolId");
+
+    const products = clientPromise.then(async (client) => {
+      const db = client.db(DB_NAME);
+
+      const filter: Record<string, unknown> = {
+        active: { $ne: false },
+      };
+
+      if (user.role === "super_admin") {
+        if (requestedSchoolId) {
+          const schoolId = normalizeSchoolId(requestedSchoolId);
+
+          if (!schoolId) {
+            throw new Error("ID da escola inválido.");
+          }
+
+          filter.schoolId = schoolId;
+        }
+      } else {
+        if (!user.schoolId) {
+          throw new Error(
+            "Seu usuário não está vinculado a uma escola."
+          );
+        }
+
+        const schoolId = normalizeSchoolId(user.schoolId);
+
+        if (!schoolId) {
+          throw new Error("ID da escola inválido.");
+        }
+
+        filter.schoolId = schoolId;
+      }
+
+      const list = await db
+        .collection("productsSupera")
+        .find(filter)
+        .sort({
+          createdAt: -1,
+        })
+        .toArray();
+
+      return list.map((product) => ({
+        id: String(product._id),
+        schoolId: String(product.schoolId),
+        name: product.name || "",
+        description: product.description || "",
+        image: product.image || "",
+        price:
+          typeof product.price === "number"
+            ? product.price
+            : null,
+        active: product.active !== false,
+        createdAt: product.createdAt || null,
+        updatedAt: product.updatedAt || null,
+      }));
+    });
+
+    const result = await products;
+
+    return NextResponse.json({
+      products: result,
+    });
+  } catch (error) {
+    console.error(
+      "Erro ao carregar Produtos Supera:",
+      error
+    );
+
+    return NextResponse.json(
+      {
+        error:
+          error instanceof Error
+            ? error.message
+            : "Erro interno ao carregar produtos.",
+      },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * POST
+ *
+ * Cria um produto.
+ *
+ * Permitidos:
+ * - super_admin
+ * - admin
+ * - educator
+ */
 export async function POST(request: NextRequest) {
   try {
     const user = await getAuthenticatedUser(request);
@@ -43,21 +181,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (user.role !== "student") {
+    if (!MANAGEMENT_ROLES.includes(user.role)) {
       return NextResponse.json(
         {
           error:
-            "Apenas alunos podem solicitar a compra de produtos.",
-        },
-        { status: 403 }
-      );
-    }
-
-    if (!user.schoolId) {
-      return NextResponse.json(
-        {
-          error:
-            "Aluno não está vinculado a uma escola.",
+            "Você não tem permissão para cadastrar produtos.",
         },
         { status: 403 }
       );
@@ -65,68 +193,107 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json();
 
-    const productId = String(
-      body.productId || ""
-    ).trim();
+    const name =
+      typeof body.name === "string"
+        ? body.name.trim()
+        : "";
 
-    if (!productId) {
+    const description =
+      typeof body.description === "string"
+        ? body.description.trim()
+        : "";
+
+    const image =
+      typeof body.image === "string"
+        ? body.image.trim()
+        : "";
+
+    const schoolId =
+      user.role === "super_admin"
+        ? normalizeSchoolId(body.schoolId)
+        : normalizeSchoolId(user.schoolId);
+
+    if (!schoolId) {
       return NextResponse.json(
         {
           error:
-            "O produto não foi informado.",
+            "A escola do produto não foi identificada.",
         },
         { status: 400 }
       );
     }
 
-    if (!ObjectId.isValid(productId)) {
+    if (!name) {
       return NextResponse.json(
         {
-          error: "Produto inválido.",
+          error: "Informe o nome do produto.",
         },
         { status: 400 }
       );
+    }
+
+    if (name.length > 100) {
+      return NextResponse.json(
+        {
+          error:
+            "O nome do produto pode ter no máximo 100 caracteres.",
+        },
+        { status: 400 }
+      );
+    }
+
+    if (description.length > 1000) {
+      return NextResponse.json(
+        {
+          error:
+            "A descrição pode ter no máximo 1000 caracteres.",
+        },
+        { status: 400 }
+      );
+    }
+
+    if (image.length > 2000) {
+      return NextResponse.json(
+        {
+          error:
+            "O link da imagem é muito longo.",
+        },
+        { status: 400 }
+      );
+    }
+
+    let price: number | null = null;
+
+    if (
+      body.price !== undefined &&
+      body.price !== null &&
+      String(body.price).trim() !== ""
+    ) {
+      const parsedPrice = Number(
+        String(body.price).replace(",", ".")
+      );
+
+      if (
+        !Number.isFinite(parsedPrice) ||
+        parsedPrice < 0
+      ) {
+        return NextResponse.json(
+          {
+            error: "Informe um preço válido.",
+          },
+          { status: 400 }
+        );
+      }
+
+      price = parsedPrice;
     }
 
     const client = await clientPromise;
-    const db = client.db("supera_pontos");
+    const db = client.db(DB_NAME);
 
-    const product = await db
-      .collection("superaProducts")
-      .findOne({
-        _id: new ObjectId(productId),
-        schoolId: user.schoolId,
-        active: true,
-      });
-
-    if (!product) {
-      return NextResponse.json(
-        {
-          error:
-            "Produto não encontrado ou indisponível.",
-        },
-        { status: 404 }
-      );
-    }
-
-    if (
-      typeof product.stock === "number" &&
-      product.stock <= 0
-    ) {
-      return NextResponse.json(
-        {
-          error:
-            "Este produto está sem estoque.",
-        },
-        { status: 409 }
-      );
-    }
-
-    const school = await db
-      .collection("schools")
-      .findOne({
-        _id: new ObjectId(user.schoolId),
-      });
+    const school = await db.collection("schools").findOne({
+      _id: schoolId,
+    });
 
     if (!school) {
       return NextResponse.json(
@@ -137,68 +304,51 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const whatsappNumber = String(
-      school.whatsappNumber || ""
-    ).replace(/\D/g, "");
+    const now = new Date();
 
-    if (!whatsappNumber) {
-      return NextResponse.json(
-        {
-          error:
-            "O WhatsApp desta escola ainda não foi cadastrado.",
+    const product = {
+      schoolId,
+      name,
+      description,
+      image,
+      price,
+      active: true,
+      createdBy: user._id,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    const result = await db
+      .collection("productsSupera")
+      .insertOne(product);
+
+    return NextResponse.json(
+      {
+        message: "Produto criado com sucesso.",
+        product: {
+          id: String(result.insertedId),
+          schoolId: String(schoolId),
+          name,
+          description,
+          image,
+          price,
+          active: true,
         },
-        { status: 409 }
-      );
-    }
-
-    const studentName = String(
-      user.name || "Aluno"
-    ).trim();
-
-    const price = Number(
-      product.price || 0
-    );
-
-    const formattedPrice =
-      price.toLocaleString("pt-BR", {
-        style: "currency",
-        currency: "BRL",
-      });
-
-    const message = [
-      "Olá! Tenho interesse em comprar um produto da Supera.",
-      "",
-      `Aluno: ${studentName}`,
-      `Produto: ${product.name}`,
-      `Valor: ${formattedPrice}`,
-      "",
-      "Gostaria de saber como posso realizar a compra.",
-    ].join("\n");
-
-    const whatsappUrl =
-      `https://wa.me/${whatsappNumber}` +
-      `?text=${encodeURIComponent(message)}`;
-
-    return NextResponse.json({
-      message:
-        "Link do WhatsApp gerado com sucesso.",
-      whatsappUrl,
-      product: {
-        id: product._id.toString(),
-        name: product.name,
-        price: product.price,
       },
-    });
+      { status: 201 }
+    );
   } catch (error) {
     console.error(
-      "Erro ao gerar contato do Produto Supera:",
+      "Erro ao criar Produto Supera:",
       error
     );
 
     return NextResponse.json(
       {
         error:
-          "Erro interno ao gerar o contato do WhatsApp.",
+          error instanceof Error
+            ? error.message
+            : "Erro interno ao criar produto.",
       },
       { status: 500 }
     );
