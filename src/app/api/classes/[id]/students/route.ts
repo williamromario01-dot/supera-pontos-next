@@ -48,6 +48,10 @@ function isValidObjectId(id: string) {
  * Retorna:
  * - alunos já pertencentes à turma
  * - alunos disponíveis da mesma escola
+ *
+ * REGRA:
+ * Um aluno que já estiver alocado em QUALQUER outra turma
+ * da mesma escola não aparece como disponível.
  */
 export async function GET(
   request: NextRequest,
@@ -114,6 +118,12 @@ export async function GET(
       }
     }
 
+    /**
+     * ============================================================
+     * ALUNOS DA TURMA ATUAL
+     * ============================================================
+     */
+
     const studentIds = Array.isArray(turma.studentIds)
       ? turma.studentIds
       : [];
@@ -126,7 +136,9 @@ export async function GET(
           : new ObjectId(id)
       );
 
-    // Alunos já pertencentes à turma
+    /**
+     * Busca os alunos que já pertencem à turma atual.
+     */
     const students = await db
       .collection("users")
       .find({
@@ -140,16 +152,99 @@ export async function GET(
       .sort({ name: 1 })
       .toArray();
 
-    // Alunos da escola que ainda não estão na turma
+    /**
+     * ============================================================
+     * ALUNOS JÁ ALOCADOS EM OUTRAS TURMAS
+     * ============================================================
+     *
+     * Procuramos todas as outras turmas da mesma escola.
+     *
+     * Exemplo:
+     *
+     * Turma A -> João, Maria
+     * Turma B -> Pedro, Ana
+     * Turma atual -> Carlos
+     *
+     * Ao abrir a Turma atual:
+     *
+     * Disponíveis -> somente alunos que não estão
+     * em A, B ou na turma atual.
+     */
+
+    const otherClasses = await db
+      .collection("classes")
+      .find({
+        schoolId: schoolId,
+        _id: {
+          $ne: new ObjectId(classId),
+        },
+        studentIds: {
+          $exists: true,
+          $ne: [],
+        },
+      })
+      .project({
+        studentIds: 1,
+      })
+      .toArray();
+
+    /**
+     * Junta todos os IDs de alunos que já estão
+     * em outras turmas.
+     */
+    const studentsInOtherClasses = new Set<string>();
+
+    for (const otherClass of otherClasses) {
+      if (!Array.isArray(otherClass.studentIds)) {
+        continue;
+      }
+
+      for (const id of otherClass.studentIds) {
+        if (ObjectId.isValid(id)) {
+          studentsInOtherClasses.add(id.toString());
+        }
+      }
+    }
+
+    /**
+     * Converte os IDs para ObjectId.
+     */
+    const otherClassStudentObjectIds = Array.from(
+      studentsInOtherClasses
+    ).map((id) => new ObjectId(id));
+
+    /**
+     * ============================================================
+     * ALUNOS DISPONÍVEIS
+     * ============================================================
+     *
+     * O aluno precisa:
+     *
+     * 1. Ser student
+     * 2. Pertencer à mesma escola
+     * 3. Estar ativo
+     * 4. Não estar na turma atual
+     * 5. NÃO estar em nenhuma outra turma
+     */
+
+    const idsToExclude = [
+      ...studentObjectIds,
+      ...otherClassStudentObjectIds,
+    ];
+
     const availableStudents = await db
       .collection("users")
       .find({
         role: "student",
         schoolId: schoolId,
+
         _id: {
-          $nin: studentObjectIds,
+          $nin: idsToExclude,
         },
-        active: { $ne: false },
+
+        active: {
+          $ne: false,
+        },
       })
       .project({
         password: 0,
@@ -162,6 +257,7 @@ export async function GET(
       classId: turma._id.toString(),
       className: turma.name,
       schoolId: schoolId?.toString(),
+
       studentCount: students.length,
 
       students: students.map((student) => ({
@@ -205,6 +301,10 @@ export async function GET(
  * O limite de 15 alunos é APENAS por operação.
  *
  * A turma NÃO possui limite total de alunos.
+ *
+ * REGRA:
+ * Um aluno não pode pertencer a duas turmas
+ * simultaneamente dentro da mesma escola.
  */
 export async function POST(
   request: NextRequest,
@@ -263,10 +363,9 @@ export async function POST(
       );
     }
 
-    // REGRA:
-    // máximo de 15 alunos por operação.
-    //
-    // Isso NÃO limita o tamanho total da turma.
+    /**
+     * Máximo de 15 alunos por operação.
+     */
     if (studentIds.length > 15) {
       return NextResponse.json(
         {
@@ -293,7 +392,9 @@ export async function POST(
       );
     }
 
-    // Remove duplicidades da própria requisição
+    /**
+     * Remove duplicidades da própria requisição.
+     */
     const uniqueStudentIds = [
       ...new Set(studentIds),
     ];
@@ -327,8 +428,10 @@ export async function POST(
 
     const schoolId = turma.schoolId;
 
-    // Usuários que não são super_admin precisam
-    // pertencer à escola da turma.
+    /**
+     * Usuários que não são super_admin precisam
+     * pertencer à escola da turma.
+     */
     if (user.role !== "super_admin") {
       const userSchoolId =
         user.schoolId?.toString();
@@ -354,7 +457,9 @@ export async function POST(
       (id) => new ObjectId(id)
     );
 
-    // Busca todos os alunos selecionados
+    /**
+     * Busca todos os alunos selecionados.
+     */
     const students = await db
       .collection("users")
       .find({
@@ -363,7 +468,9 @@ export async function POST(
       })
       .toArray();
 
-    // Verifica se todos realmente existem como alunos
+    /**
+     * Verifica se todos realmente existem como alunos.
+     */
     if (
       students.length !==
       objectIds.length
@@ -377,7 +484,9 @@ export async function POST(
       );
     }
 
-    // Verifica se todos pertencem à mesma escola
+    /**
+     * Verifica se todos pertencem à mesma escola.
+     */
     const studentsFromOtherSchool =
       students.filter(
         (student) =>
@@ -396,6 +505,12 @@ export async function POST(
         { status: 400 }
       );
     }
+
+    /**
+     * ============================================================
+     * VERIFICA SE JÁ ESTÃO NA TURMA ATUAL
+     * ============================================================
+     */
 
     const currentStudentIds =
       Array.isArray(turma.studentIds)
@@ -420,8 +535,84 @@ export async function POST(
       );
     }
 
-    // $addToSet garante que um aluno não seja
-    // inserido duas vezes no array.
+    /**
+     * ============================================================
+     * VERIFICA SE JÁ ESTÃO EM OUTRA TURMA
+     * ============================================================
+     *
+     * Essa é uma segunda camada de segurança.
+     *
+     * Mesmo que alguém tente chamar a API manualmente,
+     * o aluno não será colocado em duas turmas.
+     */
+
+    const otherClasses = await db
+      .collection("classes")
+      .find({
+        schoolId: schoolId,
+
+        _id: {
+          $ne: new ObjectId(classId),
+        },
+
+        studentIds: {
+          $in: objectIds,
+        },
+      })
+      .project({
+        name: 1,
+        studentIds: 1,
+      })
+      .toArray();
+
+    if (otherClasses.length > 0) {
+      const studentsAlreadyInOtherClass =
+        new Set<string>();
+
+      for (const otherClass of otherClasses) {
+        if (!Array.isArray(otherClass.studentIds)) {
+          continue;
+        }
+
+        for (const id of otherClass.studentIds) {
+          const idString = id.toString();
+
+          if (
+            uniqueStudentIds.includes(idString)
+          ) {
+            studentsAlreadyInOtherClass.add(
+              idString
+            );
+          }
+        }
+      }
+
+      if (
+        studentsAlreadyInOtherClass.size > 0
+      ) {
+        return NextResponse.json(
+          {
+            error:
+              "Um ou mais alunos selecionados já pertencem a outra turma desta escola.",
+            alreadyAllocatedStudentIds:
+              Array.from(
+                studentsAlreadyInOtherClass
+              ),
+          },
+          { status: 409 }
+        );
+      }
+    }
+
+    /**
+     * ============================================================
+     * ALOCAÇÃO
+     * ============================================================
+     *
+     * $addToSet garante que um aluno não seja
+     * inserido duas vezes no array.
+     */
+
     await db.collection("classes").updateOne(
       {
         _id: new ObjectId(classId),
@@ -432,6 +623,7 @@ export async function POST(
             $each: objectIds,
           },
         },
+
         $set: {
           updatedAt: new Date(),
         },
@@ -452,9 +644,12 @@ export async function POST(
 
     return NextResponse.json({
       message: `${uniqueStudentIds.length} aluno(s) alocado(s) com sucesso.`,
+
       classId,
+
       studentCount:
         updatedStudentIds.length,
+
       addedStudentIds:
         uniqueStudentIds,
     });
@@ -578,8 +773,10 @@ export async function DELETE(
 
     const schoolId = turma.schoolId;
 
-    // Usuários que não são super_admin precisam
-    // pertencer à escola da turma.
+    /**
+     * Usuários que não são super_admin precisam
+     * pertencer à escola da turma.
+     */
     if (user.role !== "super_admin") {
       const userSchoolId =
         user.schoolId?.toString();
@@ -610,12 +807,7 @@ export async function DELETE(
      * incompatibilidade de tipos no operador $pull
      * quando o campo é um array genérico.
      *
-     * O MongoDB continua executando normalmente:
-     *
-     * studentIds: { $in: objectIds }
-     *
-     * O "as any" é utilizado somente para resolver
-     * essa incompatibilidade de tipagem.
+     * O MongoDB continua executando normalmente.
      */
     await db.collection("classes").updateOne(
       {
@@ -627,6 +819,7 @@ export async function DELETE(
             $in: objectIds,
           },
         },
+
         $set: {
           updatedAt: new Date(),
         },
@@ -647,9 +840,12 @@ export async function DELETE(
 
     return NextResponse.json({
       message: `${uniqueStudentIds.length} aluno(s) removido(s) da turma.`,
+
       classId,
+
       studentCount:
         updatedStudentIds.length,
+
       removedStudentIds:
         uniqueStudentIds,
     });
