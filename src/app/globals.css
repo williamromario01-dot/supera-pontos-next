@@ -328,3 +328,12 @@ body {
 .tailwind-check {
   @apply bg-red-500 text-white p-10 rounded-2xl text-3xl font-bold;
 }
+
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}

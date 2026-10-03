@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Trophy,
@@ -12,13 +12,13 @@ import {
   LogOut,
   Award,
   ChevronRight,
+  ChevronLeft,
   Medal,
   Brain,
   Flame,
   Sparkles,
   BarChart3,
   History,
-  LayoutDashboard,
   Tags,
   Menu,
   X,
@@ -121,6 +121,75 @@ export default function DashboardPage() {
   const [error, setError] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
 
+  // =========================================
+  // NAVEGAÇÃO HORIZONTAL
+  // =========================================
+
+  const navRef = useRef<HTMLElement | null>(null);
+
+  const [navCanScrollLeft, setNavCanScrollLeft] =
+    useState(false);
+
+  const [navCanScrollRight, setNavCanScrollRight] =
+    useState(false);
+
+  function updateNavigationButtons() {
+    const nav = navRef.current;
+
+    if (!nav) {
+      return;
+    }
+
+    const canScrollLeft = nav.scrollLeft > 5;
+
+    const canScrollRight =
+      nav.scrollLeft + nav.clientWidth <
+      nav.scrollWidth - 5;
+
+    setNavCanScrollLeft(canScrollLeft);
+    setNavCanScrollRight(canScrollRight);
+  }
+
+  useEffect(() => {
+    if (loading || !user) {
+      return;
+    }
+
+    const nav = navRef.current;
+
+    if (!nav) {
+      return;
+    }
+
+    const handleScroll = () => {
+      updateNavigationButtons();
+    };
+
+    const handleResize = () => {
+      updateNavigationButtons();
+    };
+
+    updateNavigationButtons();
+
+    nav.addEventListener("scroll", handleScroll, {
+      passive: true,
+    });
+
+    window.addEventListener("resize", handleResize);
+
+    const resizeObserver = new ResizeObserver(() => {
+      updateNavigationButtons();
+    });
+
+    resizeObserver.observe(nav);
+
+    return () => {
+      nav.removeEventListener("scroll", handleScroll);
+      window.removeEventListener("resize", handleResize);
+      resizeObserver.disconnect();
+    };
+  }, [loading, user]);
+
   useEffect(() => {
     loadDashboard();
   }, []);
@@ -140,10 +209,14 @@ export default function DashboardPage() {
       return;
     }
 
-    const target = document.getElementById(hash.slice(1));
+    const target = document.getElementById(
+      hash.slice(1)
+    );
 
     if (target) {
-      target.scrollIntoView({ behavior: "smooth" });
+      target.scrollIntoView({
+        behavior: "smooth",
+      });
     }
   }, [loading, user, weekly]);
 
@@ -166,18 +239,20 @@ export default function DashboardPage() {
       setUser(meData.user);
 
       const weeklyUrl =
-        meData.user.role === "admin" || meData.user.role === "educator"
+        meData.user.role === "admin" ||
+        meData.user.role === "educator"
           ? "/api/weekly?scope=unit"
           : `/api/weekly?studentId=${meData.user.id}`;
 
-      const [rankingResponse, weeklyResponse] = await Promise.all([
-        fetch("/api/rankings", {
-          credentials: "include",
-        }),
-        fetch(weeklyUrl, {
-          credentials: "include",
-        }),
-      ]);
+      const [rankingResponse, weeklyResponse] =
+        await Promise.all([
+          fetch("/api/rankings", {
+            credentials: "include",
+          }),
+          fetch(weeklyUrl, {
+            credentials: "include",
+          }),
+        ]);
 
       const rankingData = await rankingResponse.json();
       const weeklyData = await weeklyResponse.json();
@@ -215,6 +290,31 @@ export default function DashboardPage() {
       console.error(err);
       setLoggingOut(false);
     }
+  }
+
+  // =========================================
+  // AVANÇAR NA NAVEGAÇÃO
+  // =========================================
+
+  function scrollNavigation(direction: "left" | "right") {
+    const nav = navRef.current;
+
+    if (!nav) {
+      return;
+    }
+
+    const amount = Math.max(
+      220,
+      Math.floor(nav.clientWidth * 0.7)
+    );
+
+    nav.scrollBy({
+      left:
+        direction === "right"
+          ? amount
+          : -amount,
+      behavior: "smooth",
+    });
   }
 
   function getFirstName(name: string) {
@@ -313,10 +413,13 @@ export default function DashboardPage() {
     user?.role === "super_admin";
 
   const ownUnitPath =
-    user?.schoolId ? `/schools/${user.schoolId}` : "";
+    user?.schoolId
+      ? `/schools/${user.schoolId}`
+      : "";
 
   const canAccessOwnUnit =
-    (user?.role === "admin" || user?.role === "educator") &&
+    (user?.role === "admin" ||
+      user?.role === "educator") &&
     Boolean(ownUnitPath);
 
   const canManageStudents =
@@ -326,28 +429,30 @@ export default function DashboardPage() {
 
   const canAccessClasses =
     canManageStudents &&
-    (Boolean(ownUnitPath) || user?.role === "super_admin");
+    (Boolean(ownUnitPath) ||
+      user?.role === "super_admin");
 
   const classesPath = ownUnitPath
     ? `${ownUnitPath}#turmas`
     : "/schools";
 
   const canManageEducators =
-    user?.role === "admin" && Boolean(ownUnitPath);
+    user?.role === "admin" &&
+    Boolean(ownUnitPath);
 
   const educatorsPath = ownUnitPath
     ? `${ownUnitPath}#educadores`
     : "";
 
   const canAccessUnitEvolution =
-    user?.role === "admin" || user?.role === "educator";
+    user?.role === "admin" ||
+    user?.role === "educator";
 
   const canManageCategories =
     user?.role === "super_admin" ||
     user?.role === "admin" ||
     user?.role === "educator";
 
-  // Suporte, Administrador e Educador podem lançar pontos.
   const canManagePoints =
     user?.role === "super_admin" ||
     user?.role === "admin" ||
@@ -402,7 +507,8 @@ export default function DashboardPage() {
     weekly?.summary.studentCount;
 
   const isUnitWeekly =
-    user.role === "admin" || user.role === "educator";
+    user.role === "admin" ||
+    user.role === "educator";
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -420,8 +526,10 @@ export default function DashboardPage() {
             {/* LOGO */}
 
             <button
-              onClick={() => router.push("/dashboard")}
-              className="flex items-center gap-3"
+              onClick={() =>
+                router.push("/dashboard")
+              }
+              className="flex items-center gap-3 flex-shrink-0"
             >
               <div className="w-11 h-11 rounded-xl bg-orange-500 flex items-center justify-center shadow-md shadow-orange-200">
                 <Brain className="w-6 h-6 text-white" />
@@ -436,157 +544,225 @@ export default function DashboardPage() {
                 </h1>
 
                 <p className="text-[11px] text-slate-400 font-semibold">
-                GFarS
+                  GFarS
                 </p>
               </div>
             </button>
 
-            {/* NAVEGAÇÃO DESKTOP */}
+            {/* =====================================
+                NAVEGAÇÃO DESKTOP
+                ===================================== */}
 
-            <nav className="hidden md:flex items-center gap-1">
+            <div className="hidden md:flex items-center flex-1 min-w-0 relative">
 
-              <button
-                onClick={() => router.push("/dashboard")}
-                className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-orange-50 text-orange-600 text-sm font-bold"
+              <nav
+                ref={navRef}
+                onScroll={updateNavigationButtons}
+                className="flex items-center gap-1 overflow-x-auto pr-10 min-w-0 scrollbar-hide"
               >
-                <LayoutDashboard size={17} />
-                Dashboard
-              </button>
 
-              {canManageSchools && (
-                <button
-                  onClick={() => router.push("/schools")}
-                  className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-slate-500 hover:bg-slate-100 text-sm font-bold transition"
-                >
-                  <School size={17} />
-                  Unidades
-                </button>
-              )}
-
-              {canAccessOwnUnit && (
-                <button
-                  onClick={() => router.push(ownUnitPath)}
-                  className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-slate-500 hover:bg-slate-100 text-sm font-bold transition"
-                >
-                  <School size={17} />
-                  Unidade
-                </button>
-              )}
-
-              {canAccessClasses && (
-                <button
-                  onClick={() => router.push(classesPath)}
-                  className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-slate-500 hover:bg-slate-100 text-sm font-bold transition"
-                >
-                  <GraduationCap size={17} />
-                  Turmas
-                </button>
-              )}
-
-              {canManageStudents && (
-                <button
-                  onClick={() => router.push("/students")}
-                  className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-slate-500 hover:bg-slate-100 text-sm font-bold transition"
-                >
-                  <Users size={17} />
-                  Alunos
-                </button>
-              )}
-
-              {canManagePoints && (
-                <button
-                  onClick={() => router.push("/points")}
-                  className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-orange-500 text-white hover:bg-orange-600 text-sm font-bold transition shadow-sm"
-                >
-                  <Award size={17} />
-                  Pontuação
-                </button>
-              )}
-
-              <button
-                onClick={() => router.push("/history")}
-                className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-slate-500 hover:bg-slate-100 text-sm font-bold transition"
-              >
-                <History size={17} />
-                Histórico
-              </button>
-
-              <button
-                onClick={() => router.push("/ranking")}
-                className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-slate-500 hover:bg-slate-100 text-sm font-bold transition"
-              >
-                <Trophy size={17} />
-                Ranking
-              </button>
-
-              {canAccessUnitEvolution && (
-                <button
-                  onClick={() => router.push("/dashboard#evolucao-unidade")}
-                  className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-slate-500 hover:bg-slate-100 text-sm font-bold transition"
-                >
-                  <TrendingUp size={17} />
-                  Evolução da unidade
-                </button>
-              )}
-
-              {canManageEducators && (
-                <button
-                  onClick={() => router.push(educatorsPath)}
-                  className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-slate-500 hover:bg-slate-100 text-sm font-bold transition"
-                >
-                  <UserCheck size={17} />
-                  Educadores
-                </button>
-              )}
-
-              {canManageCategories && (
-                <button
-                  onClick={() => router.push("/categories")}
-                  className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-slate-500 hover:bg-slate-100 text-sm font-bold transition"
-                >
-                  <Tags size={17} />
-                  Categorias
-                </button>
-              )}
-
-              {canAccessReferrals && (
-                <button
-                  onClick={() => router.push("/referrals")}
-                  className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-slate-500 hover:bg-slate-100 text-sm font-bold transition"
-                >
-                  <UserPlus size={17} />
-                  Indicações
-                </button>
-              )}
-
-              {canAccessStores && (
-                <>
+                {canManageSchools && (
                   <button
-                    onClick={() => router.push("/point-store")}
-                    className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-slate-500 hover:bg-slate-100 text-sm font-bold transition"
+                    onClick={() =>
+                      router.push("/schools")
+                    }
+                    className="flex-shrink-0 flex items-center gap-2 px-4 py-2.5 rounded-xl text-slate-500 hover:bg-slate-100 text-sm font-bold transition"
                   >
-                    <ShoppingBag size={17} />
-                    Loja de Pontos
+                    <School size={17} />
+                    Unidades
                   </button>
+                )}
 
+                {canAccessOwnUnit && (
                   <button
-                    onClick={() => router.push("/products-supera")}
-                    className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-slate-500 hover:bg-slate-100 text-sm font-bold transition"
+                    onClick={() =>
+                      router.push(ownUnitPath)
+                    }
+                    className="flex-shrink-0 flex items-center gap-2 px-4 py-2.5 rounded-xl text-slate-500 hover:bg-slate-100 text-sm font-bold transition"
                   >
-                    <ShoppingCart size={17} />
-                    Produtos Supera
+                    <School size={17} />
+                    Unidade
                   </button>
-                </>
+                )}
+
+                {canAccessClasses && (
+                  <button
+                    onClick={() =>
+                      router.push(classesPath)
+                    }
+                    className="flex-shrink-0 flex items-center gap-2 px-4 py-2.5 rounded-xl text-slate-500 hover:bg-slate-100 text-sm font-bold transition"
+                  >
+                    <GraduationCap size={17} />
+                    Turmas
+                  </button>
+                )}
+
+                {canManageStudents && (
+                  <button
+                    onClick={() =>
+                      router.push("/students")
+                    }
+                    className="flex-shrink-0 flex items-center gap-2 px-4 py-2.5 rounded-xl text-slate-500 hover:bg-slate-100 text-sm font-bold transition"
+                  >
+                    <Users size={17} />
+                    Alunos
+                  </button>
+                )}
+
+                {canManagePoints && (
+                  <button
+                    onClick={() =>
+                      router.push("/points")
+                    }
+                    className="flex-shrink-0 flex items-center gap-2 px-4 py-2.5 rounded-xl bg-orange-500 text-white hover:bg-orange-600 text-sm font-bold transition shadow-sm"
+                  >
+                    <Award size={17} />
+                    Pontuação
+                  </button>
+                )}
+
+                <button
+                  onClick={() =>
+                    router.push("/history")
+                  }
+                  className="flex-shrink-0 flex items-center gap-2 px-4 py-2.5 rounded-xl text-slate-500 hover:bg-slate-100 text-sm font-bold transition"
+                >
+                  <History size={17} />
+                  Histórico
+                </button>
+
+                <button
+                  onClick={() =>
+                    router.push("/ranking")
+                  }
+                  className="flex-shrink-0 flex items-center gap-2 px-4 py-2.5 rounded-xl text-slate-500 hover:bg-slate-100 text-sm font-bold transition"
+                >
+                  <Trophy size={17} />
+                  Ranking
+                </button>
+
+                {canAccessUnitEvolution && (
+                  <button
+                    onClick={() =>
+                      router.push(
+                        "/dashboard#evolucao-unidade"
+                      )
+                    }
+                    className="flex-shrink-0 flex items-center gap-2 px-4 py-2.5 rounded-xl text-slate-500 hover:bg-slate-100 text-sm font-bold transition"
+                  >
+                    <TrendingUp size={17} />
+                    Evolução da unidade
+                  </button>
+                )}
+
+                {canManageEducators && (
+                  <button
+                    onClick={() =>
+                      router.push(educatorsPath)
+                    }
+                    className="flex-shrink-0 flex items-center gap-2 px-4 py-2.5 rounded-xl text-slate-500 hover:bg-slate-100 text-sm font-bold transition"
+                  >
+                    <UserCheck size={17} />
+                    Educadores
+                  </button>
+                )}
+
+                {canManageCategories && (
+                  <button
+                    onClick={() =>
+                      router.push("/categories")
+                    }
+                    className="flex-shrink-0 flex items-center gap-2 px-4 py-2.5 rounded-xl text-slate-500 hover:bg-slate-100 text-sm font-bold transition"
+                  >
+                    <Tags size={17} />
+                    Categorias
+                  </button>
+                )}
+
+                {canAccessReferrals && (
+                  <button
+                    onClick={() =>
+                      router.push("/referrals")
+                    }
+                    className="flex-shrink-0 flex items-center gap-2 px-4 py-2.5 rounded-xl text-slate-500 hover:bg-slate-100 text-sm font-bold transition"
+                  >
+                    <UserPlus size={17} />
+                    Indicações
+                  </button>
+                )}
+
+                {canAccessStores && (
+                  <>
+                    <button
+                      onClick={() =>
+                        router.push(
+                          "/point-store"
+                        )
+                      }
+                      className="flex-shrink-0 flex items-center gap-2 px-4 py-2.5 rounded-xl text-slate-500 hover:bg-slate-100 text-sm font-bold transition"
+                    >
+                      <ShoppingBag size={17} />
+                      Loja de Pontos
+                    </button>
+
+                    <button
+                      onClick={() =>
+                        router.push(
+                          "/products-supera"
+                        )
+                      }
+                      className="flex-shrink-0 flex items-center gap-2 px-4 py-2.5 rounded-xl text-slate-500 hover:bg-slate-100 text-sm font-bold transition"
+                    >
+                      <ShoppingCart size={17} />
+                      Produtos Supera
+                    </button>
+                  </>
+                )}
+
+              </nav>
+
+              {/* =====================================
+                  BOTÕES DE NAVEGAÇÃO
+                  ===================================== */}
+
+              {navCanScrollLeft && (
+                <button
+                  onClick={() =>
+                    scrollNavigation("left")
+                  }
+                  className="absolute left-0 z-10 w-8 h-8 rounded-lg bg-white/95 border border-slate-200 shadow-sm flex items-center justify-center text-slate-400 hover:text-orange-500 hover:border-orange-200 transition"
+                  title="Voltar opções"
+                  aria-label="Voltar opções"
+                >
+                  <ChevronLeft size={16} />
+                </button>
               )}
 
-            </nav>
+              {navCanScrollRight && (
+                <button
+                  onClick={() =>
+                    scrollNavigation("right")
+                  }
+                  className="absolute right-0 z-10 w-8 h-8 rounded-lg bg-white/95 border border-slate-200 shadow-sm flex items-center justify-center text-slate-400 hover:text-orange-500 hover:border-orange-200 transition"
+                  title="Ver mais opções"
+                  aria-label="Ver mais opções"
+                >
+                  <ChevronRight size={16} />
+                </button>
+              )}
 
-            {/* USUÁRIO */}
+            </div>
 
-            <div className="hidden sm:flex items-center gap-3">
+            {/* =====================================
+                USUÁRIO
+                ===================================== */}
+
+            <div className="hidden sm:flex items-center gap-3 flex-shrink-0">
 
               <button
-                onClick={() => router.push("/profile")}
+                onClick={() =>
+                  router.push("/profile")
+                }
                 className="flex items-center gap-3 rounded-xl px-2 py-1.5 hover:bg-slate-50 transition text-right"
                 title="Meu perfil"
               >
@@ -604,14 +780,6 @@ export default function DashboardPage() {
               </button>
 
               <button
-                onClick={() => router.push("/profile")}
-                title="Meu perfil"
-                className="w-10 h-10 rounded-xl flex items-center justify-center text-slate-400 hover:text-orange-500 hover:bg-orange-50 transition"
-              >
-                <UserCircle size={20} />
-              </button>
-
-              <button
                 onClick={handleLogout}
                 disabled={loggingOut}
                 title="Sair"
@@ -622,7 +790,9 @@ export default function DashboardPage() {
 
             </div>
 
-            {/* MENU MOBILE */}
+            {/* =====================================
+                MENU MOBILE
+                ===================================== */}
 
             <button
               onClick={() =>
@@ -639,34 +809,14 @@ export default function DashboardPage() {
 
           </div>
 
-          {/* MENU MOBILE */}
+          {/* =====================================
+              MENU MOBILE
+              ===================================== */}
 
           {menuOpen && (
             <div className="md:hidden pb-4 border-t border-slate-100 pt-3">
 
               <div className="grid gap-2">
-
-                <button
-                  onClick={() => {
-                    setMenuOpen(false);
-                    router.push("/dashboard");
-                  }}
-                  className="flex items-center gap-3 px-4 py-3 rounded-xl bg-orange-50 text-orange-600 font-bold text-sm"
-                >
-                  <LayoutDashboard size={18} />
-                  Dashboard
-                </button>
-
-                <button
-                  onClick={() => {
-                    setMenuOpen(false);
-                    router.push("/profile");
-                  }}
-                  className="flex items-center gap-3 px-4 py-3 rounded-xl text-slate-600 hover:bg-slate-100 font-bold text-sm"
-                >
-                  <UserCircle size={18} />
-                  Meu perfil
-                </button>
 
                 {canManageSchools && (
                   <button
@@ -759,7 +909,9 @@ export default function DashboardPage() {
                   <button
                     onClick={() => {
                       setMenuOpen(false);
-                      router.push("/dashboard#evolucao-unidade");
+                      router.push(
+                        "/dashboard#evolucao-unidade"
+                      );
                     }}
                     className="flex items-center gap-3 px-4 py-3 rounded-xl text-slate-600 hover:bg-slate-100 font-bold text-sm"
                   >
@@ -823,7 +975,9 @@ export default function DashboardPage() {
                     <button
                       onClick={() => {
                         setMenuOpen(false);
-                        router.push("/products-supera");
+                        router.push(
+                          "/products-supera"
+                        );
                       }}
                       className="flex items-center gap-3 px-4 py-3 rounded-xl text-slate-600 hover:bg-slate-100 font-bold text-sm"
                     >
@@ -933,7 +1087,9 @@ export default function DashboardPage() {
               </div>
 
               <p className="text-4xl font-black mt-2">
-                {(user.points || 0).toLocaleString("pt-BR")}
+                {(user.points || 0).toLocaleString(
+                  "pt-BR"
+                )}
               </p>
 
               <p className="text-xs text-orange-100 mt-1">
@@ -966,7 +1122,9 @@ export default function DashboardPage() {
             </div>
 
             <p className="mt-4 text-2xl sm:text-3xl font-black text-slate-800">
-              {(user.points || 0).toLocaleString("pt-BR")}
+              {(user.points || 0).toLocaleString(
+                "pt-BR"
+              )}
             </p>
 
             <p className="text-xs text-slate-500 mt-1">
@@ -990,7 +1148,9 @@ export default function DashboardPage() {
             </div>
 
             <p className="mt-4 text-2xl sm:text-3xl font-black text-slate-800">
-              {currentPoints.toLocaleString("pt-BR")}
+              {currentPoints.toLocaleString(
+                "pt-BR"
+              )}
             </p>
 
             <p className="text-xs text-slate-500 mt-1">
@@ -1058,7 +1218,11 @@ export default function DashboardPage() {
 
         {weekly && (
           <section
-            id={isUnitWeekly ? "evolucao-unidade" : "evolucao"}
+            id={
+              isUnitWeekly
+                ? "evolucao-unidade"
+                : "evolucao"
+            }
             className="mt-6 bg-white rounded-2xl border border-slate-200 shadow-sm p-5 sm:p-6"
           >
 
@@ -1101,12 +1265,16 @@ export default function DashboardPage() {
 
             {isUnitWeekly && (
               <div className="mt-5 grid grid-cols-2 sm:grid-cols-3 gap-3">
+
                 <div className="rounded-xl bg-slate-50 px-4 py-3">
                   <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">
                     Semana atual
                   </p>
+
                   <p className="mt-1 text-lg font-black text-slate-800">
-                    {currentPoints.toLocaleString("pt-BR")}
+                    {currentPoints.toLocaleString(
+                      "pt-BR"
+                    )}
                   </p>
                 </div>
 
@@ -1114,21 +1282,29 @@ export default function DashboardPage() {
                   <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">
                     Semana anterior
                   </p>
+
                   <p className="mt-1 text-lg font-black text-slate-800">
-                    {previousPoints.toLocaleString("pt-BR")}
+                    {previousPoints.toLocaleString(
+                      "pt-BR"
+                    )}
                   </p>
                 </div>
 
-                {typeof unitStudentCount === "number" && (
+                {typeof unitStudentCount ===
+                  "number" && (
                   <div className="rounded-xl bg-slate-50 px-4 py-3">
                     <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">
                       Alunos
                     </p>
+
                     <p className="mt-1 text-lg font-black text-slate-800">
-                      {unitStudentCount.toLocaleString("pt-BR")}
+                      {unitStudentCount.toLocaleString(
+                        "pt-BR"
+                      )}
                     </p>
                   </div>
                 )}
+
               </div>
             )}
 
@@ -1184,7 +1360,6 @@ export default function DashboardPage() {
                       : 0;
 
                   return (
-
                     <div
                       key={item.category.id}
                       className="group bg-white rounded-2xl border border-slate-200 p-5 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all"
@@ -1286,14 +1461,16 @@ export default function DashboardPage() {
 
                         <span
                           className={`inline-flex items-center gap-1 text-xs font-bold ${
-                            item.evolution.percentage >= 0
+                            item.evolution.percentage >=
+                            0
                               ? "text-emerald-600"
                               : "text-amber-600"
                           }`}
                         >
                           {item.evolution.emoji}
 
-                          {item.evolution.percentage > 0
+                          {item.evolution.percentage >
+                          0
                             ? "+"
                             : ""}
                           {item.evolution.percentage.toFixed(
@@ -1309,7 +1486,6 @@ export default function DashboardPage() {
                       </div>
 
                     </div>
-
                   );
                 })}
 
@@ -1330,7 +1506,6 @@ export default function DashboardPage() {
                 </p>
 
               </div>
-
             )}
 
           </section>
@@ -1451,11 +1626,9 @@ export default function DashboardPage() {
                               <div className="min-w-0 flex-1">
 
                                 <p className="font-bold text-sm text-slate-800 truncate">
-
                                   {item.isCurrentUser
                                     ? "Você"
                                     : item.student.name}
-
                                 </p>
 
                                 <p className="text-xs text-slate-400">
@@ -1468,11 +1641,9 @@ export default function DashboardPage() {
                               </div>
 
                               {item.isCurrentUser && (
-
                                 <span className="text-[10px] font-black uppercase text-orange-500">
                                   Você
                                 </span>
-
                               )}
 
                             </div>
@@ -1512,7 +1683,9 @@ export default function DashboardPage() {
             {rankings.length > 0 && (
 
               <button
-                onClick={() => router.push("/ranking")}
+                onClick={() =>
+                  router.push("/ranking")
+                }
                 className="w-full mt-4 py-3 rounded-xl border border-slate-200 bg-white text-slate-600 hover:text-orange-600 hover:border-orange-200 text-sm font-bold transition flex items-center justify-center gap-2"
               >
                 Ver ranking completo
@@ -1548,7 +1721,9 @@ export default function DashboardPage() {
             {/* HISTÓRICO */}
 
             <button
-              onClick={() => router.push("/history")}
+              onClick={() =>
+                router.push("/history")
+              }
               className="group bg-white border border-slate-200 rounded-2xl p-5 text-left hover:border-orange-200 hover:shadow-md transition"
             >
 
@@ -1574,7 +1749,9 @@ export default function DashboardPage() {
             {/* RANKING */}
 
             <button
-              onClick={() => router.push("/ranking")}
+              onClick={() =>
+                router.push("/ranking")
+              }
               className="group bg-white border border-slate-200 rounded-2xl p-5 text-left hover:border-orange-200 hover:shadow-md transition"
             >
 
@@ -1600,7 +1777,9 @@ export default function DashboardPage() {
             {/* PERFIL */}
 
             <button
-              onClick={() => router.push("/profile")}
+              onClick={() =>
+                router.push("/profile")
+              }
               className="group bg-white border border-slate-200 rounded-2xl p-5 text-left hover:border-orange-200 hover:shadow-md transition"
             >
 
@@ -1627,7 +1806,9 @@ export default function DashboardPage() {
 
             {canManageStudents && (
               <button
-                onClick={() => router.push("/students")}
+                onClick={() =>
+                  router.push("/students")
+                }
                 className="group bg-white border border-slate-200 rounded-2xl p-5 text-left hover:border-orange-200 hover:shadow-md transition"
               >
 
@@ -1651,11 +1832,13 @@ export default function DashboardPage() {
               </button>
             )}
 
-            {/* UNIDADES */}
+            {/* UNIDADE */}
 
             {canAccessOwnUnit && (
               <button
-                onClick={() => router.push(ownUnitPath)}
+                onClick={() =>
+                  router.push(ownUnitPath)
+                }
                 className="group bg-white border border-slate-200 rounded-2xl p-5 text-left hover:border-orange-200 hover:shadow-md transition"
               >
 
@@ -1679,9 +1862,13 @@ export default function DashboardPage() {
               </button>
             )}
 
+            {/* TURMAS */}
+
             {canAccessClasses && (
               <button
-                onClick={() => router.push(classesPath)}
+                onClick={() =>
+                  router.push(classesPath)
+                }
                 className="group bg-white border border-slate-200 rounded-2xl p-5 text-left hover:border-orange-200 hover:shadow-md transition"
               >
 
@@ -1705,9 +1892,15 @@ export default function DashboardPage() {
               </button>
             )}
 
+            {/* EVOLUÇÃO DA UNIDADE */}
+
             {canAccessUnitEvolution && (
               <button
-                onClick={() => router.push("/dashboard#evolucao-unidade")}
+                onClick={() =>
+                  router.push(
+                    "/dashboard#evolucao-unidade"
+                  )
+                }
                 className="group bg-white border border-slate-200 rounded-2xl p-5 text-left hover:border-orange-200 hover:shadow-md transition"
               >
 
@@ -1731,9 +1924,13 @@ export default function DashboardPage() {
               </button>
             )}
 
+            {/* EDUCADORES */}
+
             {canManageEducators && (
               <button
-                onClick={() => router.push(educatorsPath)}
+                onClick={() =>
+                  router.push(educatorsPath)
+                }
                 className="group bg-white border border-slate-200 rounded-2xl p-5 text-left hover:border-orange-200 hover:shadow-md transition"
               >
 
@@ -1757,9 +1954,13 @@ export default function DashboardPage() {
               </button>
             )}
 
+            {/* UNIDADES */}
+
             {canManageSchools && (
               <button
-                onClick={() => router.push("/schools")}
+                onClick={() =>
+                  router.push("/schools")
+                }
                 className="group bg-white border border-slate-200 rounded-2xl p-5 text-left hover:border-orange-200 hover:shadow-md transition"
               >
 
@@ -1787,7 +1988,9 @@ export default function DashboardPage() {
 
             {canManageCategories && (
               <button
-                onClick={() => router.push("/categories")}
+                onClick={() =>
+                  router.push("/categories")
+                }
                 className="group bg-white border border-slate-200 rounded-2xl p-5 text-left hover:border-orange-200 hover:shadow-md transition"
               >
 
@@ -1811,11 +2014,13 @@ export default function DashboardPage() {
               </button>
             )}
 
-            {/* PONTUAR ALUNO */}
+            {/* PONTUAÇÃO */}
 
             {canManagePoints && (
               <button
-                onClick={() => router.push("/points")}
+                onClick={() =>
+                  router.push("/points")
+                }
                 className="group bg-white border-2 border-orange-200 rounded-2xl p-5 text-left hover:border-orange-400 hover:shadow-md transition"
               >
 
@@ -1843,7 +2048,9 @@ export default function DashboardPage() {
 
             {canAccessReferrals && (
               <button
-                onClick={() => router.push("/referrals")}
+                onClick={() =>
+                  router.push("/referrals")
+                }
                 className="group bg-white border border-slate-200 rounded-2xl p-5 text-left hover:border-orange-200 hover:shadow-md transition"
               >
 
@@ -1871,7 +2078,9 @@ export default function DashboardPage() {
 
             {canAccessStores && (
               <button
-                onClick={() => router.push("/point-store")}
+                onClick={() =>
+                  router.push("/point-store")
+                }
                 className="group bg-white border border-slate-200 rounded-2xl p-5 text-left hover:border-orange-200 hover:shadow-md transition"
               >
 
@@ -1899,7 +2108,9 @@ export default function DashboardPage() {
 
             {canAccessStores && (
               <button
-                onClick={() => router.push("/products-supera")}
+                onClick={() =>
+                  router.push("/products-supera")
+                }
                 className="group bg-white border border-slate-200 rounded-2xl p-5 text-left hover:border-orange-200 hover:shadow-md transition"
               >
 
@@ -1981,7 +2192,7 @@ export default function DashboardPage() {
           </div>
 
           <p className="text-[11px] text-slate-400 mt-2">
-          GFarS - Soluções Inteligentes • Aprendizagem • Conquistas
+            GFarS - Soluções Inteligentes • Aprendizagem • Conquistas
           </p>
 
         </footer>
