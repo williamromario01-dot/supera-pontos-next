@@ -20,6 +20,8 @@ import {
   Pencil,
   ShieldCheck,
   UserCheck,
+  MessageCircle,
+  Save,
 } from "lucide-react";
 
 interface School {
@@ -31,6 +33,7 @@ interface School {
   city?: string;
   state?: string;
   active?: boolean;
+  whatsappNumber?: string;
 }
 
 interface Student {
@@ -75,6 +78,38 @@ interface StaffMember {
 }
 
 const MAX_ADMINS_PER_UNIT = 2;
+
+function normalizeWhatsApp(value: string) {
+  return value.replace(/\D/g, "").slice(0, 15);
+}
+
+function formatWhatsApp(value: string) {
+  const digits = normalizeWhatsApp(value);
+
+  if (!digits) {
+    return "";
+  }
+
+  if (digits.length <= 2) {
+    return `+${digits}`;
+  }
+
+  if (digits.length <= 4) {
+    return `+${digits.slice(0, 2)} ${digits.slice(2)}`;
+  }
+
+  if (digits.length <= 10) {
+    return `+${digits.slice(0, 2)} (${digits.slice(2, 4)}) ${digits.slice(
+      4,
+      10
+    )}`;
+  }
+
+  return `+${digits.slice(0, 2)} (${digits.slice(2, 4)}) ${digits.slice(
+    4,
+    9
+  )}-${digits.slice(9, 13)}`;
+}
 
 export default function SchoolPage() {
   const params = useParams();
@@ -149,6 +184,16 @@ export default function SchoolPage() {
     null
   );
 
+  // =========================================================
+  // WHATSAPP DA UNIDADE
+  // =========================================================
+
+  const [whatsappNumber, setWhatsappNumber] = useState("");
+  const [loadingWhatsApp, setLoadingWhatsApp] = useState(false);
+  const [savingWhatsApp, setSavingWhatsApp] = useState(false);
+  const [whatsappMessage, setWhatsappMessage] = useState("");
+  const [whatsappError, setWhatsappError] = useState("");
+
   const canManageStudents =
     currentUser?.role === "super_admin" ||
     currentUser?.role === "admin" ||
@@ -159,6 +204,10 @@ export default function SchoolPage() {
   const canManageAdmins = currentUser?.role === "super_admin";
 
   const canManageEducators =
+    currentUser?.role === "super_admin" ||
+    currentUser?.role === "admin";
+
+  const canManageWhatsApp =
     currentUser?.role === "super_admin" ||
     currentUser?.role === "admin";
 
@@ -208,6 +257,116 @@ export default function SchoolPage() {
     } catch (err) {
       console.error(err);
       setError("Não foi possível carregar os dados da unidade.");
+    }
+  }
+
+  // =========================================================
+  // CARREGAR WHATSAPP
+  // =========================================================
+
+  async function loadWhatsApp() {
+    try {
+      setLoadingWhatsApp(true);
+      setWhatsappError("");
+
+      const response = await fetch(
+        `/api/schools/${schoolId}/whatsapp`,
+        {
+          credentials: "include",
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          data.error || "Não foi possível carregar o WhatsApp."
+        );
+      }
+
+      setWhatsappNumber(
+        normalizeWhatsApp(data.whatsappNumber || "")
+      );
+    } catch (err) {
+      console.error(err);
+
+      setWhatsappError(
+        err instanceof Error
+          ? err.message
+          : "Não foi possível carregar o WhatsApp."
+      );
+    } finally {
+      setLoadingWhatsApp(false);
+    }
+  }
+
+  // =========================================================
+  // SALVAR WHATSAPP
+  // =========================================================
+
+  async function handleSaveWhatsApp(event: React.FormEvent) {
+    event.preventDefault();
+
+    setWhatsappMessage("");
+    setWhatsappError("");
+
+    const normalized = normalizeWhatsApp(whatsappNumber);
+
+    if (!normalized) {
+      setWhatsappError("Informe o número de WhatsApp.");
+      return;
+    }
+
+    if (normalized.length < 10 || normalized.length > 15) {
+      setWhatsappError(
+        "Informe um número de WhatsApp válido."
+      );
+      return;
+    }
+
+    try {
+      setSavingWhatsApp(true);
+
+      const response = await fetch(
+        `/api/schools/${schoolId}/whatsapp`,
+        {
+          method: "PATCH",
+          credentials: "include",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            whatsappNumber: normalized,
+          }),
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          data.error ||
+            "Não foi possível salvar o WhatsApp."
+        );
+      }
+
+      setWhatsappNumber(
+        normalizeWhatsApp(data.whatsappNumber || normalized)
+      );
+
+      setWhatsappMessage(
+        "WhatsApp da unidade atualizado com sucesso."
+      );
+    } catch (err) {
+      console.error(err);
+
+      setWhatsappError(
+        err instanceof Error
+          ? err.message
+          : "Não foi possível salvar o WhatsApp."
+      );
+    } finally {
+      setSavingWhatsApp(false);
     }
   }
 
@@ -277,15 +436,21 @@ export default function SchoolPage() {
     try {
       setLoadingAdmins(true);
 
-      const response = await fetch(`/api/schools/${schoolId}/admin`, {
-        credentials: "include",
-      });
+      const response = await fetch(
+        `/api/schools/${schoolId}/admin`,
+        {
+          credentials: "include",
+        }
+      );
 
       if (!response.ok) {
-        throw new Error("Não foi possível carregar os administradores.");
+        throw new Error(
+          "Não foi possível carregar os administradores."
+        );
       }
 
       const data = await response.json();
+
       const list = Array.isArray(data.admins)
         ? data.admins
         : data.admin
@@ -313,10 +478,13 @@ export default function SchoolPage() {
       );
 
       if (!response.ok) {
-        throw new Error("Não foi possível carregar os educadores.");
+        throw new Error(
+          "Não foi possível carregar os educadores."
+        );
       }
 
       const data = await response.json();
+
       setEducators(data.educators || []);
     } catch (err) {
       console.error(err);
@@ -347,13 +515,29 @@ export default function SchoolPage() {
       return;
     }
 
-    const loaders = [loadSchool(), loadStudents(), loadClasses()];
+    const loaders = [
+      loadSchool(),
+      loadStudents(),
+      loadClasses(),
+    ];
+
+    // Somente super_admin e admin precisam carregar
+    // a configuração de WhatsApp.
+    if (
+      user.role === "super_admin" ||
+      user.role === "admin"
+    ) {
+      loaders.push(loadWhatsApp());
+    }
 
     if (user.role === "super_admin") {
       loaders.push(loadAdmins());
     }
 
-    if (user.role === "super_admin" || user.role === "admin") {
+    if (
+      user.role === "super_admin" ||
+      user.role === "admin"
+    ) {
       loaders.push(loadEducators());
     }
 
@@ -384,11 +568,22 @@ export default function SchoolPage() {
     const target = document.getElementById(hash.slice(1));
 
     if (target) {
-      target.scrollIntoView({ behavior: "smooth" });
+      target.scrollIntoView({
+        behavior: "smooth",
+      });
     }
-  }, [loading, school, admins, educators, classes, students]);
+  }, [
+    loading,
+    school,
+    admins,
+    educators,
+    classes,
+    students,
+  ]);
 
-  async function handleAddStudent(event: React.FormEvent) {
+  async function handleAddStudent(
+    event: React.FormEvent
+  ) {
     event.preventDefault();
 
     if (!studentName.trim()) {
@@ -432,7 +627,8 @@ export default function SchoolPage() {
 
       if (!response.ok) {
         throw new Error(
-          data.error || "Não foi possível adicionar o aluno."
+          data.error ||
+            "Não foi possível adicionar o aluno."
         );
       }
 
@@ -469,16 +665,23 @@ export default function SchoolPage() {
       return;
     }
 
-    const validExtensions = [".xlsx", ".xls", ".csv"];
+    const validExtensions = [
+      ".xlsx",
+      ".xls",
+      ".csv",
+    ];
 
     const fileName = file.name.toLowerCase();
 
-    const valid = validExtensions.some((extension) =>
-      fileName.endsWith(extension)
+    const valid = validExtensions.some(
+      (extension) => fileName.endsWith(extension)
     );
 
     if (!valid) {
-      alert("Selecione um arquivo .xlsx, .xls ou .csv.");
+      alert(
+        "Selecione um arquivo .xlsx, .xls ou .csv."
+      );
+
       event.target.value = "";
       setSelectedFile(null);
       return;
@@ -502,13 +705,17 @@ export default function SchoolPage() {
       formData.append("file", selectedFile);
       formData.append("schoolId", schoolId);
 
-      const response = await fetch("/api/students/import", {
-        method: "POST",
-        credentials: "include",
-        body: formData,
-      });
+      const response = await fetch(
+        "/api/students/import",
+        {
+          method: "POST",
+          credentials: "include",
+          body: formData,
+        }
+      );
 
-      const data: ImportResult = await response.json();
+      const data: ImportResult =
+        await response.json();
 
       setImportResult(data);
 
@@ -527,14 +734,17 @@ export default function SchoolPage() {
       console.error(err);
 
       setImportResult({
-        error: "Não foi possível realizar a importação.",
+        error:
+          "Não foi possível realizar a importação.",
       });
     } finally {
       setImporting(false);
     }
   }
 
-  async function handleDeleteStudent(student: Student) {
+  async function handleDeleteStudent(
+    student: Student
+  ) {
     const confirmed = window.confirm(
       `Deseja realmente excluir o aluno "${student.name}"?`
     );
@@ -558,7 +768,8 @@ export default function SchoolPage() {
 
       if (!response.ok) {
         throw new Error(
-          data.error || "Não foi possível excluir o aluno."
+          data.error ||
+            "Não foi possível excluir o aluno."
         );
       }
 
@@ -576,7 +787,9 @@ export default function SchoolPage() {
     }
   }
 
-  async function handleCreateClass(event: React.FormEvent) {
+  async function handleCreateClass(
+    event: React.FormEvent
+  ) {
     event.preventDefault();
 
     const name = newClassName.trim();
@@ -605,7 +818,8 @@ export default function SchoolPage() {
 
       if (!response.ok) {
         throw new Error(
-          data.error || "Não foi possível criar a turma."
+          data.error ||
+            "Não foi possível criar a turma."
         );
       }
 
@@ -644,21 +858,39 @@ export default function SchoolPage() {
     setShowAdminForm(true);
   }
 
-  async function handleSaveAdmin(event: React.FormEvent) {
+  async function handleSaveAdmin(
+    event: React.FormEvent
+  ) {
     event.preventDefault();
 
-    if (!adminName.trim() || !adminEmail.trim()) {
-      alert("Informe nome e e-mail do administrador.");
+    if (
+      !adminName.trim() ||
+      !adminEmail.trim()
+    ) {
+      alert(
+        "Informe nome e e-mail do administrador."
+      );
       return;
     }
 
-    if (!editingAdmin && adminPassword.length < 6) {
-      alert("A senha deve ter pelo menos 6 caracteres.");
+    if (
+      !editingAdmin &&
+      adminPassword.length < 6
+    ) {
+      alert(
+        "A senha deve ter pelo menos 6 caracteres."
+      );
       return;
     }
 
-    if (editingAdmin && adminPassword && adminPassword.length < 6) {
-      alert("A senha deve ter pelo menos 6 caracteres.");
+    if (
+      editingAdmin &&
+      adminPassword &&
+      adminPassword.length < 6
+    ) {
+      alert(
+        "A senha deve ter pelo menos 6 caracteres."
+      );
       return;
     }
 
@@ -668,54 +900,67 @@ export default function SchoolPage() {
       if (editingAdmin) {
         const body: Record<string, string> = {
           name: adminName.trim(),
-          email: adminEmail.trim().toLowerCase(),
+          email: adminEmail
+            .trim()
+            .toLowerCase(),
         };
 
         if (adminPassword) {
           body.password = adminPassword;
         }
 
-        const response = await fetch(`/api/admins/${editingAdmin.id}`, {
-          method: "PATCH",
-          credentials: "include",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(body),
-        });
+        const response = await fetch(
+          `/api/admins/${editingAdmin.id}`,
+          {
+            method: "PATCH",
+            credentials: "include",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(body),
+          }
+        );
 
         const data = await response.json();
 
         if (!response.ok) {
           throw new Error(
-            data.error || "Não foi possível atualizar o administrador."
+            data.error ||
+              "Não foi possível atualizar o administrador."
           );
         }
       } else {
-        const response = await fetch(`/api/schools/${schoolId}/admin`, {
-          method: "POST",
-          credentials: "include",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            name: adminName.trim(),
-            email: adminEmail.trim().toLowerCase(),
-            password: adminPassword,
-          }),
-        });
+        const response = await fetch(
+          `/api/schools/${schoolId}/admin`,
+          {
+            method: "POST",
+            credentials: "include",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              name: adminName.trim(),
+              email: adminEmail
+                .trim()
+                .toLowerCase(),
+              password: adminPassword,
+            }),
+          }
+        );
 
         const data = await response.json();
 
         if (!response.ok) {
           throw new Error(
-            data.error || "Não foi possível cadastrar o administrador."
+            data.error ||
+              "Não foi possível cadastrar o administrador."
           );
         }
       }
 
       setShowAdminForm(false);
       setEditingAdmin(null);
+
       await loadAdmins();
     } catch (err) {
       alert(
@@ -728,7 +973,9 @@ export default function SchoolPage() {
     }
   }
 
-  async function handleDeleteAdmin(admin: StaffMember) {
+  async function handleDeleteAdmin(
+    admin: StaffMember
+  ) {
     const confirmed = window.confirm(
       `Deseja realmente excluir o administrador "${admin.name}"?`
     );
@@ -740,16 +987,20 @@ export default function SchoolPage() {
     try {
       setDeletingAdminId(admin.id);
 
-      const response = await fetch(`/api/admins/${admin.id}`, {
-        method: "DELETE",
-        credentials: "include",
-      });
+      const response = await fetch(
+        `/api/admins/${admin.id}`,
+        {
+          method: "DELETE",
+          credentials: "include",
+        }
+      );
 
       const data = await response.json();
 
       if (!response.ok) {
         throw new Error(
-          data.error || "Não foi possível excluir o administrador."
+          data.error ||
+            "Não foi possível excluir o administrador."
         );
       }
 
@@ -773,7 +1024,9 @@ export default function SchoolPage() {
     setShowEducatorForm(true);
   }
 
-  function openEditEducator(educator: StaffMember) {
+  function openEditEducator(
+    educator: StaffMember
+  ) {
     setEditingEducator(educator);
     setEducatorName(educator.name);
     setEducatorEmail(educator.email);
@@ -781,16 +1034,28 @@ export default function SchoolPage() {
     setShowEducatorForm(true);
   }
 
-  async function handleSaveEducator(event: React.FormEvent) {
+  async function handleSaveEducator(
+    event: React.FormEvent
+  ) {
     event.preventDefault();
 
-    if (!educatorName.trim() || !educatorEmail.trim()) {
-      alert("Informe nome e e-mail do educador.");
+    if (
+      !educatorName.trim() ||
+      !educatorEmail.trim()
+    ) {
+      alert(
+        "Informe nome e e-mail do educador."
+      );
       return;
     }
 
-    if (!editingEducator && educatorPassword.length < 6) {
-      alert("A senha deve ter pelo menos 6 caracteres.");
+    if (
+      !editingEducator &&
+      educatorPassword.length < 6
+    ) {
+      alert(
+        "A senha deve ter pelo menos 6 caracteres."
+      );
       return;
     }
 
@@ -799,7 +1064,9 @@ export default function SchoolPage() {
       educatorPassword &&
       educatorPassword.length < 6
     ) {
-      alert("A senha deve ter pelo menos 6 caracteres.");
+      alert(
+        "A senha deve ter pelo menos 6 caracteres."
+      );
       return;
     }
 
@@ -809,7 +1076,9 @@ export default function SchoolPage() {
       if (editingEducator) {
         const body: Record<string, string> = {
           name: educatorName.trim(),
-          email: educatorEmail.trim().toLowerCase(),
+          email: educatorEmail
+            .trim()
+            .toLowerCase(),
         };
 
         if (educatorPassword) {
@@ -832,35 +1101,43 @@ export default function SchoolPage() {
 
         if (!response.ok) {
           throw new Error(
-            data.error || "Não foi possível atualizar o educador."
+            data.error ||
+              "Não foi possível atualizar o educador."
           );
         }
       } else {
-        const response = await fetch("/api/educators", {
-          method: "POST",
-          credentials: "include",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            name: educatorName.trim(),
-            email: educatorEmail.trim().toLowerCase(),
-            password: educatorPassword,
-            schoolId,
-          }),
-        });
+        const response = await fetch(
+          "/api/educators",
+          {
+            method: "POST",
+            credentials: "include",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              name: educatorName.trim(),
+              email: educatorEmail
+                .trim()
+                .toLowerCase(),
+              password: educatorPassword,
+              schoolId,
+            }),
+          }
+        );
 
         const data = await response.json();
 
         if (!response.ok) {
           throw new Error(
-            data.error || "Não foi possível cadastrar o educador."
+            data.error ||
+              "Não foi possível cadastrar o educador."
           );
         }
       }
 
       setShowEducatorForm(false);
       setEditingEducator(null);
+
       await loadEducators();
     } catch (err) {
       alert(
@@ -873,7 +1150,9 @@ export default function SchoolPage() {
     }
   }
 
-  async function handleDeleteEducator(educator: StaffMember) {
+  async function handleDeleteEducator(
+    educator: StaffMember
+  ) {
     const confirmed = window.confirm(
       `Deseja realmente excluir o educador "${educator.name}"?`
     );
@@ -885,16 +1164,20 @@ export default function SchoolPage() {
     try {
       setDeletingEducatorId(educator.id);
 
-      const response = await fetch(`/api/educators/${educator.id}`, {
-        method: "DELETE",
-        credentials: "include",
-      });
+      const response = await fetch(
+        `/api/educators/${educator.id}`,
+        {
+          method: "DELETE",
+          credentials: "include",
+        }
+      );
 
       const data = await response.json();
 
       if (!response.ok) {
         throw new Error(
-          data.error || "Não foi possível excluir o educador."
+          data.error ||
+            "Não foi possível excluir o educador."
         );
       }
 
@@ -910,28 +1193,42 @@ export default function SchoolPage() {
     }
   }
 
-  const filteredStudents = students.filter((student) => {
-    const searchTerm = search.toLowerCase().trim();
+  const filteredStudents = students.filter(
+    (student) => {
+      const searchTerm = search
+        .toLowerCase()
+        .trim();
 
-    if (!searchTerm) {
-      return true;
+      if (!searchTerm) {
+        return true;
+      }
+
+      return (
+        student.name
+          .toLowerCase()
+          .includes(searchTerm) ||
+        student.email
+          .toLowerCase()
+          .includes(searchTerm)
+      );
     }
+  );
 
-    return (
-      student.name.toLowerCase().includes(searchTerm) ||
-      student.email.toLowerCase().includes(searchTerm)
-    );
-  });
+  const filteredClasses = classes.filter(
+    (classItem) => {
+      const searchTerm = classSearch
+        .toLowerCase()
+        .trim();
 
-  const filteredClasses = classes.filter((classItem) => {
-    const searchTerm = classSearch.toLowerCase().trim();
+      if (!searchTerm) {
+        return true;
+      }
 
-    if (!searchTerm) {
-      return true;
+      return classItem.name
+        .toLowerCase()
+        .includes(searchTerm);
     }
-
-    return classItem.name.toLowerCase().includes(searchTerm);
-  });
+  );
 
   if (loading) {
     return (
@@ -951,20 +1248,28 @@ export default function SchoolPage() {
           <button
             onClick={() =>
               router.push(
-                currentUser?.role === "super_admin" ? "/schools" : "/dashboard"
+                currentUser?.role ===
+                  "super_admin"
+                  ? "/schools"
+                  : "/dashboard"
               )
             }
             className="flex items-center gap-2 text-slate-600 hover:text-slate-900 mb-6"
           >
             <ArrowLeft className="h-5 w-5" />
-            {currentUser?.role === "super_admin"
+
+            {currentUser?.role ===
+            "super_admin"
               ? "Voltar para unidades"
               : "Voltar ao dashboard"}
           </button>
 
           <div className="bg-white rounded-2xl border border-red-200 p-8 text-center">
             <AlertCircle className="h-10 w-10 text-red-500 mx-auto mb-3" />
-            <p className="text-red-600">{error}</p>
+
+            <p className="text-red-600">
+              {error}
+            </p>
           </div>
         </div>
       </main>
@@ -975,13 +1280,17 @@ export default function SchoolPage() {
     <main className="min-h-screen bg-slate-50">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
 
-        {/* Cabeçalho */}
+        {/* =====================================================
+            CABEÇALHO
+        ====================================================== */}
+
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-8">
           <div>
             <button
               onClick={() =>
                 router.push(
-                  currentUser?.role === "super_admin"
+                  currentUser?.role ===
+                    "super_admin"
                     ? "/schools"
                     : "/dashboard"
                 )
@@ -989,7 +1298,9 @@ export default function SchoolPage() {
               className="flex items-center gap-2 text-slate-500 hover:text-slate-900 mb-4 transition"
             >
               <ArrowLeft className="h-5 w-5" />
-              {currentUser?.role === "super_admin"
+
+              {currentUser?.role ===
+              "super_admin"
                 ? "Voltar para unidades"
                 : "Voltar ao dashboard"}
             </button>
@@ -1002,13 +1313,19 @@ export default function SchoolPage() {
               {school?.city && (
                 <span>
                   {school.city}
-                  {school.state ? ` - ${school.state}` : ""}
+                  {school.state
+                    ? ` - ${school.state}`
+                    : ""}
                 </span>
               )}
 
-              {school?.email && <span>{school.email}</span>}
+              {school?.email && (
+                <span>{school.email}</span>
+              )}
 
-              {school?.phone && <span>{school.phone}</span>}
+              {school?.phone && (
+                <span>{school.phone}</span>
+              )}
             </div>
           </div>
 
@@ -1027,12 +1344,18 @@ export default function SchoolPage() {
                     : "bg-green-500"
                 }`}
               />
-              {school.active === false ? "Desativada" : "Ativa"}
+
+              {school.active === false
+                ? "Desativada"
+                : "Ativa"}
             </div>
           )}
         </div>
 
-        {/* Resumo */}
+        {/* =====================================================
+            RESUMO
+        ====================================================== */}
+
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
 
           <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
@@ -1063,7 +1386,8 @@ export default function SchoolPage() {
                 <p className="text-3xl font-bold text-slate-900 mt-1">
                   {
                     students.filter(
-                      (student) => student.active !== false
+                      (student) =>
+                        student.active !== false
                     ).length
                   }
                 </p>
@@ -1094,6 +1418,129 @@ export default function SchoolPage() {
           </div>
         </div>
 
+        {/* =====================================================
+            WHATSAPP DA UNIDADE
+        ====================================================== */}
+
+        {canManageWhatsApp && (
+          <section
+            id="whatsapp"
+            className="bg-white rounded-2xl border border-slate-200 shadow-sm mb-8"
+          >
+            <div className="p-6 border-b border-slate-200">
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 rounded-xl bg-green-100 flex items-center justify-center">
+                  <MessageCircle className="h-5 w-5 text-green-600" />
+                </div>
+
+                <div>
+                  <h2 className="text-xl font-bold text-slate-900">
+                    WhatsApp da Unidade
+                  </h2>
+
+                  <p className="text-sm text-slate-500 mt-1">
+                    Cadastre o número de WhatsApp utilizado por esta unidade.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <form
+              onSubmit={handleSaveWhatsApp}
+              className="p-6"
+            >
+              <div className="max-w-xl">
+                <label className="block text-sm font-medium text-slate-700 mb-2">
+                  Número de WhatsApp
+                </label>
+
+                <div className="relative">
+                  <MessageCircle className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-green-500" />
+
+                  <input
+                    type="tel"
+                    value={formatWhatsApp(
+                      whatsappNumber
+                    )}
+                    onChange={(event) => {
+                      setWhatsappMessage("");
+                      setWhatsappError("");
+
+                      setWhatsappNumber(
+                        normalizeWhatsApp(
+                          event.target.value
+                        )
+                      );
+                    }}
+                    placeholder="+55 (41) 99999-9999"
+                    disabled={loadingWhatsApp}
+                    className="w-full pl-11 pr-4 py-3 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent disabled:bg-slate-100 disabled:cursor-not-allowed"
+                  />
+                </div>
+
+                <p className="text-xs text-slate-500 mt-2">
+                  Digite o número completo com DDD. O sistema salvará
+                  somente os números no banco de dados.
+                </p>
+
+                {loadingWhatsApp && (
+                  <div className="flex items-center gap-2 mt-3 text-sm text-slate-500">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Carregando número...
+                  </div>
+                )}
+
+                {whatsappMessage && (
+                  <div className="flex items-center gap-2 mt-4 rounded-xl bg-green-50 border border-green-200 px-4 py-3">
+                    <CheckCircle2 className="h-5 w-5 text-green-600 shrink-0" />
+
+                    <p className="text-sm font-medium text-green-800">
+                      {whatsappMessage}
+                    </p>
+                  </div>
+                )}
+
+                {whatsappError && (
+                  <div className="flex items-center gap-2 mt-4 rounded-xl bg-red-50 border border-red-200 px-4 py-3">
+                    <AlertCircle className="h-5 w-5 text-red-600 shrink-0" />
+
+                    <p className="text-sm font-medium text-red-800">
+                      {whatsappError}
+                    </p>
+                  </div>
+                )}
+
+                <div className="flex justify-end mt-5">
+                  <button
+                    type="submit"
+                    disabled={
+                      savingWhatsApp ||
+                      loadingWhatsApp
+                    }
+                    className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-green-600 hover:bg-green-700 text-white font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {savingWhatsApp ? (
+                      <>
+                        <Loader2 className="h-5 w-5 animate-spin" />
+                        Salvando...
+                      </>
+                    ) : (
+                      <>
+                        <Save className="h-5 w-5" />
+                        Salvar WhatsApp
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </form>
+          </section>
+        )}
+
+        {/* =====================================================
+            ADMINISTRADORES
+        ====================================================== */}
+
         {canManageAdmins && (
           <section
             id="administradores"
@@ -1105,13 +1552,15 @@ export default function SchoolPage() {
                   <div className="h-10 w-10 rounded-xl bg-blue-100 flex items-center justify-center">
                     <ShieldCheck className="h-5 w-5 text-blue-600" />
                   </div>
+
                   <div>
                     <h2 className="text-xl font-bold text-slate-900">
                       Administradores
                     </h2>
+
                     <p className="text-sm text-slate-500 mt-1">
-                      Cada unidade pode ter no máximo {MAX_ADMINS_PER_UNIT}{" "}
-                      administradores.
+                      Cada unidade pode ter no máximo{" "}
+                      {MAX_ADMINS_PER_UNIT} administradores.
                     </p>
                   </div>
                 </div>
@@ -1148,28 +1597,42 @@ export default function SchoolPage() {
                         <p className="font-semibold text-slate-900">
                           {admin.name}
                         </p>
-                        <p className="text-sm text-slate-500">{admin.email}</p>
+
+                        <p className="text-sm text-slate-500">
+                          {admin.email}
+                        </p>
                       </div>
+
                       <div className="flex gap-2">
                         <button
                           type="button"
-                          onClick={() => openEditAdmin(admin)}
+                          onClick={() =>
+                            openEditAdmin(admin)
+                          }
                           className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50"
                         >
                           <Pencil className="h-4 w-4" />
                           Editar
                         </button>
+
                         <button
                           type="button"
-                          onClick={() => handleDeleteAdmin(admin)}
-                          disabled={deletingAdminId === admin.id}
+                          onClick={() =>
+                            handleDeleteAdmin(admin)
+                          }
+                          disabled={
+                            deletingAdminId ===
+                            admin.id
+                          }
                           className="inline-flex items-center gap-2 px-3 py-2 rounded-lg text-red-600 hover:bg-red-50 disabled:opacity-50"
                         >
-                          {deletingAdminId === admin.id ? (
+                          {deletingAdminId ===
+                          admin.id ? (
                             <Loader2 className="h-4 w-4 animate-spin" />
                           ) : (
                             <Trash2 className="h-4 w-4" />
                           )}
+
                           Excluir
                         </button>
                       </div>
@@ -1180,6 +1643,10 @@ export default function SchoolPage() {
             </div>
           </section>
         )}
+
+        {/* =====================================================
+            EDUCADORES
+        ====================================================== */}
 
         {canManageEducators && (
           <section
@@ -1192,10 +1659,12 @@ export default function SchoolPage() {
                   <div className="h-10 w-10 rounded-xl bg-purple-100 flex items-center justify-center">
                     <UserCheck className="h-5 w-5 text-purple-600" />
                   </div>
+
                   <div>
                     <h2 className="text-xl font-bold text-slate-900">
                       Educadores
                     </h2>
+
                     <p className="text-sm text-slate-500 mt-1">
                       Gerencie os educadores desta unidade.
                     </p>
@@ -1232,30 +1701,46 @@ export default function SchoolPage() {
                         <p className="font-semibold text-slate-900">
                           {educator.name}
                         </p>
+
                         <p className="text-sm text-slate-500">
                           {educator.email}
                         </p>
                       </div>
+
                       <div className="flex gap-2">
                         <button
                           type="button"
-                          onClick={() => openEditEducator(educator)}
+                          onClick={() =>
+                            openEditEducator(
+                              educator
+                            )
+                          }
                           className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50"
                         >
                           <Pencil className="h-4 w-4" />
                           Editar
                         </button>
+
                         <button
                           type="button"
-                          onClick={() => handleDeleteEducator(educator)}
-                          disabled={deletingEducatorId === educator.id}
+                          onClick={() =>
+                            handleDeleteEducator(
+                              educator
+                            )
+                          }
+                          disabled={
+                            deletingEducatorId ===
+                            educator.id
+                          }
                           className="inline-flex items-center gap-2 px-3 py-2 rounded-lg text-red-600 hover:bg-red-50 disabled:opacity-50"
                         >
-                          {deletingEducatorId === educator.id ? (
+                          {deletingEducatorId ===
+                          educator.id ? (
                             <Loader2 className="h-4 w-4 animate-spin" />
                           ) : (
                             <Trash2 className="h-4 w-4" />
                           )}
+
                           Excluir
                         </button>
                       </div>
@@ -1267,15 +1752,16 @@ export default function SchoolPage() {
           </section>
         )}
 
-        {/* TURMAS */}
+        {/* =====================================================
+            TURMAS
+        ====================================================== */}
+
         <section
           id="turmas"
           className="bg-white rounded-2xl border border-slate-200 shadow-sm mb-8"
         >
-
           <div className="p-6 border-b border-slate-200">
             <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-
               <div>
                 <div className="flex items-center gap-3">
                   <div className="h-10 w-10 rounded-xl bg-orange-100 flex items-center justify-center">
@@ -1316,7 +1802,9 @@ export default function SchoolPage() {
                   type="text"
                   value={classSearch}
                   onChange={(event) =>
-                    setClassSearch(event.target.value)
+                    setClassSearch(
+                      event.target.value
+                    )
                   }
                   placeholder="Pesquisar turma..."
                   className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
@@ -1326,12 +1814,12 @@ export default function SchoolPage() {
           </div>
 
           <div className="p-6">
-
             {loadingClasses ? (
               <div className="flex justify-center py-12">
                 <Loader2 className="h-7 w-7 text-orange-500 animate-spin" />
               </div>
-            ) : filteredClasses.length === 0 ? (
+            ) : filteredClasses.length ===
+              0 ? (
               <div className="py-12 text-center">
                 <GraduationCap className="h-12 w-12 text-slate-300 mx-auto mb-3" />
 
@@ -1347,103 +1835,107 @@ export default function SchoolPage() {
                     : "Crie a primeira turma desta unidade para começar a organizar os alunos."}
                 </p>
 
-                {!classSearch && canManageClasses && (
-                  <button
-                    onClick={() => {
-                      setNewClassName("");
-                      setShowCreateClass(true);
-                    }}
-                    className="inline-flex items-center gap-2 mt-5 px-4 py-2.5 rounded-xl bg-orange-500 hover:bg-orange-600 text-white font-semibold"
-                  >
-                    <Plus className="h-5 w-5" />
-                    Criar primeira turma
-                  </button>
-                )}
+                {!classSearch &&
+                  canManageClasses && (
+                    <button
+                      onClick={() => {
+                        setNewClassName("");
+                        setShowCreateClass(true);
+                      }}
+                      className="inline-flex items-center gap-2 mt-5 px-4 py-2.5 rounded-xl bg-orange-500 hover:bg-orange-600 text-white font-semibold"
+                    >
+                      <Plus className="h-5 w-5" />
+                      Criar primeira turma
+                    </button>
+                  )}
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-
-                {filteredClasses.map((classItem) => (
-                  <div
-                    key={classItem.id}
-                    className="rounded-2xl border border-slate-200 p-5 hover:border-orange-300 hover:shadow-sm transition"
-                  >
-                    <div className="flex items-start justify-between gap-3">
-
-                      <div className="flex items-center gap-3 min-w-0">
-                        <div className="h-11 w-11 rounded-xl bg-orange-100 flex items-center justify-center shrink-0">
-                          <GraduationCap className="h-6 w-6 text-orange-600" />
-                        </div>
-
-                        <div className="min-w-0">
-                          <h3 className="font-bold text-slate-900 truncate">
-                            {classItem.name}
-                          </h3>
-
-                          <p className="text-sm text-slate-500 mt-0.5">
-                            {classItem.active
-                              ? "Turma ativa"
-                              : "Turma inativa"}
-                          </p>
-                        </div>
-                      </div>
-
-                      <span
-                        className={`shrink-0 px-2.5 py-1 rounded-full text-xs font-semibold ${
-                          classItem.active
-                            ? "bg-green-100 text-green-700"
-                            : "bg-slate-100 text-slate-500"
-                        }`}
-                      >
-                        {classItem.active ? "Ativa" : "Inativa"}
-                      </span>
-                    </div>
-
-                    <div className="mt-5 space-y-3">
-
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm text-slate-500">
-                          Alunos
-                        </span>
-
-                        <span className="font-bold text-slate-900">
-                          {classItem.studentCount}
-                        </span>
-                      </div>
-
-                      <div className="flex items-center justify-between gap-3">
-                        <span className="text-sm text-slate-500">
-                          Educador
-                        </span>
-
-                        <span className="text-sm font-medium text-slate-700 text-right truncate">
-                          {classItem.educator?.name ||
-                            "Não definido"}
-                        </span>
-                      </div>
-
-                    </div>
-
-                    <button
-                      onClick={() =>
-                        router.push(
-                          `/schools/${schoolId}/classes/${classItem.id}`
-                        )
-                      }
-                      className="w-full mt-5 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 font-semibold transition"
+                {filteredClasses.map(
+                  (classItem) => (
+                    <div
+                      key={classItem.id}
+                      className="rounded-2xl border border-slate-200 p-5 hover:border-orange-300 hover:shadow-sm transition"
                     >
-                      <Settings className="h-4 w-4" />
-                      Gerenciar turma
-                    </button>
-                  </div>
-                ))}
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="h-11 w-11 rounded-xl bg-orange-100 flex items-center justify-center shrink-0">
+                            <GraduationCap className="h-6 w-6 text-orange-600" />
+                          </div>
 
+                          <div className="min-w-0">
+                            <h3 className="font-bold text-slate-900 truncate">
+                              {classItem.name}
+                            </h3>
+
+                            <p className="text-sm text-slate-500 mt-0.5">
+                              {classItem.active
+                                ? "Turma ativa"
+                                : "Turma inativa"}
+                            </p>
+                          </div>
+                        </div>
+
+                        <span
+                          className={`shrink-0 px-2.5 py-1 rounded-full text-xs font-semibold ${
+                            classItem.active
+                              ? "bg-green-100 text-green-700"
+                              : "bg-slate-100 text-slate-500"
+                          }`}
+                        >
+                          {classItem.active
+                            ? "Ativa"
+                            : "Inativa"}
+                        </span>
+                      </div>
+
+                      <div className="mt-5 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm text-slate-500">
+                            Alunos
+                          </span>
+
+                          <span className="font-bold text-slate-900">
+                            {classItem.studentCount}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="text-sm text-slate-500">
+                            Educador
+                          </span>
+
+                          <span className="text-sm font-medium text-slate-700 text-right truncate">
+                            {classItem.educator
+                              ?.name ||
+                              "Não definido"}
+                          </span>
+                        </div>
+                      </div>
+
+                      <button
+                        onClick={() =>
+                          router.push(
+                            `/schools/${schoolId}/classes/${classItem.id}`
+                          )
+                        }
+                        className="w-full mt-5 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 font-semibold transition"
+                      >
+                        <Settings className="h-4 w-4" />
+                        Gerenciar turma
+                      </button>
+                    </div>
+                  )
+                )}
               </div>
             )}
           </div>
         </section>
 
-        {/* Área de alunos */}
+        {/* =====================================================
+            ALUNOS
+        ====================================================== */}
+
         <section
           id="alunos"
           className="bg-white rounded-2xl border border-slate-200 shadow-sm"
@@ -1489,27 +1981,28 @@ export default function SchoolPage() {
               )}
             </div>
 
-            {/* Busca */}
             <div className="relative mt-6">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" />
 
               <input
                 type="text"
                 value={search}
-                onChange={(event) => setSearch(event.target.value)}
+                onChange={(event) =>
+                  setSearch(event.target.value)
+                }
                 placeholder="Pesquisar aluno por nome ou e-mail..."
                 className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
               />
             </div>
           </div>
 
-          {/* Lista */}
           <div className="p-6">
             {loadingStudents ? (
               <div className="flex justify-center py-12">
                 <Loader2 className="h-7 w-7 text-orange-500 animate-spin" />
               </div>
-            ) : filteredStudents.length === 0 ? (
+            ) : filteredStudents.length ===
+              0 ? (
               <div className="py-12 text-center">
                 <Users className="h-12 w-12 text-slate-300 mx-auto mb-3" />
 
@@ -1527,72 +2020,84 @@ export default function SchoolPage() {
               </div>
             ) : (
               <div className="space-y-3">
-                {filteredStudents.map((student) => (
-                  <div
-                    key={student.id}
-                    className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 p-4 rounded-xl border border-slate-200 hover:border-slate-300 transition"
-                  >
-                    <div className="flex items-center gap-4 min-w-0">
-                      <div className="h-11 w-11 rounded-full bg-orange-100 flex items-center justify-center shrink-0">
-                        <span className="text-orange-600 font-bold">
-                          {student.name
-                            .charAt(0)
-                            .toUpperCase()}
-                        </span>
+                {filteredStudents.map(
+                  (student) => (
+                    <div
+                      key={student.id}
+                      className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 p-4 rounded-xl border border-slate-200 hover:border-slate-300 transition"
+                    >
+                      <div className="flex items-center gap-4 min-w-0">
+                        <div className="h-11 w-11 rounded-full bg-orange-100 flex items-center justify-center shrink-0">
+                          <span className="text-orange-600 font-bold">
+                            {student.name
+                              .charAt(0)
+                              .toUpperCase()}
+                          </span>
+                        </div>
+
+                        <div className="min-w-0">
+                          <p className="font-semibold text-slate-900 truncate">
+                            {student.name}
+                          </p>
+
+                          <p className="text-sm text-slate-500 truncate">
+                            {student.email}
+                          </p>
+                        </div>
                       </div>
 
-                      <div className="min-w-0">
-                        <p className="font-semibold text-slate-900 truncate">
-                          {student.name}
-                        </p>
+                      <div className="flex items-center justify-between sm:justify-end gap-5">
+                        <div className="text-right">
+                          <p className="text-xs text-slate-400">
+                            Pontos
+                          </p>
 
-                        <p className="text-sm text-slate-500 truncate">
-                          {student.email}
-                        </p>
+                          <p className="font-bold text-slate-900">
+                            {(
+                              student.points ||
+                              0
+                            ).toLocaleString(
+                              "pt-BR"
+                            )}
+                          </p>
+                        </div>
+
+                        {canManageStudents && (
+                          <button
+                            onClick={() =>
+                              handleDeleteStudent(
+                                student
+                              )
+                            }
+                            disabled={
+                              deletingStudentId ===
+                              student.id
+                            }
+                            className="h-10 w-10 rounded-lg flex items-center justify-center text-red-500 hover:bg-red-50 transition disabled:opacity-50"
+                            title="Excluir aluno"
+                          >
+                            {deletingStudentId ===
+                            student.id ? (
+                              <Loader2 className="h-5 w-5 animate-spin" />
+                            ) : (
+                              <Trash2 className="h-5 w-5" />
+                            )}
+                          </button>
+                        )}
                       </div>
                     </div>
-
-                    <div className="flex items-center justify-between sm:justify-end gap-5">
-                      <div className="text-right">
-                        <p className="text-xs text-slate-400">
-                          Pontos
-                        </p>
-
-                        <p className="font-bold text-slate-900">
-                          {(student.points || 0).toLocaleString(
-                            "pt-BR"
-                          )}
-                        </p>
-                      </div>
-
-                      {canManageStudents && (
-                        <button
-                          onClick={() =>
-                            handleDeleteStudent(student)
-                          }
-                          disabled={
-                            deletingStudentId === student.id
-                          }
-                          className="h-10 w-10 rounded-lg flex items-center justify-center text-red-500 hover:bg-red-50 transition disabled:opacity-50"
-                          title="Excluir aluno"
-                        >
-                          {deletingStudentId === student.id ? (
-                            <Loader2 className="h-5 w-5 animate-spin" />
-                          ) : (
-                            <Trash2 className="h-5 w-5" />
-                          )}
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                ))}
+                  )
+                )}
               </div>
             )}
           </div>
         </section>
       </div>
 
-      {/* Modal - Administrador */}
+      {/* =====================================================
+          MODAL - ADMINISTRADOR
+      ====================================================== */}
+
       {showAdminForm && (
         <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
           <div className="w-full max-w-lg bg-white rounded-2xl shadow-xl">
@@ -1603,69 +2108,102 @@ export default function SchoolPage() {
                     ? "Editar administrador"
                     : "Cadastrar administrador"}
                 </h2>
+
                 <p className="text-sm text-slate-500 mt-1">
                   {editingAdmin
                     ? "Atualize os dados deste administrador."
                     : "Cadastre um administrador para esta unidade."}
                 </p>
               </div>
+
               <button
                 type="button"
-                onClick={() => setShowAdminForm(false)}
+                onClick={() =>
+                  setShowAdminForm(false)
+                }
                 className="h-9 w-9 rounded-lg hover:bg-slate-100 flex items-center justify-center"
               >
                 <X className="h-5 w-5 text-slate-500" />
               </button>
             </div>
 
-            <form onSubmit={handleSaveAdmin} className="p-6 space-y-4">
+            <form
+              onSubmit={handleSaveAdmin}
+              className="p-6 space-y-4"
+            >
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">
                   Nome
                 </label>
+
                 <input
                   type="text"
                   value={adminName}
-                  onChange={(event) => setAdminName(event.target.value)}
+                  onChange={(event) =>
+                    setAdminName(
+                      event.target.value
+                    )
+                  }
                   className="w-full px-4 py-3 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
+
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">
                   E-mail
                 </label>
+
                 <input
                   type="email"
                   value={adminEmail}
-                  onChange={(event) => setAdminEmail(event.target.value)}
+                  onChange={(event) =>
+                    setAdminEmail(
+                      event.target.value
+                    )
+                  }
                   className="w-full px-4 py-3 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
+
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">
-                  {editingAdmin ? "Nova senha (opcional)" : "Senha"}
+                  {editingAdmin
+                    ? "Nova senha (opcional)"
+                    : "Senha"}
                 </label>
+
                 <input
                   type="password"
                   value={adminPassword}
-                  onChange={(event) => setAdminPassword(event.target.value)}
+                  onChange={(event) =>
+                    setAdminPassword(
+                      event.target.value
+                    )
+                  }
                   className="w-full px-4 py-3 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
+
               <div className="flex justify-end gap-3 pt-2">
                 <button
                   type="button"
-                  onClick={() => setShowAdminForm(false)}
+                  onClick={() =>
+                    setShowAdminForm(false)
+                  }
                   className="px-4 py-2.5 rounded-xl border border-slate-300 text-slate-700 font-medium hover:bg-slate-50"
                 >
                   Cancelar
                 </button>
+
                 <button
                   type="submit"
                   disabled={savingAdmin}
                   className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold disabled:opacity-50"
                 >
-                  {savingAdmin && <Loader2 className="h-4 w-4 animate-spin" />}
+                  {savingAdmin && (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  )}
+
                   Salvar
                 </button>
               </div>
@@ -1674,74 +2212,107 @@ export default function SchoolPage() {
         </div>
       )}
 
-      {/* Modal - Educador */}
+      {/* =====================================================
+          MODAL - EDUCADOR
+      ====================================================== */}
+
       {showEducatorForm && (
         <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
           <div className="w-full max-w-lg bg-white rounded-2xl shadow-xl">
             <div className="flex items-center justify-between p-6 border-b border-slate-200">
               <div>
                 <h2 className="text-xl font-bold text-slate-900">
-                  {editingEducator ? "Editar educador" : "Cadastrar educador"}
+                  {editingEducator
+                    ? "Editar educador"
+                    : "Cadastrar educador"}
                 </h2>
+
                 <p className="text-sm text-slate-500 mt-1">
                   {editingEducator
                     ? "Atualize os dados deste educador."
                     : "Cadastre um educador para esta unidade."}
                 </p>
               </div>
+
               <button
                 type="button"
-                onClick={() => setShowEducatorForm(false)}
+                onClick={() =>
+                  setShowEducatorForm(false)
+                }
                 className="h-9 w-9 rounded-lg hover:bg-slate-100 flex items-center justify-center"
               >
                 <X className="h-5 w-5 text-slate-500" />
               </button>
             </div>
 
-            <form onSubmit={handleSaveEducator} className="p-6 space-y-4">
+            <form
+              onSubmit={handleSaveEducator}
+              className="p-6 space-y-4"
+            >
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">
                   Nome
                 </label>
+
                 <input
                   type="text"
                   value={educatorName}
-                  onChange={(event) => setEducatorName(event.target.value)}
-                  className="w-full px-4 py-3 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-purple-500"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">
-                  E-mail
-                </label>
-                <input
-                  type="email"
-                  value={educatorEmail}
-                  onChange={(event) => setEducatorEmail(event.target.value)}
-                  className="w-full px-4 py-3 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-purple-500"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">
-                  {editingEducator ? "Nova senha (opcional)" : "Senha"}
-                </label>
-                <input
-                  type="password"
-                  value={educatorPassword}
                   onChange={(event) =>
-                    setEducatorPassword(event.target.value)
+                    setEducatorName(
+                      event.target.value
+                    )
                   }
                   className="w-full px-4 py-3 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-purple-500"
                 />
               </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  E-mail
+                </label>
+
+                <input
+                  type="email"
+                  value={educatorEmail}
+                  onChange={(event) =>
+                    setEducatorEmail(
+                      event.target.value
+                    )
+                  }
+                  className="w-full px-4 py-3 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  {editingEducator
+                    ? "Nova senha (opcional)"
+                    : "Senha"}
+                </label>
+
+                <input
+                  type="password"
+                  value={educatorPassword}
+                  onChange={(event) =>
+                    setEducatorPassword(
+                      event.target.value
+                    )
+                  }
+                  className="w-full px-4 py-3 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                />
+              </div>
+
               <div className="flex justify-end gap-3 pt-2">
                 <button
                   type="button"
-                  onClick={() => setShowEducatorForm(false)}
+                  onClick={() =>
+                    setShowEducatorForm(false)
+                  }
                   className="px-4 py-2.5 rounded-xl border border-slate-300 text-slate-700 font-medium hover:bg-slate-50"
                 >
                   Cancelar
                 </button>
+
                 <button
                   type="submit"
                   disabled={savingEducator}
@@ -1750,6 +2321,7 @@ export default function SchoolPage() {
                   {savingEducator && (
                     <Loader2 className="h-4 w-4 animate-spin" />
                   )}
+
                   Salvar
                 </button>
               </div>
@@ -1758,11 +2330,13 @@ export default function SchoolPage() {
         </div>
       )}
 
-      {/* Modal - Criar turma */}
+      {/* =====================================================
+          MODAL - CRIAR TURMA
+      ====================================================== */}
+
       {showCreateClass && (
         <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
           <div className="w-full max-w-lg bg-white rounded-2xl shadow-xl">
-
             <div className="flex items-center justify-between p-6 border-b border-slate-200">
               <div>
                 <h2 className="text-xl font-bold text-slate-900">
@@ -1775,7 +2349,9 @@ export default function SchoolPage() {
               </div>
 
               <button
-                onClick={() => setShowCreateClass(false)}
+                onClick={() =>
+                  setShowCreateClass(false)
+                }
                 className="h-9 w-9 rounded-lg hover:bg-slate-100 flex items-center justify-center"
               >
                 <X className="h-5 w-5 text-slate-500" />
@@ -1795,7 +2371,9 @@ export default function SchoolPage() {
                   type="text"
                   value={newClassName}
                   onChange={(event) =>
-                    setNewClassName(event.target.value)
+                    setNewClassName(
+                      event.target.value
+                    )
                   }
                   placeholder="Ex.: 9º Ano A"
                   autoFocus
@@ -1824,7 +2402,9 @@ export default function SchoolPage() {
               <div className="flex justify-end gap-3 pt-2">
                 <button
                   type="button"
-                  onClick={() => setShowCreateClass(false)}
+                  onClick={() =>
+                    setShowCreateClass(false)
+                  }
                   className="px-4 py-2.5 rounded-xl border border-slate-300 text-slate-700 font-medium hover:bg-slate-50"
                 >
                   Cancelar
@@ -1849,7 +2429,10 @@ export default function SchoolPage() {
         </div>
       )}
 
-      {/* Modal - Adicionar aluno */}
+      {/* =====================================================
+          MODAL - ADICIONAR ALUNO
+      ====================================================== */}
+
       {showAddStudent && (
         <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
           <div className="w-full max-w-lg bg-white rounded-2xl shadow-xl">
@@ -1865,7 +2448,9 @@ export default function SchoolPage() {
               </div>
 
               <button
-                onClick={() => setShowAddStudent(false)}
+                onClick={() =>
+                  setShowAddStudent(false)
+                }
                 className="h-9 w-9 rounded-lg hover:bg-slate-100 flex items-center justify-center"
               >
                 <X className="h-5 w-5 text-slate-500" />
@@ -1885,7 +2470,9 @@ export default function SchoolPage() {
                   type="text"
                   value={studentName}
                   onChange={(event) =>
-                    setStudentName(event.target.value)
+                    setStudentName(
+                      event.target.value
+                    )
                   }
                   placeholder="Nome completo do aluno"
                   className="w-full px-4 py-3 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-orange-500"
@@ -1901,7 +2488,9 @@ export default function SchoolPage() {
                   type="email"
                   value={studentEmail}
                   onChange={(event) =>
-                    setStudentEmail(event.target.value)
+                    setStudentEmail(
+                      event.target.value
+                    )
                   }
                   placeholder="aluno@email.com"
                   className="w-full px-4 py-3 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-orange-500"
@@ -1917,7 +2506,9 @@ export default function SchoolPage() {
                   type="password"
                   value={studentPassword}
                   onChange={(event) =>
-                    setStudentPassword(event.target.value)
+                    setStudentPassword(
+                      event.target.value
+                    )
                   }
                   placeholder="Mínimo de 6 caracteres"
                   className="w-full px-4 py-3 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-orange-500"
@@ -1927,7 +2518,9 @@ export default function SchoolPage() {
               <div className="flex justify-end gap-3 pt-3">
                 <button
                   type="button"
-                  onClick={() => setShowAddStudent(false)}
+                  onClick={() =>
+                    setShowAddStudent(false)
+                  }
                   className="px-4 py-2.5 rounded-xl border border-slate-300 text-slate-700 font-medium hover:bg-slate-50"
                 >
                   Cancelar
@@ -1952,7 +2545,10 @@ export default function SchoolPage() {
         </div>
       )}
 
-      {/* Modal - Importar planilha */}
+      {/* =====================================================
+          MODAL - IMPORTAR PLANILHA
+      ====================================================== */}
+
       {showImport && (
         <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
           <div className="w-full max-w-2xl bg-white rounded-2xl shadow-xl max-h-[90vh] overflow-y-auto">
@@ -1974,7 +2570,8 @@ export default function SchoolPage() {
                   setSelectedFile(null);
 
                   if (fileInputRef.current) {
-                    fileInputRef.current.value = "";
+                    fileInputRef.current.value =
+                      "";
                   }
                 }}
                 className="h-9 w-9 rounded-lg hover:bg-slate-100 flex items-center justify-center"
@@ -1984,8 +2581,6 @@ export default function SchoolPage() {
             </div>
 
             <div className="p-6 space-y-6">
-
-              {/* Formato */}
               <div className="rounded-xl bg-blue-50 border border-blue-200 p-4">
                 <div className="flex gap-3">
                   <FileSpreadsheet className="h-6 w-6 text-blue-600 shrink-0" />
@@ -2020,7 +2615,6 @@ export default function SchoolPage() {
                 </div>
               </div>
 
-              {/* Exemplo */}
               <div>
                 <p className="text-sm font-semibold text-slate-700 mb-2">
                   Exemplo:
@@ -2077,7 +2671,6 @@ export default function SchoolPage() {
                 </div>
               </div>
 
-              {/* Upload */}
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-2">
                   Selecione a planilha
@@ -2101,14 +2694,16 @@ export default function SchoolPage() {
                       </p>
 
                       <p className="text-xs text-slate-500">
-                        {(selectedFile.size / 1024).toFixed(1)} KB
+                        {(
+                          selectedFile.size / 1024
+                        ).toFixed(1)}{" "}
+                        KB
                       </p>
                     </div>
                   </div>
                 )}
               </div>
 
-              {/* Resultado */}
               {importResult && (
                 <div
                   className={`rounded-xl border p-4 ${
@@ -2141,15 +2736,17 @@ export default function SchoolPage() {
                         </p>
 
                         <p className="text-sm text-green-700 mt-1">
-                          {importResult.imported || 0} aluno(s)
-                          importado(s) com sucesso.
+                          {importResult.imported ||
+                            0}{" "}
+                          aluno(s) importado(s) com sucesso.
                         </p>
                       </div>
                     </div>
                   )}
 
                   {importResult.errors &&
-                    importResult.errors.length > 0 && (
+                    importResult.errors.length >
+                      0 && (
                       <div className="mt-4">
                         <p className="text-sm font-semibold text-slate-700 mb-2">
                           Problemas encontrados:
@@ -2157,15 +2754,21 @@ export default function SchoolPage() {
 
                         <div className="max-h-48 overflow-y-auto space-y-2">
                           {importResult.errors.map(
-                            (item, index) => (
+                            (
+                              item,
+                              index
+                            ) => (
                               <div
                                 key={`${item.row}-${index}`}
                                 className="text-sm bg-white border border-slate-200 rounded-lg p-3"
                               >
                                 <span className="font-semibold">
-                                  Linha {item.row}:
+                                  Linha{" "}
+                                  {item.row}:
                                 </span>{" "}
-                                {item.message}
+                                {
+                                  item.message
+                                }
                               </div>
                             )
                           )}
@@ -2175,7 +2778,6 @@ export default function SchoolPage() {
                 </div>
               )}
 
-              {/* Botões */}
               <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3 pt-2">
                 <button
                   type="button"
@@ -2185,7 +2787,8 @@ export default function SchoolPage() {
                     setSelectedFile(null);
 
                     if (fileInputRef.current) {
-                      fileInputRef.current.value = "";
+                      fileInputRef.current.value =
+                        "";
                     }
                   }}
                   className="px-5 py-2.5 rounded-xl border border-slate-300 text-slate-700 font-medium hover:bg-slate-50"
@@ -2195,8 +2798,13 @@ export default function SchoolPage() {
 
                 <button
                   type="button"
-                  onClick={handleImportStudents}
-                  disabled={!selectedFile || importing}
+                  onClick={
+                    handleImportStudents
+                  }
+                  disabled={
+                    !selectedFile ||
+                    importing
+                  }
                   className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-orange-500 hover:bg-orange-600 text-white font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {importing ? (
@@ -2212,7 +2820,6 @@ export default function SchoolPage() {
                   )}
                 </button>
               </div>
-
             </div>
           </div>
         </div>

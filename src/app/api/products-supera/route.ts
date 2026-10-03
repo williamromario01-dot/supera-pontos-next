@@ -11,17 +11,17 @@ const MANAGEMENT_ROLES = [
 ];
 
 type UserDocument = {
-  _id: string;
+  _id: ObjectId;
   name?: string;
   email?: string;
   role?: string;
-  schoolId?: string;
+  schoolId?: string | ObjectId;
   active?: boolean;
 };
 
 type ProductDocument = {
   _id: ObjectId;
-  schoolId: string;
+  schoolId: ObjectId;
   name: string;
   description?: string;
   image?: string;
@@ -76,30 +76,35 @@ function serializeProduct(
 ) {
   return {
     id: product._id.toString(),
-    schoolId: product.schoolId,
+    schoolId: product.schoolId.toString(),
     name: product.name,
     description: product.description || "",
     image: product.image || "",
     price: Number(product.price || 0),
     stock: Number(product.stock || 0),
     active: product.active !== false,
+    createdAt: product.createdAt || null,
+    updatedAt: product.updatedAt || null,
   };
 }
 
 /**
  * GET
  *
- * Lista os produtos da escola do usuário.
+ * Lista os produtos disponíveis.
  *
  * Super Admin:
- * - Visualiza produtos de todas as escolas.
+ * - visualiza produtos de todas as escolas.
  *
  * Admin/Educador/Aluno:
- * - Visualiza somente produtos da própria escola.
+ * - visualiza somente produtos da própria escola.
  */
-export async function GET(request: NextRequest) {
+export async function GET(
+  request: NextRequest
+) {
   try {
-    const user = await getAuthenticatedUser(request);
+    const user =
+      await getAuthenticatedUser(request);
 
     if (!user) {
       return NextResponse.json(
@@ -128,12 +133,16 @@ export async function GET(request: NextRequest) {
         });
       }
 
-      query.schoolId = user.schoolId;
+      const schoolId = new ObjectId(
+        String(user.schoolId)
+      );
+
+      query.schoolId = schoolId;
     }
 
     const products = await db
       .collection<ProductDocument>(
-        "superaProducts"
+        "productsSupera"
       )
       .find(query)
       .sort({
@@ -142,7 +151,9 @@ export async function GET(request: NextRequest) {
       .toArray();
 
     return NextResponse.json({
-      products: products.map(serializeProduct),
+      products: products.map(
+        serializeProduct
+      ),
     });
   } catch (error) {
     console.error(
@@ -171,12 +182,13 @@ export async function GET(request: NextRequest) {
  * - super_admin
  * - admin
  * - educator
- *
- * Aluno não pode cadastrar produtos.
  */
-export async function POST(request: NextRequest) {
+export async function POST(
+  request: NextRequest
+) {
   try {
-    const user = await getAuthenticatedUser(request);
+    const user =
+      await getAuthenticatedUser(request);
 
     if (!user) {
       return NextResponse.json(
@@ -222,7 +234,10 @@ export async function POST(request: NextRequest) {
         ? body.image.trim()
         : "";
 
-    const price = Number(body.price);
+    const price = Number(
+      String(body.price).replace(",", ".")
+    );
+
     const stock = Number(body.stock);
 
     if (!name) {
@@ -249,11 +264,23 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (description.length > 500) {
+    if (description.length > 1000) {
       return NextResponse.json(
         {
           error:
-            "A descrição pode ter no máximo 500 caracteres.",
+            "A descrição pode ter no máximo 1000 caracteres.",
+        },
+        {
+          status: 400,
+        }
+      );
+    }
+
+    if (image.length > 2000) {
+      return NextResponse.json(
+        {
+          error:
+            "O link da imagem é muito longo.",
         },
         {
           status: 400,
@@ -292,7 +319,7 @@ export async function POST(request: NextRequest) {
     }
 
     /**
-     * Define a escola do produto.
+     * Define a escola.
      *
      * Super Admin:
      * - utiliza a escola enviada pelo formulário.
@@ -300,7 +327,7 @@ export async function POST(request: NextRequest) {
      * Admin/Educador:
      * - utiliza automaticamente a própria escola.
      */
-    let schoolId: string;
+    let schoolId: ObjectId;
 
     if (user.role === "super_admin") {
       if (
@@ -318,7 +345,25 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      schoolId = body.schoolId.trim();
+      if (
+        !ObjectId.isValid(
+          body.schoolId
+        )
+      ) {
+        return NextResponse.json(
+          {
+            error:
+              "ID da escola inválido.",
+          },
+          {
+            status: 400,
+          }
+        );
+      }
+
+      schoolId = new ObjectId(
+        body.schoolId
+      );
     } else {
       if (!user.schoolId) {
         return NextResponse.json(
@@ -332,28 +377,51 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      schoolId = user.schoolId;
-    }
+      if (
+        !ObjectId.isValid(
+          String(user.schoolId)
+        )
+      ) {
+        return NextResponse.json(
+          {
+            error:
+              "ID da escola do usuário é inválido.",
+          },
+          {
+            status: 400,
+          }
+        );
+      }
 
-    /**
-     * Segurança adicional:
-     * nunca permite criar um produto
-     * sem escola.
-     */
-    if (!schoolId) {
-      return NextResponse.json(
-        {
-          error:
-            "A escola do produto não foi definida.",
-        },
-        {
-          status: 400,
-        }
+      schoolId = new ObjectId(
+        String(user.schoolId)
       );
     }
 
     const client = await clientPromise;
     const db = client.db(DB_NAME);
+
+    /**
+     * Confirma que a escola existe.
+     */
+    const school =
+      await db.collection("schools").findOne({
+        _id: schoolId,
+      });
+
+    if (!school) {
+      return NextResponse.json(
+        {
+          error:
+            "Escola não encontrada.",
+        },
+        {
+          status: 404,
+        }
+      );
+    }
+
+    const now = new Date();
 
     const newProduct: ProductDocument = {
       _id: new ObjectId(),
@@ -364,21 +432,25 @@ export async function POST(request: NextRequest) {
       price,
       stock,
       active: true,
-      createdAt: new Date(),
-      updatedAt: new Date(),
+      createdAt: now,
+      updatedAt: now,
     };
 
     await db
       .collection<ProductDocument>(
-        "superaProducts"
+        "productsSupera"
       )
       .insertOne(newProduct);
 
     return NextResponse.json(
       {
         success: true,
+        message:
+          "Produto criado com sucesso.",
         product:
-          serializeProduct(newProduct),
+          serializeProduct(
+            newProduct
+          ),
       },
       {
         status: 201,
@@ -393,7 +465,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         error:
-          "Erro interno ao cadastrar o produto.",
+          error instanceof Error
+            ? error.message
+            : "Erro interno ao cadastrar o produto.",
       },
       {
         status: 500,

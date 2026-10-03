@@ -11,23 +11,25 @@ const MANAGEMENT_ROLES = [
 ];
 
 type UserDocument = {
-  _id: string;
+  _id: ObjectId;
   name?: string;
   email?: string;
   role?: string;
-  schoolId?: string;
+  schoolId?: string | ObjectId;
   active?: boolean;
 };
 
 type ProductDocument = {
   _id: ObjectId;
-  schoolId: string;
+  schoolId: ObjectId;
   name: string;
   description?: string;
   image?: string;
   price: number;
   stock: number;
   active?: boolean;
+  createdAt?: Date;
+  updatedAt?: Date;
 };
 
 async function getAuthenticatedUser(request: NextRequest) {
@@ -65,7 +67,7 @@ async function getAuthenticatedUser(request: NextRequest) {
 function serializeProduct(product: ProductDocument) {
   return {
     id: product._id.toString(),
-    schoolId: product.schoolId,
+    schoolId: product.schoolId.toString(),
     name: product.name,
     description: product.description || "",
     image: product.image || "",
@@ -77,83 +79,70 @@ function serializeProduct(product: ProductDocument) {
 
 export async function PATCH(
   request: NextRequest,
-  context: {
-    params: {
-      id: string;
-    };
-  }
+  { params }: { params: { id: string } }
 ) {
   try {
     const user = await getAuthenticatedUser(request);
 
     if (!user) {
       return NextResponse.json(
-        {
-          error: "Não autenticado.",
-        },
-        {
-          status: 401,
-        }
+        { error: "Não autenticado." },
+        { status: 401 }
       );
     }
 
     if (!MANAGEMENT_ROLES.includes(user.role || "")) {
       return NextResponse.json(
         {
-          error: "Você não tem permissão para editar produtos.",
+          error:
+            "Você não tem permissão para editar produtos.",
         },
-        {
-          status: 403,
-        }
+        { status: 403 }
       );
     }
 
-    const productId = context.params.id;
+    const productId = params.id;
 
     if (!ObjectId.isValid(productId)) {
       return NextResponse.json(
-        {
-          error: "ID do produto inválido.",
-        },
-        {
-          status: 400,
-        }
+        { error: "ID do produto inválido." },
+        { status: 400 }
       );
     }
 
     const client = await clientPromise;
     const db = client.db(DB_NAME);
 
-    const product = await db
-      .collection<ProductDocument>("superaProducts")
-      .findOne({
-        _id: new ObjectId(productId),
-      });
+    // IMPORTANTE:
+    // A coleção correta é productsSupera
+    const product =
+      await db
+        .collection<ProductDocument>("productsSupera")
+        .findOne({
+          _id: new ObjectId(productId),
+        });
 
     if (!product) {
       return NextResponse.json(
-        {
-          error: "Produto não encontrado.",
-        },
-        {
-          status: 404,
-        }
+        { error: "Produto não encontrado." },
+        { status: 404 }
       );
     }
 
-    if (
-      user.role !== "super_admin" &&
-      product.schoolId !== user.schoolId
-    ) {
-      return NextResponse.json(
-        {
-          error:
-            "Você não tem permissão para editar este produto.",
-        },
-        {
-          status: 403,
-        }
-      );
+    if (user.role !== "super_admin") {
+      const userSchoolId = user.schoolId
+        ? String(user.schoolId)
+        : "";
+
+      if (product.schoolId.toString() !== userSchoolId) {
+        return NextResponse.json(
+          {
+            error:
+              "Você não tem permissão para editar este produto.",
+          },
+          { status: 403 }
+        );
+      }
     }
 
     const body = await request.json();
@@ -167,11 +156,10 @@ export async function PATCH(
       ) {
         return NextResponse.json(
           {
-            error: "Informe um nome válido para o produto.",
+            error:
+              "Informe um nome válido para o produto.",
           },
-          {
-            status: 400,
-          }
+          { status: 400 }
         );
       }
 
@@ -182,15 +170,15 @@ export async function PATCH(
       if (typeof body.description !== "string") {
         return NextResponse.json(
           {
-            error: "A descrição do produto é inválida.",
+            error:
+              "A descrição do produto é inválida.",
           },
-          {
-            status: 400,
-          }
+          { status: 400 }
         );
       }
 
-      updates.description = body.description.trim();
+      updates.description =
+        body.description.trim();
     }
 
     if (body.image !== undefined) {
@@ -199,9 +187,7 @@ export async function PATCH(
           {
             error: "O link da imagem é inválido.",
           },
-          {
-            status: 400,
-          }
+          { status: 400 }
         );
       }
 
@@ -209,16 +195,16 @@ export async function PATCH(
     }
 
     if (body.price !== undefined) {
-      const price = Number(body.price);
+      const price = Number(
+        String(body.price).replace(",", ".")
+      );
 
       if (!Number.isFinite(price) || price <= 0) {
         return NextResponse.json(
           {
             error: "Informe um preço válido.",
           },
-          {
-            status: 400,
-          }
+          { status: 400 }
         );
       }
 
@@ -228,14 +214,15 @@ export async function PATCH(
     if (body.stock !== undefined) {
       const stock = Number(body.stock);
 
-      if (!Number.isInteger(stock) || stock < 0) {
+      if (
+        !Number.isInteger(stock) ||
+        stock < 0
+      ) {
         return NextResponse.json(
           {
             error: "Informe um estoque válido.",
           },
-          {
-            status: 400,
-          }
+          { status: 400 }
         );
       }
 
@@ -246,11 +233,10 @@ export async function PATCH(
       if (typeof body.active !== "boolean") {
         return NextResponse.json(
           {
-            error: "O status do produto é inválido.",
+            error:
+              "O status do produto é inválido.",
           },
-          {
-            status: 400,
-          }
+          { status: 400 }
         );
       }
 
@@ -260,18 +246,17 @@ export async function PATCH(
     if (Object.keys(updates).length === 0) {
       return NextResponse.json(
         {
-          error: "Nenhuma alteração foi enviada.",
+          error:
+            "Nenhuma alteração foi enviada.",
         },
-        {
-          status: 400,
-        }
+        { status: 400 }
       );
     }
 
     updates.updatedAt = new Date();
 
     await db
-      .collection<ProductDocument>("superaProducts")
+      .collection<ProductDocument>("productsSupera")
       .updateOne(
         {
           _id: new ObjectId(productId),
@@ -281,11 +266,12 @@ export async function PATCH(
         }
       );
 
-    const updatedProduct = await db
-      .collection<ProductDocument>("superaProducts")
-      .findOne({
-        _id: new ObjectId(productId),
-      });
+    const updatedProduct =
+      await db
+        .collection<ProductDocument>("productsSupera")
+        .findOne({
+          _id: new ObjectId(productId),
+        });
 
     if (!updatedProduct) {
       return NextResponse.json(
@@ -293,9 +279,7 @@ export async function PATCH(
           error:
             "Produto atualizado, mas não foi possível carregá-lo.",
         },
-        {
-          status: 500,
-        }
+        { status: 500 }
       );
     }
 
@@ -304,120 +288,110 @@ export async function PATCH(
       product: serializeProduct(updatedProduct),
     });
   } catch (error) {
-    console.error("Erro ao editar produto:", error);
+    console.error(
+      "Erro ao editar produto:",
+      error
+    );
 
     return NextResponse.json(
       {
-        error: "Erro interno ao editar o produto.",
+        error:
+          "Erro interno ao editar o produto.",
       },
-      {
-        status: 500,
-      }
+      { status: 500 }
     );
   }
 }
 
 export async function DELETE(
   request: NextRequest,
-  context: {
-    params: {
-      id: string;
-    };
-  }
+  { params }: { params: { id: string } }
 ) {
   try {
     const user = await getAuthenticatedUser(request);
 
     if (!user) {
       return NextResponse.json(
-        {
-          error: "Não autenticado.",
-        },
-        {
-          status: 401,
-        }
+        { error: "Não autenticado." },
+        { status: 401 }
       );
     }
 
     if (!MANAGEMENT_ROLES.includes(user.role || "")) {
       return NextResponse.json(
         {
-          error: "Você não tem permissão para excluir produtos.",
+          error:
+            "Você não tem permissão para excluir produtos.",
         },
-        {
-          status: 403,
-        }
+        { status: 403 }
       );
     }
 
-    const productId = context.params.id;
+    const productId = params.id;
 
     if (!ObjectId.isValid(productId)) {
       return NextResponse.json(
-        {
-          error: "ID do produto inválido.",
-        },
-        {
-          status: 400,
-        }
+        { error: "ID do produto inválido." },
+        { status: 400 }
       );
     }
 
     const client = await clientPromise;
     const db = client.db(DB_NAME);
 
-    const product = await db
-      .collection<ProductDocument>("superaProducts")
-      .findOne({
-        _id: new ObjectId(productId),
-      });
+    const product =
+      await db
+        .collection<ProductDocument>("productsSupera")
+        .findOne({
+          _id: new ObjectId(productId),
+        });
 
     if (!product) {
       return NextResponse.json(
-        {
-          error: "Produto não encontrado.",
-        },
-        {
-          status: 404,
-        }
+        { error: "Produto não encontrado." },
+        { status: 404 }
       );
     }
 
-    if (
-      user.role !== "super_admin" &&
-      product.schoolId !== user.schoolId
-    ) {
-      return NextResponse.json(
-        {
-          error:
-            "Você não tem permissão para excluir este produto.",
-        },
-        {
-          status: 403,
-        }
-      );
+    if (user.role !== "super_admin") {
+      const userSchoolId = user.schoolId
+        ? String(user.schoolId)
+        : "";
+
+      if (product.schoolId.toString() !== userSchoolId) {
+        return NextResponse.json(
+          {
+            error:
+              "Você não tem permissão para excluir este produto.",
+          },
+          { status: 403 }
+        );
+      }
     }
 
     await db
-      .collection<ProductDocument>("superaProducts")
+      .collection<ProductDocument>("productsSupera")
       .deleteOne({
         _id: new ObjectId(productId),
       });
 
     return NextResponse.json({
       success: true,
-      message: "Produto excluído com sucesso.",
+      message:
+        "Produto excluído com sucesso.",
     });
   } catch (error) {
-    console.error("Erro ao excluir produto:", error);
+    console.error(
+      "Erro ao excluir produto:",
+      error
+    );
 
     return NextResponse.json(
       {
-        error: "Erro interno ao excluir o produto.",
+        error:
+          "Erro interno ao excluir o produto.",
       },
-      {
-        status: 500,
-      }
+      { status: 500 }
     );
   }
 }

@@ -80,67 +80,90 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const requestedSchoolId = searchParams.get("schoolId");
 
-    const products = clientPromise.then(async (client) => {
-      const db = client.db(DB_NAME);
+    const client = await clientPromise;
+    const db = client.db(DB_NAME);
 
-      const filter: Record<string, unknown> = {
-        active: { $ne: false },
-      };
+    const filter: Record<string, unknown> = {
+      active: { $ne: false },
+    };
 
-      if (user.role === "super_admin") {
-        if (requestedSchoolId) {
-          const schoolId = normalizeSchoolId(requestedSchoolId);
-
-          if (!schoolId) {
-            throw new Error("ID da escola inválido.");
-          }
-
-          filter.schoolId = schoolId;
-        }
-      } else {
-        if (!user.schoolId) {
-          throw new Error(
-            "Seu usuário não está vinculado a uma escola."
-          );
-        }
-
-        const schoolId = normalizeSchoolId(user.schoolId);
+    if (user.role === "super_admin") {
+      if (requestedSchoolId) {
+        const schoolId =
+          normalizeSchoolId(requestedSchoolId);
 
         if (!schoolId) {
-          throw new Error("ID da escola inválido.");
+          return NextResponse.json(
+            { error: "ID da escola inválido." },
+            { status: 400 }
+          );
         }
 
         filter.schoolId = schoolId;
       }
+    } else {
+      if (!user.schoolId) {
+        return NextResponse.json(
+          {
+            error:
+              "Seu usuário não está vinculado a uma escola.",
+          },
+          { status: 400 }
+        );
+      }
 
-      const list = await db
-        .collection("productsSupera")
-        .find(filter)
-        .sort({
-          createdAt: -1,
-        })
-        .toArray();
+      const schoolId = normalizeSchoolId(
+        user.schoolId
+      );
 
-      return list.map((product) => ({
-        id: String(product._id),
-        schoolId: String(product.schoolId),
-        name: product.name || "",
-        description: product.description || "",
-        image: product.image || "",
-        price:
-          typeof product.price === "number"
-            ? product.price
-            : null,
-        active: product.active !== false,
-        createdAt: product.createdAt || null,
-        updatedAt: product.updatedAt || null,
-      }));
-    });
+      if (!schoolId) {
+        return NextResponse.json(
+          { error: "ID da escola inválido." },
+          { status: 400 }
+        );
+      }
 
-    const result = await products;
+      filter.schoolId = schoolId;
+    }
+
+    const list = await db
+      .collection("productsSupera")
+      .find(filter)
+      .sort({
+        createdAt: -1,
+      })
+      .toArray();
+
+    const products = list.map((product) => ({
+      id: String(product._id),
+
+      schoolId: String(product.schoolId),
+
+      name: product.name || "",
+
+      description: product.description || "",
+
+      image: product.image || "",
+
+      price:
+        typeof product.price === "number"
+          ? product.price
+          : 0,
+
+      stock:
+        typeof product.stock === "number"
+          ? product.stock
+          : 0,
+
+      active: product.active !== false,
+
+      createdAt: product.createdAt || null,
+
+      updatedAt: product.updatedAt || null,
+    }));
 
     return NextResponse.json({
-      products: result,
+      products,
     });
   } catch (error) {
     console.error(
@@ -262,7 +285,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    let price: number | null = null;
+    // PREÇO
+    let price = 0;
 
     if (
       body.price !== undefined &&
@@ -288,6 +312,23 @@ export async function POST(request: NextRequest) {
       price = parsedPrice;
     }
 
+    // ESTOQUE
+    const stock = Number(body.stock);
+
+    if (
+      !Number.isFinite(stock) ||
+      !Number.isInteger(stock) ||
+      stock < 0
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "Informe um estoque válido. Use um número inteiro maior ou igual a zero.",
+        },
+        { status: 400 }
+      );
+    }
+
     const client = await clientPromise;
     const db = client.db(DB_NAME);
 
@@ -308,13 +349,23 @@ export async function POST(request: NextRequest) {
 
     const product = {
       schoolId,
+
       name,
+
       description,
+
       image,
+
       price,
+
+      stock,
+
       active: true,
+
       createdBy: user._id,
+
       createdAt: now,
+
       updatedAt: now,
     };
 
@@ -325,13 +376,22 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         message: "Produto criado com sucesso.",
+
         product: {
           id: String(result.insertedId),
+
           schoolId: String(schoolId),
+
           name,
+
           description,
+
           image,
+
           price,
+
+          stock,
+
           active: true,
         },
       },
