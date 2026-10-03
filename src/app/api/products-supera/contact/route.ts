@@ -4,12 +4,6 @@ import clientPromise from "@/lib/mongodb";
 
 const DB_NAME = "supera_pontos";
 
-const MANAGEMENT_ROLES = [
-  "super_admin",
-  "admin",
-  "educator",
-];
-
 async function getAuthenticatedUser(request: NextRequest) {
   const token = request.cookies.get("supera_session")?.value;
 
@@ -40,290 +34,56 @@ async function getAuthenticatedUser(request: NextRequest) {
   return user;
 }
 
-function normalizeSchoolId(value: unknown) {
+function normalizePhone(value: unknown) {
   if (!value) {
-    return null;
+    return "";
   }
 
-  const stringValue = String(value);
-
-  if (!ObjectId.isValid(stringValue)) {
-    return null;
-  }
-
-  return new ObjectId(stringValue);
+  return String(value).replace(/\D/g, "");
 }
 
-/**
- * GET
- *
- * Lista os produtos disponíveis para a escola do usuário.
- *
- * Super Admin:
- * - pode informar ?schoolId=...
- * - sem schoolId, retorna todos os produtos
- *
- * Admin/Educador/Aluno:
- * - somente produtos da própria escola
- */
-export async function GET(request: NextRequest) {
-  try {
-    const user = await getAuthenticatedUser(request);
-
-    if (!user) {
-      return NextResponse.json(
-        { error: "Não autorizado." },
-        { status: 401 }
-      );
-    }
-
-    const { searchParams } = new URL(request.url);
-    const requestedSchoolId = searchParams.get("schoolId");
-
-    const client = await clientPromise;
-    const db = client.db(DB_NAME);
-
-    const filter: Record<string, unknown> = {
-      active: { $ne: false },
-    };
-
-    if (user.role === "super_admin") {
-      if (requestedSchoolId) {
-        const schoolId =
-          normalizeSchoolId(requestedSchoolId);
-
-        if (!schoolId) {
-          return NextResponse.json(
-            { error: "ID da escola inválido." },
-            { status: 400 }
-          );
-        }
-
-        filter.schoolId = schoolId;
-      }
-    } else {
-      if (!user.schoolId) {
-        return NextResponse.json(
-          {
-            error:
-              "Seu usuário não está vinculado a uma escola.",
-          },
-          { status: 400 }
-        );
-      }
-
-      const schoolId = normalizeSchoolId(
-        user.schoolId
-      );
-
-      if (!schoolId) {
-        return NextResponse.json(
-          { error: "ID da escola inválido." },
-          { status: 400 }
-        );
-      }
-
-      filter.schoolId = schoolId;
-    }
-
-    const list = await db
-      .collection("productsSupera")
-      .find(filter)
-      .sort({
-        createdAt: -1,
-      })
-      .toArray();
-
-    const products = list.map((product) => ({
-      id: String(product._id),
-
-      schoolId: String(product.schoolId),
-
-      name: product.name || "",
-
-      description: product.description || "",
-
-      image: product.image || "",
-
-      price:
-        typeof product.price === "number"
-          ? product.price
-          : 0,
-
-      stock:
-        typeof product.stock === "number"
-          ? product.stock
-          : 0,
-
-      active: product.active !== false,
-
-      createdAt: product.createdAt || null,
-
-      updatedAt: product.updatedAt || null,
-    }));
-
-    return NextResponse.json({
-      products,
-    });
-  } catch (error) {
-    console.error(
-      "Erro ao carregar Produtos Supera:",
-      error
-    );
-
-    return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Erro interno ao carregar produtos.",
-      },
-      { status: 500 }
-    );
-  }
-}
-
-/**
- * POST
- *
- * Cria um produto.
- *
- * Permitidos:
- * - super_admin
- * - admin
- * - educator
- */
 export async function POST(request: NextRequest) {
   try {
     const user = await getAuthenticatedUser(request);
 
     if (!user) {
       return NextResponse.json(
-        { error: "Não autorizado." },
-        { status: 401 }
-      );
-    }
-
-    if (!MANAGEMENT_ROLES.includes(user.role)) {
-      return NextResponse.json(
         {
-          error:
-            "Você não tem permissão para cadastrar produtos.",
+          error: "Não autenticado.",
         },
-        { status: 403 }
+        { status: 401 }
       );
     }
 
     const body = await request.json();
 
-    const name =
-      typeof body.name === "string"
-        ? body.name.trim()
+    const productId =
+      typeof body.productId === "string"
+        ? body.productId.trim()
         : "";
 
-    const description =
-      typeof body.description === "string"
-        ? body.description.trim()
-        : "";
-
-    const image =
-      typeof body.image === "string"
-        ? body.image.trim()
-        : "";
-
-    const schoolId =
-      user.role === "super_admin"
-        ? normalizeSchoolId(body.schoolId)
-        : normalizeSchoolId(user.schoolId);
-
-    if (!schoolId) {
+    if (!productId) {
       return NextResponse.json(
         {
-          error:
-            "A escola do produto não foi identificada.",
+          error: "Produto não informado.",
         },
         { status: 400 }
       );
     }
 
-    if (!name) {
+    if (!ObjectId.isValid(productId)) {
       return NextResponse.json(
         {
-          error: "Informe o nome do produto.",
+          error: "ID do produto inválido.",
         },
         { status: 400 }
       );
     }
 
-    if (name.length > 100) {
+    if (!user.schoolId) {
       return NextResponse.json(
         {
-          error:
-            "O nome do produto pode ter no máximo 100 caracteres.",
-        },
-        { status: 400 }
-      );
-    }
-
-    if (description.length > 1000) {
-      return NextResponse.json(
-        {
-          error:
-            "A descrição pode ter no máximo 1000 caracteres.",
-        },
-        { status: 400 }
-      );
-    }
-
-    if (image.length > 2000) {
-      return NextResponse.json(
-        {
-          error:
-            "O link da imagem é muito longo.",
-        },
-        { status: 400 }
-      );
-    }
-
-    // PREÇO
-    let price = 0;
-
-    if (
-      body.price !== undefined &&
-      body.price !== null &&
-      String(body.price).trim() !== ""
-    ) {
-      const parsedPrice = Number(
-        String(body.price).replace(",", ".")
-      );
-
-      if (
-        !Number.isFinite(parsedPrice) ||
-        parsedPrice < 0
-      ) {
-        return NextResponse.json(
-          {
-            error: "Informe um preço válido.",
-          },
-          { status: 400 }
-        );
-      }
-
-      price = parsedPrice;
-    }
-
-    // ESTOQUE
-    const stock = Number(body.stock);
-
-    if (
-      !Number.isFinite(stock) ||
-      !Number.isInteger(stock) ||
-      stock < 0
-    ) {
-      return NextResponse.json(
-        {
-          error:
-            "Informe um estoque válido. Use um número inteiro maior ou igual a zero.",
+          error: "Usuário não está vinculado a uma escola.",
         },
         { status: 400 }
       );
@@ -332,9 +92,19 @@ export async function POST(request: NextRequest) {
     const client = await clientPromise;
     const db = client.db(DB_NAME);
 
-    const school = await db.collection("schools").findOne({
-      _id: schoolId,
-    });
+    let school;
+
+    if (ObjectId.isValid(String(user.schoolId))) {
+      school = await db.collection("schools").findOne({
+        _id: new ObjectId(String(user.schoolId)),
+      });
+    }
+
+    if (!school) {
+      school = await db.collection("schools").findOne({
+        _id: user.schoolId,
+      });
+    }
 
     if (!school) {
       return NextResponse.json(
@@ -345,61 +115,76 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const now = new Date();
-
-    const product = {
-      schoolId,
-
-      name,
-
-      description,
-
-      image,
-
-      price,
-
-      stock,
-
-      active: true,
-
-      createdBy: user._id,
-
-      createdAt: now,
-
-      updatedAt: now,
-    };
-
-    const result = await db
+    const product = await db
       .collection("productsSupera")
-      .insertOne(product);
+      .findOne({
+        _id: new ObjectId(productId),
+      });
 
-    return NextResponse.json(
-      {
-        message: "Produto criado com sucesso.",
-
-        product: {
-          id: String(result.insertedId),
-
-          schoolId: String(schoolId),
-
-          name,
-
-          description,
-
-          image,
-
-          price,
-
-          stock,
-
-          active: true,
+    if (!product) {
+      return NextResponse.json(
+        {
+          error: "Produto não encontrado.",
         },
+        { status: 404 }
+      );
+    }
+
+    const productSchoolId = String(product.schoolId);
+    const userSchoolId = String(user.schoolId);
+
+    if (productSchoolId !== userSchoolId) {
+      return NextResponse.json(
+        {
+          error: "Este produto não pertence à sua escola.",
+        },
+        { status: 403 }
+      );
+    }
+
+    const whatsappRaw =
+      school.whatsappNumber ||
+      school.whatsapp ||
+      school.phone ||
+      school.telefone ||
+      "";
+
+    const whatsappNumber = normalizePhone(whatsappRaw);
+
+    if (!whatsappNumber) {
+      return NextResponse.json(
+        {
+          error:
+            "O WhatsApp da escola não está cadastrado.",
+        },
+        { status: 400 }
+      );
+    }
+
+    const studentName = user.name || "Aluno";
+
+    const productName = product.name || "Produto";
+
+    const message =
+      `Olá! Sou ${studentName} e gostaria de comprar o produto "${productName}" na Loja de Produtos Supera.`;
+
+    const whatsappUrl =
+      `https://wa.me/${whatsappNumber}?text=${encodeURIComponent(
+        message
+      )}`;
+
+    return NextResponse.json({
+      success: true,
+      whatsappNumber,
+      whatsappUrl,
+      product: {
+        id: String(product._id),
+        name: productName,
       },
-      { status: 201 }
-    );
+    });
   } catch (error) {
     console.error(
-      "Erro ao criar Produto Supera:",
+      "Erro ao gerar contato do Produto Supera:",
       error
     );
 
@@ -408,7 +193,7 @@ export async function POST(request: NextRequest) {
         error:
           error instanceof Error
             ? error.message
-            : "Erro interno ao criar produto.",
+            : "Erro interno ao gerar contato.",
       },
       { status: 500 }
     );
