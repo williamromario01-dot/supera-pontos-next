@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
   Home,
@@ -14,6 +14,7 @@ import {
   Loader2,
   CheckCircle2,
   AlertCircle,
+  Upload,
 } from "lucide-react";
 
 type UserRole =
@@ -56,6 +57,7 @@ export default function PointStorePage() {
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [uploadingImage, setUploadingImage] = useState(false);
   const [redeemingId, setRedeemingId] = useState<string | null>(null);
 
   const [showForm, setShowForm] = useState(false);
@@ -73,6 +75,8 @@ export default function PointStorePage() {
     stock: "",
     schoolId: "",
   });
+
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const canManage =
     user?.role === "super_admin" ||
@@ -199,6 +203,10 @@ export default function PointStorePage() {
     });
 
     setEditingProduct(null);
+
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
   }
 
   function openCreateForm() {
@@ -222,16 +230,174 @@ export default function PointStorePage() {
 
     setMessage("");
     setError("");
+
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+
     setShowForm(true);
   }
 
   function closeForm() {
-    if (saving) {
+    if (saving || uploadingImage) {
       return;
     }
 
     setShowForm(false);
     resetForm();
+  }
+
+  /*
+   * =========================================================
+   * UPLOAD DA IMAGEM
+   * =========================================================
+   */
+
+  function openImageSelector() {
+    if (uploadingImage || saving) {
+      return;
+    }
+
+    setError("");
+    setMessage("");
+
+    fileInputRef.current?.click();
+  }
+
+  async function handleImageUpload(
+    event: React.ChangeEvent<HTMLInputElement>
+  ) {
+    const file = event.target.files?.[0];
+
+    if (!file) {
+      return;
+    }
+
+    try {
+      setUploadingImage(true);
+      setError("");
+      setMessage("");
+
+      /*
+       * Validação do tipo.
+       */
+      const allowedTypes = [
+        "image/jpeg",
+        "image/jpg",
+        "image/png",
+        "image/webp",
+      ];
+
+      if (!allowedTypes.includes(file.type.toLowerCase())) {
+        throw new Error(
+          "Formato inválido. Envie apenas JPG, JPEG, PNG ou WebP."
+        );
+      }
+
+      /*
+       * Validação do tamanho.
+       */
+      const maxFileSize = 1 * 1024 * 1024;
+
+      if (file.size > maxFileSize) {
+        throw new Error(
+          "A imagem deve ter no máximo 1 MB."
+        );
+      }
+
+      /*
+       * Precisamos saber a escola antes de enviar.
+       */
+      let schoolId = "";
+
+      if (user?.role === "super_admin") {
+        schoolId = form.schoolId;
+
+        if (!schoolId) {
+          throw new Error(
+            "Selecione a escola antes de enviar a imagem."
+          );
+        }
+      } else {
+        schoolId = user?.schoolId || "";
+
+        if (!schoolId) {
+          throw new Error(
+            "Não foi possível identificar a escola do usuário."
+          );
+        }
+      }
+
+      /*
+       * Cria o FormData para o endpoint /api/upload.
+       */
+      const formData = new FormData();
+
+      formData.append("file", file);
+      formData.append("schoolId", schoolId);
+
+      /*
+       * Envia para o endpoint de upload.
+       */
+      const response = await fetch("/api/upload", {
+        method: "POST",
+        credentials: "include",
+        body: formData,
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          data.error ||
+            "Não foi possível enviar a imagem."
+        );
+      }
+
+      /*
+       * Pega a URL criada pelo Vercel Blob.
+       */
+      const uploadedUrl = data.image?.url;
+
+      if (!uploadedUrl) {
+        throw new Error(
+          "A imagem foi enviada, mas a URL não foi retornada."
+        );
+      }
+
+      /*
+       * Preenche automaticamente o campo Imagem.
+       */
+      setForm((current) => ({
+        ...current,
+        image: uploadedUrl,
+      }));
+
+      setMessage(
+        "Imagem enviada com sucesso! A URL foi preenchida automaticamente."
+      );
+    } catch (err) {
+      console.error(
+        "Erro ao enviar imagem:",
+        err
+      );
+
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Erro ao enviar a imagem."
+      );
+    } finally {
+      setUploadingImage(false);
+
+      /*
+       * Permite selecionar novamente a mesma imagem
+       * caso seja necessário.
+       */
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+    }
   }
 
   async function handleSave(
@@ -243,6 +409,39 @@ export default function PointStorePage() {
       setSaving(true);
       setError("");
       setMessage("");
+
+      /*
+       * Validação adicional.
+       */
+      if (!form.name.trim()) {
+        throw new Error(
+          "Informe o nome do produto."
+        );
+      }
+
+      if (!form.points || Number(form.points) <= 0) {
+        throw new Error(
+          "Informe uma quantidade válida de pontos."
+        );
+      }
+
+      if (
+        form.stock === "" ||
+        Number(form.stock) < 0
+      ) {
+        throw new Error(
+          "Informe um estoque válido."
+        );
+      }
+
+      if (
+        user?.role === "super_admin" &&
+        !form.schoolId
+      ) {
+        throw new Error(
+          "Selecione a escola do produto."
+        );
+      }
 
       const payload: Record<string, unknown> = {
         name: form.name,
@@ -850,7 +1049,8 @@ export default function PointStorePage() {
               <button
                 type="button"
                 onClick={closeForm}
-                className="rounded-xl p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-900"
+                disabled={saving || uploadingImage}
+                className="rounded-xl p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-50"
                 aria-label="Fechar"
               >
                 <X className="h-5 w-5" />
@@ -903,28 +1103,85 @@ export default function PointStorePage() {
                 />
               </div>
 
+              {/* =====================================================
+                  IMAGEM DO PRODUTO
+                 ===================================================== */}
+
               <div>
                 <label className="mb-2 block text-sm font-semibold text-slate-700">
                   Imagem
                 </label>
 
+                <div className="flex flex-col gap-3 sm:flex-row">
+                  <input
+                    type="text"
+                    value={form.image}
+                    onChange={(event) =>
+                      setForm({
+                        ...form,
+                        image: event.target.value,
+                      })
+                    }
+                    placeholder="https://..."
+                    className="min-w-0 flex-1 rounded-2xl border border-slate-200 px-4 py-3 outline-none transition focus:border-orange-400 focus:ring-4 focus:ring-orange-100"
+                  />
+
+                  <button
+                    type="button"
+                    onClick={openImageSelector}
+                    disabled={
+                      uploadingImage ||
+                      saving
+                    }
+                    className="inline-flex shrink-0 items-center justify-center gap-2 rounded-2xl bg-orange-500 px-5 py-3 text-sm font-bold text-white transition hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {uploadingImage ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Enviando...
+                      </>
+                    ) : (
+                      <>
+                        <Upload className="h-4 w-4" />
+                        Enviar imagem
+                      </>
+                    )}
+                  </button>
+                </div>
+
                 <input
-                  type="text"
-                  value={form.image}
-                  onChange={(event) =>
-                    setForm({
-                      ...form,
-                      image: event.target.value,
-                    })
-                  }
-                  placeholder="URL da imagem"
-                  className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none transition focus:border-orange-400 focus:ring-4 focus:ring-orange-100"
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/jpeg,image/jpg,image/png,image/webp"
+                  onChange={handleImageUpload}
+                  className="hidden"
                 />
 
                 <p className="mt-1.5 text-xs text-slate-400">
-                  Você pode deixar vazio para usar o
-                  ícone padrão.
+                  JPG, JPEG, PNG ou WebP. Máximo de 1 MB.
                 </p>
+
+                {form.image ? (
+                  <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200 bg-slate-50">
+                    <div className="relative aspect-video w-full bg-slate-100">
+                      <img
+                        src={form.image}
+                        alt="Pré-visualização do produto"
+                        className="h-full w-full object-contain"
+                        onError={(event) => {
+                          event.currentTarget.style.display =
+                            "none";
+                        }}
+                      />
+                    </div>
+
+                    <div className="border-t border-slate-200 bg-white px-4 py-3">
+                      <p className="truncate text-xs text-slate-500">
+                        {form.image}
+                      </p>
+                    </div>
+                  </div>
+                ) : null}
               </div>
 
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -1023,7 +1280,9 @@ export default function PointStorePage() {
                 <button
                   type="button"
                   onClick={closeForm}
-                  disabled={saving}
+                  disabled={
+                    saving || uploadingImage
+                  }
                   className="rounded-2xl border border-slate-200 px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
                 >
                   Cancelar
@@ -1031,7 +1290,9 @@ export default function PointStorePage() {
 
                 <button
                   type="submit"
-                  disabled={saving}
+                  disabled={
+                    saving || uploadingImage
+                  }
                   className="inline-flex items-center justify-center gap-2 rounded-2xl bg-orange-500 px-6 py-3 text-sm font-bold text-white transition hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {saving ? (
