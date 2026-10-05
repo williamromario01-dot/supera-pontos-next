@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ArrowLeft,
   Edit,
@@ -10,7 +10,9 @@ import {
   Plus,
   ShoppingBag,
   Trash2,
+  Upload,
   X,
+  Loader2,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 
@@ -34,6 +36,7 @@ type Product = {
   name: string;
   description: string;
   image?: string;
+  images?: string[];
   price: number;
   stock: number;
   active: boolean;
@@ -43,6 +46,7 @@ type ProductForm = {
   name: string;
   description: string;
   image: string;
+  images: string[];
   price: string;
   stock: string;
   schoolId: string;
@@ -60,20 +64,37 @@ export default function ProductsSuperaPage() {
   const [saving, setSaving] = useState(false);
   const [contacting, setContacting] = useState<string | null>(null);
 
+  const [uploadingMainImage, setUploadingMainImage] =
+    useState(false);
+
+  const [uploadingAdditionalImage, setUploadingAdditionalImage] =
+    useState(false);
+
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
   const [showModal, setShowModal] = useState(false);
-  const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  const [editingProduct, setEditingProduct] =
+    useState<Product | null>(null);
 
   const [form, setForm] = useState<ProductForm>({
     name: "",
     description: "",
     image: "",
+    images: [],
     price: "",
     stock: "",
     schoolId: "",
   });
+
+  const [selectedProductImages, setSelectedProductImages] =
+    useState<Product | null>(null);
+
+  const mainImageInputRef =
+    useRef<HTMLInputElement | null>(null);
+
+  const additionalImageInputRef =
+    useRef<HTMLInputElement | null>(null);
 
   const canManage =
     user?.role === "super_admin" ||
@@ -210,6 +231,7 @@ export default function ProductsSuperaPage() {
       name: "",
       description: "",
       image: "",
+      images: [],
       price: "",
       stock: "",
       schoolId:
@@ -226,6 +248,7 @@ export default function ProductsSuperaPage() {
       name: "",
       description: "",
       image: "",
+      images: [],
       price: "",
       stock: "",
       schoolId:
@@ -242,10 +265,19 @@ export default function ProductsSuperaPage() {
   function openEditModal(product: Product) {
     setEditingProduct(product);
 
+    const productImages =
+      Array.isArray(product.images) &&
+      product.images.length > 0
+        ? product.images
+        : product.image
+        ? [product.image]
+        : [];
+
     setForm({
       name: product.name || "",
       description: product.description || "",
       image: product.image || "",
+      images: productImages.slice(0, 50),
       price: String(product.price ?? ""),
       stock: String(product.stock ?? ""),
       schoolId: product.schoolId || "",
@@ -257,13 +289,231 @@ export default function ProductsSuperaPage() {
   }
 
   function closeModal() {
-    if (saving) {
+    if (
+      saving ||
+      uploadingMainImage ||
+      uploadingAdditionalImage
+    ) {
       return;
     }
 
     setShowModal(false);
     setEditingProduct(null);
     resetForm();
+  }
+
+  /*
+   * =========================================================
+   * UPLOAD DE IMAGEM
+   * =========================================================
+   *
+   * Envia o arquivo para:
+   *
+   * /api/upload
+   *
+   * A API já controla:
+   * - autenticação
+   * - permissões
+   * - escola
+   * - tamanho máximo
+   * - formatos permitidos
+   * - limite de 50 imagens por escola
+   */
+
+  async function uploadImage(
+    file: File,
+    type: "main" | "additional"
+  ) {
+    if (!file) {
+      return;
+    }
+
+    setError("");
+    setSuccess("");
+
+    if (type === "main") {
+      setUploadingMainImage(true);
+    } else {
+      setUploadingAdditionalImage(true);
+    }
+
+    try {
+      const formData = new FormData();
+
+      formData.append("file", file);
+
+      /*
+       * O super_admin precisa informar a escola.
+       */
+      if (
+        user?.role === "super_admin" &&
+        form.schoolId
+      ) {
+        formData.append(
+          "schoolId",
+          form.schoolId
+        );
+      }
+
+      const response = await fetch(
+        "/api/upload",
+        {
+          method: "POST",
+          credentials: "include",
+          body: formData,
+        }
+      );
+
+      const contentType =
+        response.headers.get("content-type") || "";
+
+      if (!contentType.includes("application/json")) {
+        throw new Error(
+          `A API de upload retornou ${response.status} em vez de JSON.`
+        );
+      }
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          data.error ||
+            "Não foi possível enviar a imagem."
+        );
+      }
+
+      if (!data.image?.url) {
+        throw new Error(
+          "A API não retornou a URL da imagem."
+        );
+      }
+
+      const imageUrl = data.image.url;
+
+      if (type === "main") {
+        setForm((previous) => ({
+          ...previous,
+          image: imageUrl,
+        }));
+
+        setSuccess(
+          "Imagem principal enviada com sucesso."
+        );
+      } else {
+        setForm((previous) => ({
+          ...previous,
+          images: [
+            ...previous.images,
+            imageUrl,
+          ],
+        }));
+
+        setSuccess(
+          "Foto adicionada com sucesso."
+        );
+      }
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Erro ao enviar a imagem."
+      );
+    } finally {
+      if (type === "main") {
+        setUploadingMainImage(false);
+      } else {
+        setUploadingAdditionalImage(false);
+      }
+    }
+  }
+
+  async function handleMainImageSelected(
+    event: React.ChangeEvent<HTMLInputElement>
+  ) {
+    const file = event.target.files?.[0];
+
+    event.target.value = "";
+
+    if (!file) {
+      return;
+    }
+
+    await uploadImage(file, "main");
+  }
+
+  async function handleAdditionalImageSelected(
+    event: React.ChangeEvent<HTMLInputElement>
+  ) {
+    const file = event.target.files?.[0];
+
+    event.target.value = "";
+
+    if (!file) {
+      return;
+    }
+
+    if (form.images.length >= 50) {
+      setError(
+        "Cada produto pode ter no máximo 50 fotos."
+      );
+      return;
+    }
+
+    await uploadImage(file, "additional");
+  }
+
+  function addImageToForm() {
+    const input = document.getElementById(
+      "new-product-image"
+    ) as HTMLInputElement | null;
+
+    if (!input) {
+      return;
+    }
+
+    const url = input.value.trim();
+
+    if (!url) {
+      setError("Informe a URL da foto.");
+      return;
+    }
+
+    if (form.images.length >= 50) {
+      setError(
+        "Cada produto pode ter no máximo 50 fotos."
+      );
+      return;
+    }
+
+    if (!/^https?:\/\/.+/i.test(url)) {
+      setError(
+        "Informe uma URL válida para a imagem."
+      );
+      return;
+    }
+
+    if (form.images.includes(url)) {
+      setError("Essa foto já foi adicionada.");
+      return;
+    }
+
+    setForm({
+      ...form,
+      images: [...form.images, url],
+    });
+
+    input.value = "";
+    setError("");
+  }
+
+  function removeImageFromForm(index: number) {
+    setForm({
+      ...form,
+      images: form.images.filter(
+        (_, imageIndex) =>
+          imageIndex !== index
+      ),
+    });
   }
 
   async function saveProduct() {
@@ -274,6 +524,10 @@ export default function ProductsSuperaPage() {
     const description = form.description.trim();
     const image = form.image.trim();
 
+    const images = form.images
+      .map((item) => item.trim())
+      .filter(Boolean);
+
     const price = Number(
       form.price.replace(",", ".")
     );
@@ -282,6 +536,27 @@ export default function ProductsSuperaPage() {
 
     if (!name) {
       setError("Informe o nome do produto.");
+      return;
+    }
+
+    if (name.length > 100) {
+      setError(
+        "O nome do produto pode ter no máximo 100 caracteres."
+      );
+      return;
+    }
+
+    if (description.length > 1000) {
+      setError(
+        "A descrição pode ter no máximo 1000 caracteres."
+      );
+      return;
+    }
+
+    if (images.length > 50) {
+      setError(
+        "Cada produto pode ter no máximo 50 fotos."
+      );
       return;
     }
 
@@ -315,17 +590,23 @@ export default function ProductsSuperaPage() {
         ? `/api/products-supera/${editingProduct!.id}`
         : "/api/products-supera";
 
-      const method = isEditing ? "PATCH" : "POST";
+      const method = isEditing
+        ? "PATCH"
+        : "POST";
 
       const body: Record<string, unknown> = {
         name,
         description,
         image,
+        images,
         price,
         stock,
       };
 
-      if (!isEditing && user?.role === "super_admin") {
+      if (
+        !isEditing &&
+        user?.role === "super_admin"
+      ) {
         body.schoolId = form.schoolId;
       }
 
@@ -351,7 +632,8 @@ export default function ProductsSuperaPage() {
 
       if (!response.ok) {
         throw new Error(
-          data.error || "Não foi possível salvar o produto."
+          data.error ||
+            "Não foi possível salvar o produto."
         );
       }
 
@@ -377,7 +659,9 @@ export default function ProductsSuperaPage() {
     }
   }
 
-  async function deleteProduct(product: Product) {
+  async function deleteProduct(
+    product: Product
+  ) {
     const confirmed = window.confirm(
       `Deseja realmente remover "${product.name}" da loja?`
     );
@@ -411,7 +695,8 @@ export default function ProductsSuperaPage() {
 
       if (!response.ok) {
         throw new Error(
-          data.error || "Não foi possível remover o produto."
+          data.error ||
+            "Não foi possível remover o produto."
         );
       }
 
@@ -429,19 +714,14 @@ export default function ProductsSuperaPage() {
     }
   }
 
-  async function contactWhatsApp(product: Product) {
+  async function contactWhatsApp(
+    product: Product
+  ) {
     setError("");
     setSuccess("");
     setContacting(product.id);
 
     try {
-      /*
-       * IMPORTANTE:
-       * A rota existente é:
-       * /api/products-supera/contact
-       *
-       * O ID do produto é enviado no corpo.
-       */
       const response = await fetch(
         "/api/products-supera/contact",
         {
@@ -496,7 +776,9 @@ export default function ProductsSuperaPage() {
     }
   }
 
-  function getSchoolName(schoolId: string) {
+  function getSchoolName(
+    schoolId: string
+  ) {
     const school = schools.find(
       (item) => item.id === schoolId
     );
@@ -514,11 +796,29 @@ export default function ProductsSuperaPage() {
     );
   }
 
+  function getProductImages(
+    product: Product
+  ) {
+    if (
+      Array.isArray(product.images) &&
+      product.images.length > 0
+    ) {
+      return product.images.slice(0, 50);
+    }
+
+    if (product.image) {
+      return [product.image];
+    }
+
+    return [];
+  }
+
   if (loading) {
     return (
       <main className="min-h-screen bg-orange-50 flex items-center justify-center">
         <div className="text-center">
           <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-4 border-orange-200 border-t-orange-600" />
+
           <p className="text-gray-600">
             Carregando Produtos Supera...
           </p>
@@ -533,7 +833,9 @@ export default function ProductsSuperaPage() {
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4 sm:px-6 lg:px-8">
           <div className="flex items-center gap-3">
             <button
-              onClick={() => router.push("/dashboard")}
+              onClick={() =>
+                router.push("/dashboard")
+              }
               className="flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-50"
             >
               <ArrowLeft size={18} />
@@ -548,6 +850,7 @@ export default function ProductsSuperaPage() {
                   className="text-orange-600"
                   size={24}
                 />
+
                 <h1 className="text-xl font-bold text-gray-900 sm:text-2xl">
                   Produtos Supera
                 </h1>
@@ -565,9 +868,11 @@ export default function ProductsSuperaPage() {
               className="flex items-center gap-2 rounded-xl bg-orange-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-orange-700"
             >
               <Plus size={18} />
+
               <span className="hidden sm:inline">
                 Novo produto
               </span>
+
               <span className="sm:hidden">
                 Novo
               </span>
@@ -619,6 +924,7 @@ export default function ProductsSuperaPage() {
           <div className="flex min-h-[300px] items-center justify-center">
             <div className="text-center">
               <div className="mx-auto mb-4 h-9 w-9 animate-spin rounded-full border-4 border-orange-200 border-t-orange-600" />
+
               <p className="text-gray-600">
                 Carregando produtos...
               </p>
@@ -636,8 +942,8 @@ export default function ProductsSuperaPage() {
             </h2>
 
             <p className="mt-2 text-sm text-gray-500">
-              Ainda não há produtos cadastrados para esta
-              escola.
+              Ainda não há produtos cadastrados
+              para esta escola.
             </p>
 
             {canManage && (
@@ -652,137 +958,165 @@ export default function ProductsSuperaPage() {
           </div>
         ) : (
           <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {products.map((product) => (
-              <article
-                key={product.id}
-                className="overflow-hidden rounded-2xl border border-orange-100 bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
-              >
-                <div className="relative flex h-52 items-center justify-center bg-gray-50">
-                  {product.image ? (
-                    <img
-                      src={product.image}
-                      alt={product.name}
-                      className="h-full w-full object-cover"
-                      onError={(event) => {
-                        event.currentTarget.style.display =
-                          "none";
-                      }}
-                    />
-                  ) : (
-                    <div className="text-center text-gray-300">
-                      <ImageIcon
-                        size={48}
-                        className="mx-auto"
+            {products.map((product) => {
+              const productImages =
+                getProductImages(product);
+
+              const mainImage =
+                productImages[0] ||
+                product.image ||
+                "";
+
+              return (
+                <article
+                  key={product.id}
+                  className="overflow-hidden rounded-2xl border border-orange-100 bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+                >
+                  <div className="relative flex h-52 items-center justify-center bg-gray-50">
+                    {mainImage ? (
+                      <img
+                        src={mainImage}
+                        alt={product.name}
+                        className="h-full w-full object-cover"
+                        onError={(event) => {
+                          event.currentTarget.style.display =
+                            "none";
+                        }}
                       />
-                      <p className="mt-2 text-xs">
-                        Sem imagem
-                      </p>
-                    </div>
-                  )}
+                    ) : (
+                      <div className="text-center text-gray-300">
+                        <ImageIcon
+                          size={48}
+                          className="mx-auto"
+                        />
 
-                  {product.stock <= 0 && (
-                    <div className="absolute inset-0 flex items-center justify-center bg-black/45">
-                      <span className="rounded-full bg-white px-4 py-2 text-sm font-bold text-red-600 shadow">
-                        ESGOTADO
-                      </span>
-                    </div>
-                  )}
-                </div>
+                        <p className="mt-2 text-xs">
+                          Sem imagem
+                        </p>
+                      </div>
+                    )}
 
-                <div className="p-5">
-                  <div className="mb-2 flex items-start justify-between gap-3">
-                    <h2 className="font-bold text-gray-900">
-                      {product.name}
-                    </h2>
+                    {productImages.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setSelectedProductImages(
+                            product
+                          )
+                        }
+                        className="absolute bottom-3 right-3 flex items-center gap-1.5 rounded-full bg-black/65 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-black/80"
+                      >
+                        <ImageIcon size={14} />
+                        {productImages.length} fotos
+                      </button>
+                    )}
 
-                    {isSuperAdmin && (
-                      <span className="shrink-0 rounded-full bg-orange-100 px-2 py-1 text-[10px] font-semibold text-orange-700">
-                        {getSchoolName(
-                          product.schoolId
-                        )}
-                      </span>
+                    {product.stock <= 0 && (
+                      <div className="absolute inset-0 flex items-center justify-center bg-black/45">
+                        <span className="rounded-full bg-white px-4 py-2 text-sm font-bold text-red-600 shadow">
+                          ESGOTADO
+                        </span>
+                      </div>
                     )}
                   </div>
 
-                  {product.description && (
-                    <p className="mb-4 line-clamp-3 text-sm leading-5 text-gray-600">
-                      {product.description}
-                    </p>
-                  )}
+                  <div className="p-5">
+                    <div className="mb-2 flex items-start justify-between gap-3">
+                      <h2 className="font-bold text-gray-900">
+                        {product.name}
+                      </h2>
 
-                  <div className="mb-4 flex items-end justify-between gap-3">
-                    <div>
-                      <p className="text-xs text-gray-500">
-                        Valor
-                      </p>
-
-                      <p className="text-2xl font-bold text-orange-600">
-                        {formatPrice(product.price)}
-                      </p>
+                      {isSuperAdmin && (
+                        <span className="shrink-0 rounded-full bg-orange-100 px-2 py-1 text-[10px] font-semibold text-orange-700">
+                          {getSchoolName(
+                            product.schoolId
+                          )}
+                        </span>
+                      )}
                     </div>
 
-                    <div className="text-right">
-                      <p className="text-xs text-gray-500">
-                        Estoque
+                    {product.description && (
+                      <p className="mb-4 line-clamp-3 text-sm leading-5 text-gray-600">
+                        {product.description}
                       </p>
+                    )}
 
-                      <p
-                        className={`text-sm font-semibold ${
-                          product.stock <= 0
-                            ? "text-red-600"
-                            : "text-gray-800"
-                        }`}
+                    <div className="mb-4 flex items-end justify-between gap-3">
+                      <div>
+                        <p className="text-xs text-gray-500">
+                          Valor
+                        </p>
+
+                        <p className="text-2xl font-bold text-orange-600">
+                          {formatPrice(
+                            product.price
+                          )}
+                        </p>
+                      </div>
+
+                      <div className="text-right">
+                        <p className="text-xs text-gray-500">
+                          Estoque
+                        </p>
+
+                        <p
+                          className={`text-sm font-semibold ${
+                            product.stock <= 0
+                              ? "text-red-600"
+                              : "text-gray-800"
+                          }`}
+                        >
+                          {product.stock}
+                        </p>
+                      </div>
+                    </div>
+
+                    {isStudent ? (
+                      <button
+                        disabled={
+                          product.stock <= 0 ||
+                          contacting === product.id
+                        }
+                        onClick={() =>
+                          contactWhatsApp(product)
+                        }
+                        className="flex w-full items-center justify-center gap-2 rounded-xl bg-green-600 px-4 py-3 text-sm font-bold text-white transition hover:bg-green-700 disabled:cursor-not-allowed disabled:bg-gray-300"
                       >
-                        {product.stock}
-                      </p>
-                    </div>
+                        <MessageCircle size={18} />
+
+                        {contacting === product.id
+                          ? "Abrindo..."
+                          : product.stock <= 0
+                          ? "Esgotado"
+                          : "QUERO COMPRAR"}
+                      </button>
+                    ) : canManage ? (
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() =>
+                            openEditModal(product)
+                          }
+                          className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-orange-200 px-3 py-2.5 text-sm font-semibold text-orange-700 transition hover:bg-orange-50"
+                        >
+                          <Edit size={17} />
+                          Editar
+                        </button>
+
+                        <button
+                          onClick={() =>
+                            deleteProduct(product)
+                          }
+                          className="flex items-center justify-center rounded-xl border border-red-200 px-3 py-2.5 text-red-600 transition hover:bg-red-50"
+                          title="Remover produto"
+                        >
+                          <Trash2 size={17} />
+                        </button>
+                      </div>
+                    ) : null}
                   </div>
-
-                  {isStudent ? (
-                    <button
-                      disabled={
-                        product.stock <= 0 ||
-                        contacting === product.id
-                      }
-                      onClick={() =>
-                        contactWhatsApp(product)
-                      }
-                      className="flex w-full items-center justify-center gap-2 rounded-xl bg-green-600 px-4 py-3 text-sm font-bold text-white transition hover:bg-green-700 disabled:cursor-not-allowed disabled:bg-gray-300"
-                    >
-                      <MessageCircle size={18} />
-
-                      {contacting === product.id
-                        ? "Abrindo..."
-                        : product.stock <= 0
-                        ? "Esgotado"
-                        : "QUERO COMPRAR"}
-                    </button>
-                  ) : canManage ? (
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() =>
-                          openEditModal(product)
-                        }
-                        className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-orange-200 px-3 py-2.5 text-sm font-semibold text-orange-700 transition hover:bg-orange-50"
-                      >
-                        <Edit size={17} />
-                        Editar
-                      </button>
-
-                      <button
-                        onClick={() =>
-                          deleteProduct(product)
-                        }
-                        className="flex items-center justify-center rounded-xl border border-red-200 px-3 py-2.5 text-red-600 transition hover:bg-red-50"
-                        title="Remover produto"
-                      >
-                        <Trash2 size={17} />
-                      </button>
-                    </div>
-                  ) : null}
-                </div>
-              </article>
-            ))}
+                </article>
+              );
+            })}
           </div>
         )}
       </section>
@@ -790,7 +1124,7 @@ export default function ProductsSuperaPage() {
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white shadow-2xl">
-            <div className="sticky top-0 flex items-center justify-between border-b bg-white px-5 py-4">
+            <div className="sticky top-0 z-10 flex items-center justify-between border-b bg-white px-5 py-4">
               <div>
                 <h2 className="text-lg font-bold text-gray-900">
                   {editingProduct
@@ -806,7 +1140,12 @@ export default function ProductsSuperaPage() {
 
               <button
                 onClick={closeModal}
-                className="rounded-lg p-2 text-gray-500 hover:bg-gray-100"
+                disabled={
+                  saving ||
+                  uploadingMainImage ||
+                  uploadingAdditionalImage
+                }
+                className="rounded-lg p-2 text-gray-500 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <X size={20} />
               </button>
@@ -816,6 +1155,12 @@ export default function ProductsSuperaPage() {
               {error && (
                 <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
                   {error}
+                </div>
+              )}
+
+              {success && (
+                <div className="rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
+                  {success}
                 </div>
               )}
 
@@ -853,45 +1198,51 @@ export default function ProductsSuperaPage() {
                         event.target.value,
                     })
                   }
-                  maxLength={500}
+                  maxLength={1000}
                   rows={4}
                   placeholder="Descreva o produto..."
                   className="w-full resize-none rounded-xl border border-gray-300 px-4 py-3 text-sm outline-none transition focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
                 />
               </div>
 
-              {isSuperAdmin && !editingProduct && (
-                <div>
-                  <label className="mb-1.5 block text-sm font-semibold text-gray-700">
-                    Escola
-                  </label>
+              {isSuperAdmin &&
+                !editingProduct && (
+                  <div>
+                    <label className="mb-1.5 block text-sm font-semibold text-gray-700">
+                      Escola
+                    </label>
 
-                  <select
-                    value={form.schoolId}
-                    onChange={(event) =>
-                      setForm({
-                        ...form,
-                        schoolId:
-                          event.target.value,
-                      })
-                    }
-                    className="w-full rounded-xl border border-gray-300 bg-white px-4 py-3 text-sm outline-none transition focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
-                  >
-                    <option value="">
-                      Selecione uma escola
-                    </option>
-
-                    {schools.map((school) => (
-                      <option
-                        key={school.id}
-                        value={school.id}
-                      >
-                        {school.name}
+                    <select
+                      value={form.schoolId}
+                      onChange={(event) =>
+                        setForm({
+                          ...form,
+                          schoolId:
+                            event.target.value,
+                        })
+                      }
+                      className="w-full rounded-xl border border-gray-300 bg-white px-4 py-3 text-sm outline-none transition focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
+                    >
+                      <option value="">
+                        Selecione uma escola
                       </option>
-                    ))}
-                  </select>
-                </div>
-              )}
+
+                      {schools.map((school) => (
+                        <option
+                          key={school.id}
+                          value={school.id}
+                        >
+                          {school.name}
+                        </option>
+                      ))}
+                    </select>
+
+                    <p className="mt-1.5 text-xs text-gray-500">
+                      Selecione a escola antes de
+                      enviar imagens.
+                    </p>
+                  </div>
+                )}
 
               <div className="grid gap-4 sm:grid-cols-2">
                 <div>
@@ -906,7 +1257,8 @@ export default function ProductsSuperaPage() {
                     onChange={(event) =>
                       setForm({
                         ...form,
-                        price: event.target.value,
+                        price:
+                          event.target.value,
                       })
                     }
                     placeholder="Ex.: 49,90"
@@ -926,7 +1278,8 @@ export default function ProductsSuperaPage() {
                     onChange={(event) =>
                       setForm({
                         ...form,
-                        stock: event.target.value,
+                        stock:
+                          event.target.value,
                       })
                     }
                     placeholder="Ex.: 10"
@@ -935,34 +1288,271 @@ export default function ProductsSuperaPage() {
                 </div>
               </div>
 
+              {/* =====================================================
+                  IMAGEM PRINCIPAL
+              ====================================================== */}
+
               <div>
                 <label className="mb-1.5 block text-sm font-semibold text-gray-700">
-                  URL da imagem
+                  Imagem principal
                 </label>
 
-                <input
-                  type="url"
-                  value={form.image}
-                  onChange={(event) =>
-                    setForm({
-                      ...form,
-                      image: event.target.value,
-                    })
-                  }
-                  placeholder="https://..."
-                  className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm outline-none transition focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
-                />
+                <div className="flex flex-col gap-3 sm:flex-row">
+                  <input
+                    type="url"
+                    value={form.image}
+                    onChange={(event) =>
+                      setForm({
+                        ...form,
+                        image:
+                          event.target.value,
+                      })
+                    }
+                    placeholder="https://..."
+                    className="flex-1 rounded-xl border border-gray-300 px-4 py-3 text-sm outline-none transition focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
+                  />
+
+                  <input
+                    ref={mainImageInputRef}
+                    type="file"
+                    accept="image/jpeg,image/jpg,image/png,image/webp"
+                    onChange={
+                      handleMainImageSelected
+                    }
+                    className="hidden"
+                  />
+
+                  <button
+                    type="button"
+                    disabled={
+                      uploadingMainImage ||
+                      (isSuperAdmin &&
+                        !form.schoolId)
+                    }
+                    onClick={() => {
+                      if (
+                        isSuperAdmin &&
+                        !form.schoolId
+                      ) {
+                        setError(
+                          "Selecione a escola antes de enviar a imagem."
+                        );
+                        return;
+                      }
+
+                      mainImageInputRef.current?.click();
+                    }}
+                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-orange-600 px-5 py-3 text-sm font-bold text-white transition hover:bg-orange-700 disabled:cursor-not-allowed disabled:bg-gray-300"
+                  >
+                    {uploadingMainImage ? (
+                      <>
+                        <Loader2
+                          size={18}
+                          className="animate-spin"
+                        />
+                        Enviando...
+                      </>
+                    ) : (
+                      <>
+                        <Upload size={18} />
+                        Enviar imagem
+                      </>
+                    )}
+                  </button>
+                </div>
 
                 <p className="mt-1.5 text-xs text-gray-500">
-                  Cole o endereço público da imagem do
-                  produto.
+                  JPG, JPEG, PNG ou WebP. Máximo de
+                  1 MB.
                 </p>
+
+                {form.image && (
+                  <div className="mt-4 overflow-hidden rounded-xl border border-gray-200 bg-gray-50">
+                    <div className="relative h-48">
+                      <img
+                        src={form.image}
+                        alt="Imagem principal"
+                        className="h-full w-full object-cover"
+                      />
+
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setForm({
+                            ...form,
+                            image: "",
+                          })
+                        }
+                        className="absolute right-3 top-3 rounded-full bg-red-600 p-2 text-white shadow transition hover:bg-red-700"
+                        title="Remover imagem principal"
+                      >
+                        <X size={16} />
+                      </button>
+
+                      <div className="absolute bottom-3 left-3 rounded-full bg-black/60 px-3 py-1.5 text-xs font-bold text-white">
+                        Imagem principal
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* =====================================================
+                  FOTOS ADICIONAIS
+              ====================================================== */}
+
+              <div>
+                <div className="mb-1.5 flex items-center justify-between">
+                  <label className="block text-sm font-semibold text-gray-700">
+                    Fotos do produto
+                  </label>
+
+                  <span className="text-xs font-medium text-gray-500">
+                    {form.images.length}/50 fotos
+                  </span>
+                </div>
+
+                <div className="flex flex-col gap-3 sm:flex-row">
+                  <input
+                    type="url"
+                    id="new-product-image"
+                    placeholder="https://..."
+                    disabled={
+                      form.images.length >= 50
+                    }
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        addImageToForm();
+                      }
+                    }}
+                    className="flex-1 rounded-xl border border-gray-300 px-4 py-3 text-sm outline-none transition focus:border-orange-500 focus:ring-2 focus:ring-orange-100 disabled:bg-gray-100"
+                  />
+
+                  <button
+                    type="button"
+                    disabled={
+                      form.images.length >= 50
+                    }
+                    onClick={addImageToForm}
+                    className="rounded-xl border border-orange-300 bg-white px-4 py-3 text-sm font-bold text-orange-700 transition hover:bg-orange-50 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400"
+                  >
+                    Adicionar URL
+                  </button>
+                </div>
+
+                <div className="mt-3">
+                  <input
+                    ref={
+                      additionalImageInputRef
+                    }
+                    type="file"
+                    accept="image/jpeg,image/jpg,image/png,image/webp"
+                    onChange={
+                      handleAdditionalImageSelected
+                    }
+                    className="hidden"
+                  />
+
+                  <button
+                    type="button"
+                    disabled={
+                      form.images.length >= 50 ||
+                      uploadingAdditionalImage ||
+                      (isSuperAdmin &&
+                        !form.schoolId)
+                    }
+                    onClick={() => {
+                      if (
+                        isSuperAdmin &&
+                        !form.schoolId
+                      ) {
+                        setError(
+                          "Selecione a escola antes de enviar uma foto."
+                        );
+                        return;
+                      }
+
+                      additionalImageInputRef.current?.click();
+                    }}
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-orange-600 px-4 py-3 text-sm font-bold text-white transition hover:bg-orange-700 disabled:cursor-not-allowed disabled:bg-gray-300"
+                  >
+                    {uploadingAdditionalImage ? (
+                      <>
+                        <Loader2
+                          size={18}
+                          className="animate-spin"
+                        />
+                        Enviando foto...
+                      </>
+                    ) : (
+                      <>
+                        <Upload size={18} />
+                        Enviar foto do computador
+                      </>
+                    )}
+                  </button>
+                </div>
+
+                <p className="mt-1.5 text-xs text-gray-500">
+                  Você pode adicionar até 50 fotos.
+                  As imagens enviadas pelo botão são
+                  armazenadas no Vercel Blob.
+                </p>
+
+                {form.images.length > 0 && (
+                  <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+                    {form.images.map(
+                      (image, index) => (
+                        <div
+                          key={`${image}-${index}`}
+                          className="group relative overflow-hidden rounded-xl border border-gray-200 bg-gray-50"
+                        >
+                          <img
+                            src={image}
+                            alt={`Foto ${
+                              index + 1
+                            }`}
+                            className="h-28 w-full object-cover"
+                            onError={(
+                              event
+                            ) => {
+                              event.currentTarget.style.opacity =
+                                "0.3";
+                            }}
+                          />
+
+                          <div className="absolute left-2 top-2 rounded-full bg-black/60 px-2 py-1 text-[10px] font-bold text-white">
+                            {index + 1}
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() =>
+                              removeImageFromForm(
+                                index
+                              )
+                            }
+                            className="absolute right-2 top-2 rounded-full bg-red-600 p-1.5 text-white opacity-90 transition hover:bg-red-700"
+                            title="Remover foto"
+                          >
+                            <X size={14} />
+                          </button>
+                        </div>
+                      )
+                    )}
+                  </div>
+                )}
               </div>
 
               <div className="flex flex-col-reverse gap-3 border-t pt-5 sm:flex-row sm:justify-end">
                 <button
                   onClick={closeModal}
-                  disabled={saving}
+                  disabled={
+                    saving ||
+                    uploadingMainImage ||
+                    uploadingAdditionalImage
+                  }
                   className="rounded-xl border border-gray-300 px-5 py-3 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
                 >
                   Cancelar
@@ -970,7 +1560,11 @@ export default function ProductsSuperaPage() {
 
                 <button
                   onClick={saveProduct}
-                  disabled={saving}
+                  disabled={
+                    saving ||
+                    uploadingMainImage ||
+                    uploadingAdditionalImage
+                  }
                   className="rounded-xl bg-orange-600 px-5 py-3 text-sm font-bold text-white hover:bg-orange-700 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {saving
@@ -979,6 +1573,59 @@ export default function ProductsSuperaPage() {
                     ? "Salvar alterações"
                     : "Cadastrar produto"}
                 </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {selectedProductImages && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4">
+          <div className="max-h-[90vh] w-full max-w-5xl overflow-hidden rounded-2xl bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b px-5 py-4">
+              <div>
+                <h2 className="text-lg font-bold text-gray-900">
+                  {selectedProductImages.name}
+                </h2>
+
+                <p className="text-xs text-gray-500">
+                  {
+                    getProductImages(
+                      selectedProductImages
+                    ).length
+                  }{" "}
+                  fotos
+                </p>
+              </div>
+
+              <button
+                onClick={() =>
+                  setSelectedProductImages(null)
+                }
+                className="rounded-lg p-2 text-gray-500 hover:bg-gray-100"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="max-h-[75vh] overflow-y-auto p-5">
+              <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4">
+                {getProductImages(
+                  selectedProductImages
+                ).map((image, index) => (
+                  <div
+                    key={`${image}-${index}`}
+                    className="overflow-hidden rounded-xl border border-gray-200 bg-gray-50"
+                  >
+                    <img
+                      src={image}
+                      alt={`${selectedProductImages.name} - foto ${
+                        index + 1
+                      }`}
+                      className="aspect-square h-full w-full object-cover"
+                    />
+                  </div>
+                ))}
               </div>
             </div>
           </div>
