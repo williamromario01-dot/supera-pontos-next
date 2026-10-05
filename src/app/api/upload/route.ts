@@ -319,16 +319,18 @@ export async function POST(request: NextRequest) {
         status: 201,
       }
     );
-  } catch (error) {
+} catch (error) {
     console.error(
-      "Erro ao realizar upload da imagem:",
+      "ERRO REAL NO UPLOAD:",
       error
     );
-
+  
     return NextResponse.json(
       {
         error:
-          "Erro interno ao enviar a imagem.",
+          error instanceof Error
+            ? error.message
+            : "Erro interno ao enviar a imagem.",
       },
       {
         status: 500,
