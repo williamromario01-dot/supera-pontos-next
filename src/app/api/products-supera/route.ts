@@ -25,6 +25,7 @@ type ProductDocument = {
   name: string;
   description?: string;
   image?: string;
+  images?: string[];
   price: number;
   stock: number;
   active?: boolean;
@@ -80,6 +81,9 @@ function serializeProduct(
     name: product.name,
     description: product.description || "",
     image: product.image || "",
+    images: Array.isArray(product.images)
+      ? product.images
+      : [],
     price: Number(product.price || 0),
     stock: Number(product.stock || 0),
     active: product.active !== false,
@@ -234,6 +238,35 @@ export async function POST(
         ? body.image.trim()
         : "";
 
+    /*
+     * NOVO:
+     * Lista de até 50 imagens adicionais.
+     *
+     * O campo "image" antigo continua existindo
+     * para não quebrar produtos já cadastrados.
+     */
+    const images = Array.isArray(body.images)
+      ? body.images
+          .filter(
+            (item: unknown): item is string =>
+              typeof item === "string"
+          )
+          .map((item: string) => item.trim())
+          .filter(Boolean)
+      : [];
+
+    if (images.length > 50) {
+      return NextResponse.json(
+        {
+          error:
+            "O produto pode ter no máximo 50 fotos.",
+        },
+        {
+          status: 400,
+        }
+      );
+    }
+
     const price = Number(
       String(body.price).replace(",", ".")
     );
@@ -281,6 +314,26 @@ export async function POST(
         {
           error:
             "O link da imagem é muito longo.",
+        },
+        {
+          status: 400,
+        }
+      );
+    }
+
+    /*
+     * NOVO:
+     * Validação individual das URLs das imagens.
+     */
+    if (
+      images.some(
+        (item: string) => item.length > 2000
+      )
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "Um ou mais links das fotos são muito longos.",
         },
         {
           status: 400,
@@ -429,6 +482,7 @@ export async function POST(
       name,
       description,
       image,
+      images,
       price,
       stock,
       active: true,
