@@ -1,251 +1,226 @@
+
 import { NextRequest, NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
 import clientPromise from "@/lib/mongodb";
+import {
+  authenticateRequest,
+  AuthInfrastructureError,
+  getSchoolObjectId,
+  hasRequiredRole,
+  hasSchoolAccess,
+} from "@/lib/auth";
 
 const DB_NAME = "supera_pontos";
+const ALLOWED_ROLES = ["super_admin", "admin", "educator"] as const;
 
-const ALLOWED_ROLES = ["super_admin", "admin", "educator"];
+type RouteContext = {
+  params: { id: string };
+};
 
-async function getAuthenticatedUser(request: NextRequest) {
-  const sessionToken = request.cookies.get("supera_session")?.value;
+function handleError(error: unknown) {
+  if (error instanceof AuthInfrastructureError) {
+    return NextResponse.json(
+      { error: "Não foi possível verificar a autenticação." },
+      { status: 500 }
+    );
+  }
 
-  if (!sessionToken) {
+  console.error("Erro na API de alunos da turma:", error);
+
+  return NextResponse.json(
+    { error: "Erro interno ao processar a solicitação." },
+    { status: 500 }
+  );
+}
+
+function parseObjectId(value: unknown): ObjectId | null {
+  if (value instanceof ObjectId) {
+    return value;
+  }
+
+  if (typeof value !== "string" || !ObjectId.isValid(value)) {
     return null;
+  }
+
+  return new ObjectId(value);
+}
+
+function getSchoolVariants(schoolId: ObjectId) {
+  return [schoolId, schoolId.toString()];
+}
+
+function getStudentIds(value: unknown): ObjectId[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((id) => parseObjectId(id))
+    .filter((id): id is ObjectId => id !== null);
+}
+
+function getClassStudentIds(value: unknown): ObjectId[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((id) => parseObjectId(id))
+    .filter((id): id is ObjectId => id !== null);
+}
+
+function getUniqueStrings(values: string[]): string[] {
+  return [...new Set(values)];
+}
+
+async function getAuthorizedClass(
+  request: NextRequest,
+  classIdParam: string
+) {
+  const authResult = await authenticateRequest(request);
+
+  if (!authResult.authenticated) {
+    return {
+      response: NextResponse.json(
+        { error: "Sessão inválida ou expirada. Faça login novamente." },
+        { status: 401 }
+      ),
+    };
+  }
+
+  const auth = authResult.auth;
+
+  if (!hasRequiredRole(auth, ALLOWED_ROLES)) {
+    return {
+      response: NextResponse.json(
+        { error: "Você não tem permissão para acessar esta turma." },
+        { status: 403 }
+      ),
+    };
+  }
+
+  const classId = parseObjectId(classIdParam);
+
+  if (!classId) {
+    return {
+      response: NextResponse.json(
+        { error: "ID da turma inválido." },
+        { status: 400 }
+      ),
+    };
   }
 
   const client = await clientPromise;
   const db = client.db(DB_NAME);
 
-  const session = await db.collection("sessions").findOne({
-    token: sessionToken,
+  const turma = await db.collection("classes").findOne({
+    _id: classId,
   });
 
-  if (!session || !session.userId) {
-    return null;
+  if (!turma) {
+    return {
+      response: NextResponse.json(
+        { error: "Turma não encontrada." },
+        { status: 404 }
+      ),
+    };
   }
 
-  const user = await db.collection("users").findOne({
-    _id:
-      typeof session.userId === "string"
-        ? new ObjectId(session.userId)
-        : session.userId,
-  });
+  const schoolId = getSchoolObjectId(turma.schoolId);
 
-  if (!user) {
-    return null;
+  if (!schoolId) {
+    return {
+      response: NextResponse.json(
+        { error: "A turma não possui uma escola válida." },
+        { status: 500 }
+      ),
+    };
   }
 
-  return user;
-}
+  if (!hasSchoolAccess(auth, schoolId)) {
+    return {
+      response: NextResponse.json(
+        { error: "Você não tem acesso a esta turma." },
+        { status: 403 }
+      ),
+    };
+  }
 
-function isValidObjectId(id: string) {
-  return ObjectId.isValid(id);
+  return {
+    auth,
+    client,
+    db,
+    turma,
+    classId,
+    schoolId,
+  };
 }
 
 /**
- * GET
+ * GET /api/classes/[id]/students
  *
- * Retorna:
- * - alunos já pertencentes à turma
- * - alunos disponíveis da mesma escola
- *
- * REGRA:
- * Um aluno que já estiver alocado em QUALQUER outra turma
- * da mesma escola não aparece como disponível.
+ * Retorna os alunos da turma e os alunos disponíveis da mesma escola.
+ * Um aluno já alocado em outra turma da escola não aparece como disponível.
  */
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: RouteContext
 ) {
   try {
-    const user = await getAuthenticatedUser(request);
+    const result = await getAuthorizedClass(request, params.id);
 
-    if (!user) {
-      return NextResponse.json(
-        { error: "Não autenticado." },
-        { status: 401 }
-      );
+    if ("response" in result) {
+      return result.response;
     }
 
-    if (!ALLOWED_ROLES.includes(user.role)) {
-      return NextResponse.json(
-        {
-          error:
-            "Você não tem permissão para acessar esta turma.",
-        },
-        { status: 403 }
-      );
-    }
+    const { db, turma, classId, schoolId } = result;
+    const schoolVariants = getSchoolVariants(schoolId);
 
-    const classId = params.id;
+    const studentIds = getClassStudentIds(turma.studentIds);
 
-    if (!isValidObjectId(classId)) {
-      return NextResponse.json(
-        { error: "ID da turma inválido." },
-        { status: 400 }
-      );
-    }
-
-    const client = await clientPromise;
-    const db = client.db(DB_NAME);
-
-    const turma = await db.collection("classes").findOne({
-      _id: new ObjectId(classId),
-    });
-
-    if (!turma) {
-      return NextResponse.json(
-        { error: "Turma não encontrada." },
-        { status: 404 }
-      );
-    }
-
-    const schoolId = turma.schoolId;
-
-    // Usuários que não são super_admin precisam pertencer à escola
-    if (user.role !== "super_admin") {
-      const userSchoolId = user.schoolId?.toString();
-      const classSchoolId = schoolId?.toString();
-
-      if (!userSchoolId || userSchoolId !== classSchoolId) {
-        return NextResponse.json(
-          {
-            error:
-              "Você não tem acesso a esta turma.",
-          },
-          { status: 403 }
-        );
-      }
-    }
-
-    /**
-     * ============================================================
-     * ALUNOS DA TURMA ATUAL
-     * ============================================================
-     */
-
-    const studentIds = Array.isArray(turma.studentIds)
-      ? turma.studentIds
+    const students = studentIds.length
+      ? await db.collection("users").find({
+          _id: { $in: studentIds },
+          role: "student",
+          schoolId: { $in: schoolVariants },
+        })
+        .project({
+          password: 0,
+          passwordHash: 0,
+        })
+        .sort({ name: 1 })
+        .toArray()
       : [];
 
-    const studentObjectIds = studentIds
-      .filter((id: any) => ObjectId.isValid(id))
-      .map((id: any) =>
-        id instanceof ObjectId
-          ? id
-          : new ObjectId(id)
-      );
-
-    /**
-     * Busca os alunos que já pertencem à turma atual.
-     */
-    const students = await db
-      .collection("users")
-      .find({
-        _id: { $in: studentObjectIds },
-        role: "student",
-      })
-      .project({
-        password: 0,
-        passwordHash: 0,
-      })
-      .sort({ name: 1 })
+    const otherClasses = await db.collection("classes").find({
+      schoolId: { $in: schoolVariants },
+      _id: { $ne: classId },
+      studentIds: { $exists: true, $ne: [] },
+    })
+      .project({ studentIds: 1 })
       .toArray();
 
-    /**
-     * ============================================================
-     * ALUNOS JÁ ALOCADOS EM OUTRAS TURMAS
-     * ============================================================
-     *
-     * Procuramos todas as outras turmas da mesma escola.
-     *
-     * Exemplo:
-     *
-     * Turma A -> João, Maria
-     * Turma B -> Pedro, Ana
-     * Turma atual -> Carlos
-     *
-     * Ao abrir a Turma atual:
-     *
-     * Disponíveis -> somente alunos que não estão
-     * em A, B ou na turma atual.
-     */
-
-    const otherClasses = await db
-      .collection("classes")
-      .find({
-        schoolId: schoolId,
-        _id: {
-          $ne: new ObjectId(classId),
-        },
-        studentIds: {
-          $exists: true,
-          $ne: [],
-        },
-      })
-      .project({
-        studentIds: 1,
-      })
-      .toArray();
-
-    /**
-     * Junta todos os IDs de alunos que já estão
-     * em outras turmas.
-     */
     const studentsInOtherClasses = new Set<string>();
 
     for (const otherClass of otherClasses) {
-      if (!Array.isArray(otherClass.studentIds)) {
-        continue;
-      }
-
-      for (const id of otherClass.studentIds) {
-        if (ObjectId.isValid(id)) {
-          studentsInOtherClasses.add(id.toString());
-        }
+      for (const id of getClassStudentIds(otherClass.studentIds)) {
+        studentsInOtherClasses.add(id.toString());
       }
     }
 
-    /**
-     * Converte os IDs para ObjectId.
-     */
-    const otherClassStudentObjectIds = Array.from(
-      studentsInOtherClasses
-    ).map((id) => new ObjectId(id));
-
-    /**
-     * ============================================================
-     * ALUNOS DISPONÍVEIS
-     * ============================================================
-     *
-     * O aluno precisa:
-     *
-     * 1. Ser student
-     * 2. Pertencer à mesma escola
-     * 3. Estar ativo
-     * 4. Não estar na turma atual
-     * 5. NÃO estar em nenhuma outra turma
-     */
-
     const idsToExclude = [
-      ...studentObjectIds,
-      ...otherClassStudentObjectIds,
+      ...studentIds,
+      ...Array.from(studentsInOtherClasses).map(
+        (id) => new ObjectId(id)
+      ),
     ];
 
-    const availableStudents = await db
-      .collection("users")
-      .find({
-        role: "student",
-        schoolId: schoolId,
-
-        _id: {
-          $nin: idsToExclude,
-        },
-
-        active: {
-          $ne: false,
-        },
-      })
+    const availableStudents = await db.collection("users").find({
+      role: "student",
+      schoolId: { $in: schoolVariants },
+      _id: { $nin: idsToExclude },
+      active: { $ne: false },
+    })
       .project({
         password: 0,
         passwordHash: 0,
@@ -256,117 +231,66 @@ export async function GET(
     return NextResponse.json({
       classId: turma._id.toString(),
       className: turma.name,
-      schoolId: schoolId?.toString(),
-
+      schoolId: schoolId.toString(),
       studentCount: students.length,
-
       students: students.map((student) => ({
         id: student._id.toString(),
         name: student.name,
         email: student.email,
         active: student.active !== false,
+        points: student.points ?? 0,
       })),
-
-      availableStudents: availableStudents.map(
-        (student) => ({
-          id: student._id.toString(),
-          name: student.name,
-          email: student.email,
-          active: student.active !== false,
-        })
-      ),
+      availableStudents: availableStudents.map((student) => ({
+        id: student._id.toString(),
+        name: student.name,
+        email: student.email,
+        active: student.active !== false,
+        points: student.points ?? 0,
+      })),
     });
   } catch (error) {
-    console.error(
-      "Erro ao buscar alunos da turma:",
-      error
-    );
-
-    return NextResponse.json(
-      {
-        error:
-          "Erro interno ao buscar alunos da turma.",
-      },
-      { status: 500 }
-    );
+    return handleError(error);
   }
 }
 
 /**
- * POST
+ * POST /api/classes/[id]/students
  *
- * Aloca alunos na turma.
- *
- * IMPORTANTE:
- * O limite de 15 alunos é APENAS por operação.
- *
- * A turma NÃO possui limite total de alunos.
- *
- * REGRA:
- * Um aluno não pode pertencer a duas turmas
- * simultaneamente dentro da mesma escola.
+ * Aloca até 15 alunos por operação.
+ * A turma não possui limite total de alunos.
  */
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: RouteContext
 ) {
   try {
-    const user = await getAuthenticatedUser(request);
+    const result = await getAuthorizedClass(request, params.id);
 
-    if (!user) {
-      return NextResponse.json(
-        { error: "Não autenticado." },
-        { status: 401 }
-      );
+    if ("response" in result) {
+      return result.response;
     }
 
-    if (!ALLOWED_ROLES.includes(user.role)) {
-      return NextResponse.json(
-        {
-          error:
-            "Você não tem permissão para alocar alunos.",
-        },
-        { status: 403 }
-      );
-    }
-
-    const classId = params.id;
-
-    if (!isValidObjectId(classId)) {
-      return NextResponse.json(
-        { error: "ID da turma inválido." },
-        { status: 400 }
-      );
-    }
+    const { db, classId, schoolId } = result;
+    const schoolVariants = getSchoolVariants(schoolId);
 
     const body = await request.json();
+    const rawStudentIds = body?.studentIds;
 
-    const studentIds = body.studentIds;
-
-    if (!Array.isArray(studentIds)) {
+    if (!Array.isArray(rawStudentIds)) {
       return NextResponse.json(
-        {
-          error:
-            "studentIds deve ser um array.",
-        },
+        { error: "studentIds deve ser um array." },
         { status: 400 }
       );
     }
 
-    if (studentIds.length === 0) {
+    if (rawStudentIds.length === 0) {
       return NextResponse.json(
-        {
-          error:
-            "Selecione pelo menos um aluno.",
-        },
+        { error: "Selecione pelo menos um aluno." },
         { status: 400 }
       );
     }
 
-    /**
-     * Máximo de 15 alunos por operação.
-     */
-    if (studentIds.length > 15) {
+    if (rawStudentIds.length > 15) {
       return NextResponse.json(
         {
           error:
@@ -376,491 +300,239 @@ export async function POST(
       );
     }
 
-    const invalidIds = studentIds.filter(
-      (id: any) =>
-        typeof id !== "string" ||
-        !ObjectId.isValid(id)
-    );
-
-    if (invalidIds.length > 0) {
-      return NextResponse.json(
-        {
-          error:
-            "Um ou mais IDs de alunos são inválidos.",
-        },
-        { status: 400 }
-      );
-    }
-
-    /**
-     * Remove duplicidades da própria requisição.
-     */
-    const uniqueStudentIds = [
-      ...new Set(studentIds),
-    ];
-
     if (
-      uniqueStudentIds.length !==
-      studentIds.length
+      rawStudentIds.some(
+        (id: unknown) =>
+          typeof id !== "string" || !ObjectId.isValid(id)
+      )
     ) {
       return NextResponse.json(
+        { error: "Um ou mais IDs de alunos são inválidos." },
+        { status: 400 }
+      );
+    }
+
+    const inputIds = rawStudentIds as string[];
+    const uniqueInputIds = getUniqueStrings(inputIds);
+
+    if (uniqueInputIds.length !== inputIds.length) {
+      return NextResponse.json(
+        { error: "Existem alunos duplicados na seleção." },
+        { status: 400 }
+      );
+    }
+
+    const studentObjectIds = uniqueInputIds.map(
+      (id) => new ObjectId(id)
+    );
+
+    const students = await db.collection("users").find({
+      _id: { $in: studentObjectIds },
+      role: "student",
+      schoolId: { $in: schoolVariants },
+      active: { $ne: false },
+    }).toArray();
+
+    if (students.length !== studentObjectIds.length) {
+      return NextResponse.json(
         {
           error:
-            "Existem alunos duplicados na seleção.",
+            "Um ou mais alunos não existem, estão inativos ou não pertencem a esta escola.",
         },
         { status: 400 }
       );
     }
 
-    const client = await clientPromise;
-    const db = client.db(DB_NAME);
-
-    const turma = await db.collection("classes").findOne({
-      _id: new ObjectId(classId),
+    const currentClass = await db.collection("classes").findOne({
+      _id: classId,
     });
 
-    if (!turma) {
+    if (!currentClass) {
       return NextResponse.json(
         { error: "Turma não encontrada." },
         { status: 404 }
       );
     }
 
-    const schoolId = turma.schoolId;
-
-    /**
-     * Usuários que não são super_admin precisam
-     * pertencer à escola da turma.
-     */
-    if (user.role !== "super_admin") {
-      const userSchoolId =
-        user.schoolId?.toString();
-
-      const classSchoolId =
-        schoolId?.toString();
-
-      if (
-        !userSchoolId ||
-        userSchoolId !== classSchoolId
-      ) {
-        return NextResponse.json(
-          {
-            error:
-              "Você não tem acesso a esta turma.",
-          },
-          { status: 403 }
-        );
-      }
-    }
-
-    const objectIds = uniqueStudentIds.map(
-      (id) => new ObjectId(id)
+    const currentStudentIds = getClassStudentIds(
+      currentClass.studentIds
     );
 
-    /**
-     * Busca todos os alunos selecionados.
-     */
-    const students = await db
-      .collection("users")
-      .find({
-        _id: { $in: objectIds },
-        role: "student",
-      })
-      .toArray();
+    const currentStudentSet = new Set(
+      currentStudentIds.map((id) => id.toString())
+    );
 
-    /**
-     * Verifica se todos realmente existem como alunos.
-     */
-    if (
-      students.length !==
-      objectIds.length
-    ) {
-      return NextResponse.json(
-        {
-          error:
-            "Um ou mais usuários selecionados não existem ou não são alunos.",
-        },
-        { status: 400 }
-      );
-    }
-
-    /**
-     * Verifica se todos pertencem à mesma escola.
-     */
-    const studentsFromOtherSchool =
-      students.filter(
-        (student) =>
-          student.schoolId?.toString() !==
-          schoolId?.toString()
-      );
-
-    if (
-      studentsFromOtherSchool.length > 0
-    ) {
-      return NextResponse.json(
-        {
-          error:
-            "Um ou mais alunos pertencem a outra escola e não podem ser alocados nesta turma.",
-        },
-        { status: 400 }
-      );
-    }
-
-    /**
-     * ============================================================
-     * VERIFICA SE JÁ ESTÃO NA TURMA ATUAL
-     * ============================================================
-     */
-
-    const currentStudentIds =
-      Array.isArray(turma.studentIds)
-        ? turma.studentIds.map(
-            (id: any) => id.toString()
-          )
-        : [];
-
-    const alreadyInClass =
-      uniqueStudentIds.filter((id) =>
-        currentStudentIds.includes(id)
-      );
+    const alreadyInClass = uniqueInputIds.filter(
+      (id) => currentStudentSet.has(id)
+    );
 
     if (alreadyInClass.length > 0) {
       return NextResponse.json(
         {
-          error:
-            "Um ou mais alunos selecionados já pertencem a esta turma.",
+          error: "Um ou mais alunos já pertencem a esta turma.",
           alreadyInClass,
         },
         { status: 409 }
       );
     }
 
-    /**
-     * ============================================================
-     * VERIFICA SE JÁ ESTÃO EM OUTRA TURMA
-     * ============================================================
-     *
-     * Essa é uma segunda camada de segurança.
-     *
-     * Mesmo que alguém tente chamar a API manualmente,
-     * o aluno não será colocado em duas turmas.
-     */
-
-    const otherClasses = await db
-      .collection("classes")
-      .find({
-        schoolId: schoolId,
-
-        _id: {
-          $ne: new ObjectId(classId),
-        },
-
-        studentIds: {
-          $in: objectIds,
-        },
-      })
-      .project({
-        name: 1,
-        studentIds: 1,
-      })
+    const otherClasses = await db.collection("classes").find({
+      schoolId: { $in: schoolVariants },
+      _id: { $ne: classId },
+      studentIds: { $in: studentObjectIds },
+    })
+      .project({ name: 1, studentIds: 1 })
       .toArray();
 
-    if (otherClasses.length > 0) {
-      const studentsAlreadyInOtherClass =
-        new Set<string>();
+    const alreadyAllocated = new Set<string>();
 
-      for (const otherClass of otherClasses) {
-        if (!Array.isArray(otherClass.studentIds)) {
-          continue;
+    for (const otherClass of otherClasses) {
+      for (const id of getClassStudentIds(otherClass.studentIds)) {
+        if (uniqueInputIds.includes(id.toString())) {
+          alreadyAllocated.add(id.toString());
         }
-
-        for (const id of otherClass.studentIds) {
-          const idString = id.toString();
-
-          if (
-            uniqueStudentIds.includes(idString)
-          ) {
-            studentsAlreadyInOtherClass.add(
-              idString
-            );
-          }
-        }
-      }
-
-      if (
-        studentsAlreadyInOtherClass.size > 0
-      ) {
-        return NextResponse.json(
-          {
-            error:
-              "Um ou mais alunos selecionados já pertencem a outra turma desta escola.",
-            alreadyAllocatedStudentIds:
-              Array.from(
-                studentsAlreadyInOtherClass
-              ),
-          },
-          { status: 409 }
-        );
       }
     }
 
-    /**
-     * ============================================================
-     * ALOCAÇÃO
-     * ============================================================
-     *
-     * $addToSet garante que um aluno não seja
-     * inserido duas vezes no array.
-     */
+    if (alreadyAllocated.size > 0) {
+      return NextResponse.json(
+        {
+          error:
+            "Um ou mais alunos já pertencem a outra turma desta escola.",
+          alreadyAllocatedStudentIds: Array.from(alreadyAllocated),
+        },
+        { status: 409 }
+      );
+    }
 
-    await db.collection("classes").updateOne(
+    const updateResult = await db.collection("classes").updateOne(
       {
-        _id: new ObjectId(classId),
+        _id: classId,
+        schoolId: { $in: schoolVariants },
+        studentIds: { $nin: studentObjectIds },
       },
       {
         $addToSet: {
-          studentIds: {
-            $each: objectIds,
-          },
+          studentIds: { $each: studentObjectIds },
         },
-
-        $set: {
-          updatedAt: new Date(),
-        },
+        $set: { updatedAt: new Date() },
       }
     );
 
-    const updatedClass =
-      await db.collection("classes").findOne({
-        _id: new ObjectId(classId),
-      });
+    if (updateResult.matchedCount === 0) {
+      return NextResponse.json(
+        {
+          error:
+            "A turma foi alterada ou não está disponível. Atualize a página e tente novamente.",
+        },
+        { status: 409 }
+      );
+    }
 
-    const updatedStudentIds =
-      Array.isArray(
-        updatedClass?.studentIds
-      )
-        ? updatedClass.studentIds
-        : [];
+    const updatedClass = await db.collection("classes").findOne({
+      _id: classId,
+    });
+
+    const updatedStudentIds = getClassStudentIds(
+      updatedClass?.studentIds
+    );
 
     return NextResponse.json({
-      message: `${uniqueStudentIds.length} aluno(s) alocado(s) com sucesso.`,
-
-      classId,
-
-      studentCount:
-        updatedStudentIds.length,
-
-      addedStudentIds:
-        uniqueStudentIds,
+      message: `${uniqueInputIds.length} aluno(s) alocado(s) com sucesso.`,
+      classId: classId.toString(),
+      studentCount: updatedStudentIds.length,
+      addedStudentIds: uniqueInputIds,
     });
   } catch (error) {
-    console.error(
-      "Erro ao alocar alunos na turma:",
-      error
-    );
-
-    return NextResponse.json(
-      {
-        error:
-          "Erro interno ao alocar alunos na turma.",
-      },
-      { status: 500 }
-    );
+    return handleError(error);
   }
 }
 
 /**
- * DELETE
+ * DELETE /api/classes/[id]/students
  *
- * Remove alunos da turma.
- *
- * Pode remover:
- * - 1 aluno
- * - vários alunos
- *
- * Não existe limite de 15 para remoção.
+ * Remove um ou mais alunos da turma.
+ * A remoção não possui limite de 15 alunos.
  */
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: RouteContext
 ) {
   try {
-    const user = await getAuthenticatedUser(request);
+    const result = await getAuthorizedClass(request, params.id);
 
-    if (!user) {
-      return NextResponse.json(
-        { error: "Não autenticado." },
-        { status: 401 }
-      );
+    if ("response" in result) {
+      return result.response;
     }
 
-    if (!ALLOWED_ROLES.includes(user.role)) {
-      return NextResponse.json(
-        {
-          error:
-            "Você não tem permissão para remover alunos.",
-        },
-        { status: 403 }
-      );
-    }
-
-    const classId = params.id;
-
-    if (!isValidObjectId(classId)) {
-      return NextResponse.json(
-        { error: "ID da turma inválido." },
-        { status: 400 }
-      );
-    }
+    const { db, classId, schoolId } = result;
+    const schoolVariants = getSchoolVariants(schoolId);
 
     const body = await request.json();
+    const rawStudentIds = body?.studentIds;
 
-    const studentIds = body.studentIds;
-
-    if (!Array.isArray(studentIds)) {
+    if (!Array.isArray(rawStudentIds) || rawStudentIds.length === 0) {
       return NextResponse.json(
-        {
-          error:
-            "studentIds deve ser um array.",
-        },
+        { error: "Informe pelo menos um aluno para remover." },
         { status: 400 }
       );
     }
 
-    if (studentIds.length === 0) {
+    if (
+      rawStudentIds.some(
+        (id: unknown) =>
+          typeof id !== "string" || !ObjectId.isValid(id)
+      )
+    ) {
       return NextResponse.json(
-        {
-          error:
-            "Informe pelo menos um aluno para remover.",
-        },
+        { error: "Um ou mais IDs de alunos são inválidos." },
         { status: 400 }
       );
     }
 
-    const invalidIds = studentIds.filter(
-      (id: any) =>
-        typeof id !== "string" ||
-        !ObjectId.isValid(id)
+    const uniqueInputIds = getUniqueStrings(
+      rawStudentIds as string[]
     );
 
-    if (invalidIds.length > 0) {
-      return NextResponse.json(
-        {
-          error:
-            "Um ou mais IDs de alunos são inválidos.",
+    const studentObjectIds = uniqueInputIds.map(
+      (id) => new ObjectId(id)
+    );
+
+    const updateResult = await db.collection("classes").updateOne(
+      {
+        _id: classId,
+        schoolId: { $in: schoolVariants },
+      },
+      {
+        $pull: {
+          studentIds: { $in: studentObjectIds },
         },
-        { status: 400 }
-      );
-    }
+        $set: { updatedAt: new Date() },
+      } as never
+    );
 
-    const uniqueStudentIds = [
-      ...new Set(studentIds),
-    ];
-
-    const client = await clientPromise;
-    const db = client.db(DB_NAME);
-
-    const turma = await db.collection("classes").findOne({
-      _id: new ObjectId(classId),
-    });
-
-    if (!turma) {
+    if (updateResult.matchedCount === 0) {
       return NextResponse.json(
-        { error: "Turma não encontrada." },
+        { error: "A turma não foi encontrada ou não está acessível." },
         { status: 404 }
       );
     }
 
-    const schoolId = turma.schoolId;
+    const updatedClass = await db.collection("classes").findOne({
+      _id: classId,
+    });
 
-    /**
-     * Usuários que não são super_admin precisam
-     * pertencer à escola da turma.
-     */
-    if (user.role !== "super_admin") {
-      const userSchoolId =
-        user.schoolId?.toString();
-
-      const classSchoolId =
-        schoolId?.toString();
-
-      if (
-        !userSchoolId ||
-        userSchoolId !== classSchoolId
-      ) {
-        return NextResponse.json(
-          {
-            error:
-              "Você não tem acesso a esta turma.",
-          },
-          { status: 403 }
-        );
-      }
-    }
-
-    const objectIds = uniqueStudentIds.map(
-      (id) => new ObjectId(id)
+    const updatedStudentIds = getClassStudentIds(
+      updatedClass?.studentIds
     );
-
-    /**
-     * O TypeScript do driver MongoDB pode apresentar
-     * incompatibilidade de tipos no operador $pull
-     * quando o campo é um array genérico.
-     *
-     * O MongoDB continua executando normalmente.
-     */
-    await db.collection("classes").updateOne(
-      {
-        _id: new ObjectId(classId),
-      },
-      {
-        $pull: {
-          studentIds: {
-            $in: objectIds,
-          },
-        },
-
-        $set: {
-          updatedAt: new Date(),
-        },
-      } as any
-    );
-
-    const updatedClass =
-      await db.collection("classes").findOne({
-        _id: new ObjectId(classId),
-      });
-
-    const updatedStudentIds =
-      Array.isArray(
-        updatedClass?.studentIds
-      )
-        ? updatedClass.studentIds
-        : [];
 
     return NextResponse.json({
-      message: `${uniqueStudentIds.length} aluno(s) removido(s) da turma.`,
-
-      classId,
-
-      studentCount:
-        updatedStudentIds.length,
-
-      removedStudentIds:
-        uniqueStudentIds,
+      message: `${uniqueInputIds.length} aluno(s) removido(s) da turma.`,
+      classId: classId.toString(),
+      studentCount: updatedStudentIds.length,
+      removedStudentIds: uniqueInputIds,
     });
   } catch (error) {
-    console.error(
-      "Erro ao remover alunos da turma:",
-      error
-    );
-
-    return NextResponse.json(
-      {
-        error:
-          "Erro interno ao remover alunos da turma.",
-      },
-      { status: 500 }
-    );
+    return handleError(error);
   }
 }

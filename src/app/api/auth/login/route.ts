@@ -1,7 +1,25 @@
+
 import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import clientPromise from "@/lib/mongodb";
+import type { UserRole } from "@/lib/types";
+
+const DB_NAME = "supera_pontos";
+
+const VALID_ROLES: readonly UserRole[] = [
+  "super_admin",
+  "admin",
+  "educator",
+  "student",
+];
+
+function isValidRole(role: unknown): role is UserRole {
+  return (
+    typeof role === "string" &&
+    VALID_ROLES.includes(role as UserRole)
+  );
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -18,14 +36,18 @@ export async function POST(request: NextRequest) {
     }
 
     const client = await clientPromise;
-    const db = client.db("supera_pontos");
+    const db = client.db(DB_NAME);
 
     const users = db.collection("users");
     const sessions = db.collection("sessions");
 
     const user = await users.findOne({ email });
 
-    if (!user) {
+    if (
+      !user ||
+      typeof user.passwordHash !== "string" ||
+      !isValidRole(user.role)
+    ) {
       return NextResponse.json(
         { error: "E-mail ou senha incorretos." },
         { status: 401 }
@@ -37,7 +59,7 @@ export async function POST(request: NextRequest) {
       user.passwordHash
     );
 
-    if (!passwordMatches) {
+    if (!passwordMatches || user.active === false) {
       return NextResponse.json(
         { error: "E-mail ou senha incorretos." },
         { status: 401 }

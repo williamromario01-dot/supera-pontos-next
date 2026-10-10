@@ -1,91 +1,62 @@
+
 import { NextRequest, NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
 import clientPromise from "@/lib/mongodb";
+import {
+  authenticateRequest,
+  AuthInfrastructureError,
+  getSchoolObjectId,
+  hasRequiredRole,
+  hasSchoolAccess,
+  schoolExists,
+} from "@/lib/auth";
 
 const DB_NAME = "supera_pontos";
 
-const ALLOWED_ROLES = [
-  "super_admin",
-  "admin",
-  "educator",
-];
+const ALLOWED_ROLES = ["super_admin", "admin", "educator"] as const;
 
-async function getAuthenticatedUser(request: NextRequest) {
-  const token = request.cookies.get("supera_session")?.value;
-
-  if (!token) {
-    return null;
+function handleError(error: unknown) {
+  if (error instanceof AuthInfrastructureError) {
+    return NextResponse.json(
+      { error: "Não foi possível verificar a autenticação." },
+      { status: 500 }
+    );
   }
 
-  const client = await clientPromise;
-  const db = client.db(DB_NAME);
+  console.error("Erro na API de turmas:", error);
 
-  const session = await db.collection("sessions").findOne({
-    token,
-    expiresAt: { $gt: new Date() },
-  });
-
-  if (!session) {
-    return null;
-  }
-
-  const user = await db.collection("users").findOne({
-    _id: session.userId,
-  });
-
-  if (!user || user.active === false) {
-    return null;
-  }
-
-  return user;
-}
-
-function getObjectId(id: string) {
-  if (!ObjectId.isValid(id)) {
-    return null;
-  }
-
-  return new ObjectId(id);
+  return NextResponse.json(
+    { error: "Ocorreu um erro interno ao processar a solicitação." },
+    { status: 500 }
+  );
 }
 
 /**
- * GET
- *
- * Lista as turmas de uma escola.
- *
- * Exemplo:
- * /api/classes?schoolId=ID_DA_ESCOLA
+ * GET /api/classes?schoolId=...
+ * Lista as turmas de uma escola autorizada.
  */
 export async function GET(request: NextRequest) {
   try {
-    const user = await getAuthenticatedUser(request);
+    const result = await authenticateRequest(request);
 
-    if (!user) {
+    if (!result.authenticated) {
       return NextResponse.json(
-        { error: "Não autorizado." },
+        { error: "Sessão inválida ou expirada. Faça login novamente." },
         { status: 401 }
       );
     }
 
-    if (!ALLOWED_ROLES.includes(user.role)) {
+    const auth = result.auth;
+
+    if (!hasRequiredRole(auth, ALLOWED_ROLES)) {
       return NextResponse.json(
-        { error: "Você não tem permissão para acessar as turmas." },
+        { error: "Você não tem permissão para consultar turmas." },
         { status: 403 }
       );
     }
 
-    const { searchParams } = new URL(request.url);
-
-    const schoolId = searchParams.get("schoolId");
-
-    if (!schoolId) {
-      return NextResponse.json(
-        { error: "schoolId é obrigatório." },
-        { status: 400 }
-      );
-    }
-
-    const schoolObjectId = getObjectId(schoolId);
+    const schoolIdParam = request.nextUrl.searchParams.get("schoolId");
+    const schoolObjectId = getSchoolObjectId(schoolIdParam);
 
     if (!schoolObjectId) {
       return NextResponse.json(
@@ -94,159 +65,95 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const client = await clientPromise;
-    const db = client.db(DB_NAME);
+    if (!hasSchoolAccess(auth, schoolObjectId)) {
+      return NextResponse.json(
+        { error: "Você não tem acesso a esta escola." },
+        { status: 403 }
+      );
+    }
 
-    const schools = db.collection("schools");
-    const classes = db.collection("classes");
-
-    const school = await schools.findOne({
-      _id: schoolObjectId,
-    });
-
-    if (!school) {
+    if (!(await schoolExists(schoolObjectId))) {
       return NextResponse.json(
         { error: "Escola não encontrada." },
         { status: 404 }
       );
     }
 
-    /*
-     * Usuários que não são super_admin só podem
-     * visualizar turmas da própria escola.
-     */
-    if (user.role !== "super_admin") {
-      if (!user.schoolId) {
-        return NextResponse.json(
-          {
-            error:
-              "Seu usuário não está vinculado a uma escola.",
-          },
-          { status: 403 }
-        );
-      }
+    const client = await clientPromise;
+    const db = client.db(DB_NAME);
 
-      if (String(user.schoolId) !== schoolId) {
-        return NextResponse.json(
-          {
-            error:
-              "Você não tem permissão para acessar esta escola.",
-          },
-          { status: 403 }
-        );
-      }
-    }
-
-    const classList = await classes
-      .find({
-        schoolId: schoolObjectId,
-      })
-      .sort({
-        name: 1,
-      })
+    const classes = await db
+      .collection("classes")
+      .find({ schoolId: schoolObjectId })
+      .sort({ name: 1 })
       .toArray();
 
-    const educatorIds = classList
-      .map((item) => item.educatorId)
-      .filter((id) => id);
+    const educatorIds = classes
+      .map((classItem) => classItem.educatorId)
+      .filter(
+        (id): id is ObjectId => id instanceof ObjectId
+      );
 
-    const uniqueEducatorIds = [
-      ...new Map(
-        educatorIds.map((id) => [String(id), id])
-      ).values(),
-    ];
-
-    let educators: any[] = [];
-
-    if (uniqueEducatorIds.length > 0) {
-      educators = await db
-        .collection("users")
-        .find({
-          _id: {
-            $in: uniqueEducatorIds,
-          },
-        })
-        .project({
-          name: 1,
-          email: 1,
-        })
-        .toArray();
-    }
+    const educators = educatorIds.length
+      ? await db
+          .collection("users")
+          .find(
+            { _id: { $in: educatorIds } },
+            { projection: { name: 1, email: 1, role: 1 } }
+          )
+          .toArray()
+      : [];
 
     const educatorMap = new Map(
       educators.map((educator) => [
-        String(educator._id),
+        educator._id.toString(),
         educator,
       ])
     );
 
-    const result = classList.map((item) => {
-      const educator = item.educatorId
-        ? educatorMap.get(String(item.educatorId))
+    const responseClasses = classes.map((classItem) => {
+      const educatorId =
+        classItem.educatorId instanceof ObjectId
+          ? classItem.educatorId.toString()
+          : null;
+
+      const educator = educatorId
+        ? educatorMap.get(educatorId) ?? null
         : null;
 
       return {
-        id: String(item._id),
-        name: item.name,
-        schoolId: String(item.schoolId),
-        educatorId: item.educatorId
-          ? String(item.educatorId)
-          : null,
-        educator: educator
-          ? {
-              id: String(educator._id),
-              name: educator.name,
-              email: educator.email,
-            }
-          : null,
-        studentCount: Array.isArray(item.studentIds)
-          ? item.studentIds.length
+        ...classItem,
+        educator,
+        studentCount: Array.isArray(classItem.studentIds)
+          ? classItem.studentIds.length
           : 0,
-        active: item.active !== false,
-        createdAt: item.createdAt,
-        updatedAt: item.updatedAt,
       };
     });
 
-    return NextResponse.json({
-      classes: result,
-    });
+    return NextResponse.json({ classes: responseClasses });
   } catch (error) {
-    console.error("Erro ao listar turmas:", error);
-
-    return NextResponse.json(
-      {
-        error: "Erro interno ao carregar as turmas.",
-      },
-      { status: 500 }
-    );
+    return handleError(error);
   }
 }
 
 /**
- * POST
- *
- * Cria uma nova turma.
- *
- * Importante:
- * NÃO existe limite de alunos aqui.
- *
- * A turma começa com studentIds: []
- * e os alunos serão adicionados posteriormente
- * pela API de alocação.
+ * POST /api/classes
+ * Cria uma turma dentro de uma escola autorizada.
  */
 export async function POST(request: NextRequest) {
   try {
-    const user = await getAuthenticatedUser(request);
+    const result = await authenticateRequest(request);
 
-    if (!user) {
+    if (!result.authenticated) {
       return NextResponse.json(
-        { error: "Não autorizado." },
+        { error: "Sessão inválida ou expirada. Faça login novamente." },
         { status: 401 }
       );
     }
 
-    if (!ALLOWED_ROLES.includes(user.role)) {
+    const auth = result.auth;
+
+    if (!hasRequiredRole(auth, ALLOWED_ROLES)) {
       return NextResponse.json(
         { error: "Você não tem permissão para criar turmas." },
         { status: 403 }
@@ -256,19 +163,16 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
 
     const name =
-      typeof body.name === "string"
-        ? body.name.trim()
-        : "";
+      typeof body.name === "string" ? body.name.trim() : "";
 
-    const schoolId =
-      typeof body.schoolId === "string"
-        ? body.schoolId.trim()
-        : "";
+    const schoolObjectId = getSchoolObjectId(body.schoolId);
 
-    const educatorId =
-      typeof body.educatorId === "string"
-        ? body.educatorId.trim()
-        : "";
+    const educatorIdParam =
+      body.educatorId === null ||
+      body.educatorId === undefined ||
+      body.educatorId === ""
+        ? null
+        : body.educatorId;
 
     if (!name) {
       return NextResponse.json(
@@ -277,14 +181,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!schoolId) {
+    if (name.length > 100) {
       return NextResponse.json(
-        { error: "A escola é obrigatória." },
+        { error: "O nome da turma deve ter no máximo 100 caracteres." },
         { status: 400 }
       );
     }
-
-    const schoolObjectId = getObjectId(schoolId);
 
     if (!schoolObjectId) {
       return NextResponse.json(
@@ -293,14 +195,17 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    if (!hasSchoolAccess(auth, schoolObjectId)) {
+      return NextResponse.json(
+        { error: "Você não tem permissão para criar turmas nesta escola." },
+        { status: 403 }
+      );
+    }
+
     const client = await clientPromise;
     const db = client.db(DB_NAME);
 
-    const schools = db.collection("schools");
-    const classes = db.collection("classes");
-    const users = db.collection("users");
-
-    const school = await schools.findOne({
+    const school = await db.collection("schools").findOne({
       _id: schoolObjectId,
     });
 
@@ -313,87 +218,59 @@ export async function POST(request: NextRequest) {
 
     if (school.active === false) {
       return NextResponse.json(
-        { error: "Esta escola está desativada." },
-        { status: 400 }
+        { error: "Esta escola está inativa." },
+        { status: 403 }
       );
     }
 
-    /*
-     * Usuários comuns da gestão só podem criar
-     * turmas dentro da própria escola.
-     */
-    if (user.role !== "super_admin") {
-      if (!user.schoolId) {
-        return NextResponse.json(
-          {
-            error:
-              "Seu usuário não está vinculado a uma escola.",
-          },
-          { status: 403 }
-        );
-      }
-
-      if (String(user.schoolId) !== schoolId) {
-        return NextResponse.json(
-          {
-            error:
-              "Você só pode criar turmas na sua própria escola.",
-          },
-          { status: 403 }
-        );
-      }
-    }
-
-    /*
-     * Se um educador for informado como responsável,
-     * verificamos se ele realmente existe e possui
-     * uma função compatível.
-     */
     let educatorObjectId: ObjectId | null = null;
 
-    if (educatorId) {
-      educatorObjectId = getObjectId(educatorId);
+    if (educatorIdParam !== null) {
+      educatorObjectId = getSchoolObjectId(educatorIdParam);
 
       if (!educatorObjectId) {
         return NextResponse.json(
-          { error: "ID do educador inválido." },
+          { error: "ID do responsável pela turma inválido." },
           { status: 400 }
         );
       }
 
-      const educator = await users.findOne({
+      const educator = await db.collection("users").findOne({
         _id: educatorObjectId,
       });
 
       if (!educator) {
         return NextResponse.json(
-          { error: "Educador não encontrado." },
+          { error: "Responsável pela turma não encontrado." },
           { status: 404 }
         );
       }
 
-      if (
-        educator.role !== "educator" &&
-        educator.role !== "admin" &&
-        educator.role !== "super_admin"
-      ) {
+      if (educator.active === false) {
         return NextResponse.json(
-          {
-            error:
-              "O usuário selecionado não pode ser responsável por uma turma.",
-          },
+          { error: "Não é possível atribuir uma turma a um usuário inativo." },
           { status: 400 }
         );
       }
 
-      /*
-       * Administradores e educadores não podem
-       * colocar um responsável de outra escola.
-       */
       if (
-        user.role !== "super_admin" &&
-        educator.schoolId &&
-        String(educator.schoolId) !== schoolId
+        !["educator", "admin", "super_admin"].includes(
+          String(educator.role)
+        )
+      ) {
+        return NextResponse.json(
+          { error: "O responsável selecionado não possui um perfil permitido." },
+          { status: 400 }
+        );
+      }
+
+      // O responsável deve pertencer à mesma escola da turma.
+      // Essa regra também se aplica quando a operação é feita pelo super_admin.
+      const educatorSchoolId = getSchoolObjectId(educator.schoolId);
+
+      if (
+        !educatorSchoolId ||
+        !educatorSchoolId.equals(schoolObjectId)
       ) {
         return NextResponse.json(
           {
@@ -405,27 +282,26 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    /*
-     * Evita duas turmas com exatamente o mesmo
-     * nome dentro da mesma escola.
-     */
-    const existingClass = await classes.findOne({
-      schoolId: schoolObjectId,
-      name: {
-        $regex: `^${name.replace(
-          /[.*+?^${}()|[\]\\]/g,
-          "\\$&"
-        )}$`,
-        $options: "i",
-      },
-    });
+    const normalizedName = name.toLocaleLowerCase("pt-BR");
 
-    if (existingClass) {
+    const existingClasses = await db
+      .collection("classes")
+      .find(
+        { schoolId: schoolObjectId },
+        { projection: { name: 1 } }
+      )
+      .toArray();
+
+    const duplicate = existingClasses.some(
+      (classItem) =>
+        typeof classItem.name === "string" &&
+        classItem.name.trim().toLocaleLowerCase("pt-BR") ===
+          normalizedName
+    );
+
+    if (duplicate) {
       return NextResponse.json(
-        {
-          error:
-            "Já existe uma turma com esse nome nesta escola.",
-        },
+        { error: "Já existe uma turma com esse nome nesta escola." },
         { status: 409 }
       );
     }
@@ -435,53 +311,29 @@ export async function POST(request: NextRequest) {
     const newClass = {
       name,
       schoolId: schoolObjectId,
-
-      /*
-       * IMPORTANTE:
-       * Não existe limite de alunos.
-       *
-       * Este array poderá conter quantos alunos
-       * forem necessários.
-       */
-      studentIds: [],
-
       educatorId: educatorObjectId,
-
+      studentIds: [] as ObjectId[],
       active: true,
-
       createdAt: now,
       updatedAt: now,
     };
 
-    const result = await classes.insertOne(newClass);
+    const insertResult = await db
+      .collection("classes")
+      .insertOne(newClass);
 
     return NextResponse.json(
       {
         message: "Turma criada com sucesso.",
-
         class: {
-          id: String(result.insertedId),
-          name,
-          schoolId,
-          educatorId: educatorObjectId
-            ? String(educatorObjectId)
-            : null,
+          ...newClass,
+          _id: insertResult.insertedId,
           studentCount: 0,
-          active: true,
-          createdAt: now,
-          updatedAt: now,
         },
       },
       { status: 201 }
     );
   } catch (error) {
-    console.error("Erro ao criar turma:", error);
-
-    return NextResponse.json(
-      {
-        error: "Erro interno ao criar a turma.",
-      },
-      { status: 500 }
-    );
+    return handleError(error);
   }
 }
