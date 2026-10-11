@@ -2196,7 +2196,7 @@ export default function DashboardPage() {
             <Brain size={15} />
 
             <span className="text-xs font-bold">
-              Supera Pontos
+              SUPERPONTOS
             </span>
 
           </div>

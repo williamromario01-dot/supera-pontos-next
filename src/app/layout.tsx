@@ -5,8 +5,8 @@ import './globals.css';
 const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
-  title: 'Supera Pontos',
-  description: 'Sistema de Pontuação e Gamificação Supera',
+  title: 'SUPERPONTOS | GFarS Soluções Inteligentes',
+  description: 'Sistema de Pontuação e Gamificação SUPERPONTOS',
 };
 
 export default function RootLayout({

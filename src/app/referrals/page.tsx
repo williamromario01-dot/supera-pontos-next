@@ -849,7 +849,7 @@ export default function ReferralsPage() {
             <UserPlus size={15} />
 
             <span className="text-xs font-bold">
-              Supera Pontos • Indicações
+              SUPERPONTOS • Indicações
             </span>
           </div>
 

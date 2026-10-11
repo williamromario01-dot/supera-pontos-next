@@ -83,7 +83,7 @@ export async function POST(request: NextRequest) {
 
     const appUrl =
       process.env.APP_URL ||
-      "https://superapontos.gfars.com.br";
+      "https://superpontos.gfars.com.br";
 
     const resetUrl =
       `${appUrl}/reset-password?token=${token}`;
@@ -100,10 +100,10 @@ export async function POST(request: NextRequest) {
     const { data, error } = await resend.emails.send({
       from: fromEmail,
       to: [email],
-      subject: "Redefinição de senha — Supera Pontos",
+      subject: "Redefinição de senha — SUPERPONTOS",
       html: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 30px;">
-          <h1 style="color: #f97316;">Supera Pontos</h1>
+          <h1 style="color: #f97316;">SUPERPONTOS</h1>
 
           <p>Olá, ${userName}!</p>
 
@@ -142,7 +142,7 @@ export async function POST(request: NextRequest) {
           </p>
 
           <p style="margin-top:30px;color:#666;">
-            Supera Pontos
+            SUPERPONTOS
           </p>
         </div>
       `,

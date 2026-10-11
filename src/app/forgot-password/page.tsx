@@ -210,7 +210,7 @@ export default function ForgotPasswordPage() {
           </section>
 
           <p className="mt-6 text-center text-xs text-slate-400">
-            Supera Pontos • Segurança da conta
+            SUPERPONTOS • Segurança da conta
           </p>
         </div>
       </div>

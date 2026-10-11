@@ -135,7 +135,7 @@ export default function LoginPage() {
           </div>
 
           <h1 className="login-title">
-            Supera <span>Pontos</span>
+            SUPER<span>PONTOS</span>
           </h1>
 
           <p className="login-subtitle">
@@ -554,7 +554,7 @@ export default function LoginPage() {
             </Link>
           </div>
           <div>
-            Supera Pontos
+            SUPERPONTOS
           </div>
 
           <div
