@@ -15,6 +15,7 @@ import {
   ChevronLeft,
   Medal,
   Brain,
+  BookOpen,
   Flame,
   Sparkles,
   BarChart3,
@@ -542,7 +543,7 @@ export default function DashboardPage() {
               className="flex items-center gap-3 flex-shrink-0"
             >
               <div className="w-11 h-11 rounded-xl bg-orange-500 flex items-center justify-center shadow-md shadow-orange-200">
-                <Brain className="w-6 h-6 text-white" />
+                <BookOpen className="w-6 h-6 text-white" />
               </div>
 
               <div className="text-left">
@@ -2193,7 +2194,7 @@ export default function DashboardPage() {
 
           <div className="flex items-center justify-center gap-2 text-slate-400">
 
-            <Brain size={15} />
+            <BookOpen size={15} />
 
             <span className="text-xs font-bold">
               SUPERPONTOS

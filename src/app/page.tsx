@@ -8,7 +8,7 @@ import {
   UserCheck,
   GraduationCap,
   Building2,
-  Brain,
+  BookOpen,
   Eye,
   EyeOff,
   Mail,
@@ -128,7 +128,7 @@ export default function LoginPage() {
         <div className="login-header">
 
           <div className="login-logo">
-            <Brain
+            <BookOpen
               size={34}
               strokeWidth={2.2}
             />
