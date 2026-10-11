@@ -14,6 +14,7 @@ export const SESSION_COOKIE_NAME = "supera_session";
 
 const USER_ROLES: readonly UserRole[] = [
   "super_admin",
+  "company_admin",
   "admin",
   "educator",
   "student",
@@ -34,6 +35,7 @@ export interface AuthenticatedUser {
   userId: ObjectId;
   role: UserRole;
   schoolId: ObjectId | null;
+  companyId: ObjectId | null;
 }
 
 export type AuthResult =
@@ -77,6 +79,8 @@ function getUserObjectId(value: unknown): ObjectId | null {
 
   return new ObjectId(value);
 }
+
+export const getCompanyObjectId = getUserObjectId;
 
 function isExpired(expiresAt: unknown): boolean {
   if (!(expiresAt instanceof Date)) {
@@ -137,11 +141,38 @@ export async function authenticateRequest(
         userId,
         role: user.role,
         schoolId: getSchoolObjectId(user.schoolId),
+        companyId: getCompanyObjectId(user.companyId),
       },
     };
   } catch {
     throw new AuthInfrastructureError();
   }
+}
+
+export function hasCompanyAccess(
+  auth: AuthenticatedUser,
+  targetCompanyId: unknown
+): boolean {
+  const companyId = getCompanyObjectId(targetCompanyId);
+  if (!companyId) return false;
+  if (auth.role === "super_admin") return true;
+  return auth.role === "company_admin" && Boolean(auth.companyId?.equals(companyId));
+}
+
+export async function hasCompanySchoolAccess(
+  auth: AuthenticatedUser,
+  targetSchoolId: unknown
+): Promise<boolean> {
+  const schoolId = getSchoolObjectId(targetSchoolId);
+  if (!schoolId) return false;
+  if (auth.role === "super_admin") return true;
+  if (auth.role !== "company_admin" || !auth.companyId) return hasSchoolAccess(auth, schoolId);
+  const client = await clientPromise;
+  const school = await client.db(DB_NAME).collection("schools").findOne(
+    { _id: schoolId, companyId: auth.companyId },
+    { projection: { _id: 1 } }
+  );
+  return Boolean(school);
 }
 
 export async function getAuthenticatedUser(

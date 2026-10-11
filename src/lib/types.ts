@@ -1,8 +1,25 @@
 export type UserRole =
   | 'super_admin'
+  | 'company_admin'
   | 'admin'
   | 'educator'
   | 'student';
+
+export type CompanyStatus =
+  | 'pending_verification'
+  | 'pending_payment'
+  | 'active'
+  | 'suspended'
+  | 'rejected';
+
+export type SubscriptionStatus =
+  | 'pending'
+  | 'active'
+  | 'past_due'
+  | 'canceled'
+  | 'expired';
+
+export type BillingInterval = 'monthly' | 'yearly';
 
 export interface Badge {
   name: string;

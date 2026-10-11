@@ -90,6 +90,7 @@ export async function GET(request: NextRequest) {
         points: user.points || 0,
         avatar: user.avatar || null,
         schoolId: user.schoolId ? user.schoolId.toString() : null,
+        companyId: user.companyId ? user.companyId.toString() : null,
       },
     });
   } catch (error) {

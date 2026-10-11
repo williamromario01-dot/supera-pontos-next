@@ -9,6 +9,7 @@ const DB_NAME = "supera_pontos";
 
 const VALID_ROLES: readonly UserRole[] = [
   "super_admin",
+  "company_admin",
   "admin",
   "educator",
   "student",
@@ -88,6 +89,7 @@ export async function POST(request: NextRequest) {
           email: user.email,
           role: user.role,
           points: user.points || 0,
+          companyId: user.companyId?.toString() || null,
         },
       },
       { status: 200 }

@@ -40,6 +40,7 @@ interface User {
   points: number;
   avatar: string | null;
   schoolId?: string | null;
+  companyId?: string | null;
 }
 
 interface Category {
@@ -238,6 +239,11 @@ export default function DashboardPage() {
 
       setUser(meData.user);
 
+      if (meData.user.role === "company_admin") {
+        router.replace("/company");
+        return;
+      }
+
       const weeklyUrl =
         meData.user.role === "admin" ||
         meData.user.role === "educator"
@@ -373,6 +379,10 @@ export default function DashboardPage() {
 
     if (role === "admin") {
       return "Administrador";
+    }
+
+    if (role === "company_admin") {
+      return "Responsável empresarial";
     }
 
     if (role === "educator") {

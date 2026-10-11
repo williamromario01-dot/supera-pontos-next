@@ -548,6 +548,11 @@ export default function LoginPage() {
 
         {/* RODAPÉ */}
         <div className="login-footer">
+          <div style={{ marginBottom: "12px" }}>
+            <Link href="/register-company" style={{ color: "#c2410c", fontWeight: 800 }}>
+              Cadastrar minha instituição
+            </Link>
+          </div>
           <div>
             Supera Pontos
           </div>
