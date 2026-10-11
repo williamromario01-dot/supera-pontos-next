@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
 import clientPromise from "@/lib/mongodb";
 import { authenticateRequest } from "@/lib/auth";
-import { getPlan } from "@/lib/plans";
+import { getPricingQuote, quantityLabel } from "@/lib/plans";
 import { DB_NAME } from "@/lib/saas";
 
 export const dynamic = "force-dynamic";
@@ -26,7 +26,8 @@ export async function GET(request: NextRequest) {
         db.collection("subscriptions").findOne({ companyId: company._id }, { sort: { createdAt: -1 } }),
         db.collection("schools").find({ companyId: company._id }, { projection: { name: 1, active: 1 } }).sort({ name: 1 }).toArray(),
       ]);
-      const plan = getPlan(subscription?.planCode);
+      const requestedUnits = Number(subscription?.requestedMaxUnits ?? subscription?.maxUnits ?? 0);
+      const pricing = getPricingQuote(requestedUnits);
       return {
         id: company._id.toString(),
         cnpj: company.cnpj,
@@ -43,10 +44,12 @@ export async function GET(request: NextRequest) {
         unitCount: schools.length,
         subscription: subscription ? {
           planCode: subscription.planCode,
-          planName: plan?.name ?? subscription.planCode,
+          planName: requestedUnits > 0 ? quantityLabel(requestedUnits) : subscription.planCode,
           status: subscription.status,
           maxUnits: Number(subscription.maxUnits ?? 0),
-          requestedMaxUnits: Number(subscription.requestedMaxUnits ?? subscription.maxUnits ?? 0),
+          requestedMaxUnits: requestedUnits,
+          pricePerUnitCents: Number(subscription.pricePerUnitCents ?? pricing?.pricePerUnitCents ?? 0),
+          totalMonthlyCents: Number(subscription.totalMonthlyCents ?? pricing?.totalMonthlyCents ?? 0),
         } : null,
       };
     }));

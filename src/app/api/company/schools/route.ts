@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { MongoServerError } from "mongodb";
 import clientPromise from "@/lib/mongodb";
 import { authenticateRequest } from "@/lib/auth";
-import { getNextPlan } from "@/lib/plans";
+import { getUpgradeQuote } from "@/lib/plans";
 import { assertCompanySchoolIndexes, DB_NAME, isValidEmail, normalizeEmail } from "@/lib/saas";
 
 export const dynamic = "force-dynamic";
@@ -38,14 +38,14 @@ export async function POST(request: NextRequest) {
 
     const maxUnits = Number(subscription.maxUnits ?? 0);
     if (usedUnits >= maxUnits) {
-      const suggestedPlan = getNextPlan(maxUnits, usedUnits + 1);
-      const error = suggestedPlan
-        ? "Para adicionar esta unidade é necessário alterar para o plano de " + suggestedPlan.name + "."
-        : "O limite de unidades do plano foi atingido. Solicite uma faixa superior.";
+      const upgradeQuote = getUpgradeQuote(maxUnits, Math.max(maxUnits + 1, usedUnits + 1));
+      const error = upgradeQuote
+        ? "Para adicionar esta unidade é necessário aumentar a quantidade contratada para " + upgradeQuote.name + "."
+        : "O limite operacional de unidades foi atingido.";
       return NextResponse.json({
         error, code: "UPGRADE_REQUIRED", upgradeRequired: true,
         usage: { usedUnits, maxUnits, requestedUnits: usedUnits + 1 },
-        suggestedPlan,
+        upgradeQuote,
         paymentNotice: "O novo limite só será aplicado após confirmação autenticada do provedor de pagamento.",
       }, { status: 409 });
     }
@@ -93,12 +93,12 @@ export async function POST(request: NextRequest) {
       await session.endSession();
     }
     if (limitReached || !insertedId) {
-      const suggestedPlan = getNextPlan(maxUnits, usedUnits + 1);
+      const upgradeQuote = getUpgradeQuote(maxUnits, Math.max(maxUnits + 1, usedUnits + 1));
       return NextResponse.json({
-        error: suggestedPlan ? "Para adicionar esta unidade é necessário alterar para o plano de " + suggestedPlan.name + "." : "O limite de unidades do plano foi atingido.",
+        error: upgradeQuote ? "Para adicionar esta unidade é necessário aumentar a quantidade contratada para " + upgradeQuote.name + "." : "O limite operacional de unidades foi atingido.",
         code: "UPGRADE_REQUIRED", upgradeRequired: true,
         usage: { usedUnits, maxUnits, requestedUnits: usedUnits + 1 },
-        suggestedPlan,
+        upgradeQuote,
         paymentNotice: "O novo limite só será aplicado após confirmação autenticada do provedor de pagamento.",
       }, { status: 409 });
     }

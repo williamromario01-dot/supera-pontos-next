@@ -1,35 +1,24 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useState } from "react";
 import { Building2, Loader2 } from "lucide-react";
-
-type Plan = { code: string; name: string; maxUnits: number; price: number | null };
+import { formatCurrencyCents, getPricingQuote, MAX_CONTRACTED_UNITS } from "@/lib/plans";
 
 const initial = {
   cnpj: "", legalName: "", tradeName: "", email: "", phone: "", address: "",
   responsibleName: "", responsibleCpf: "", responsibleEmail: "", responsiblePhone: "",
-  responsibleRole: "owner", password: "", planCode: "",
+  responsibleRole: "owner", password: "", requestedUnits: "1",
 };
 
 export default function RegisterCompanyPage() {
   const [form, setForm] = useState(initial);
-  const [plans, setPlans] = useState<Plan[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
-  useEffect(() => {
-    fetch("/api/plans").then(async (response) => {
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error);
-      return data;
-    }).then((data) => {
-      const available = data.plans ?? [];
-      setPlans(available);
-      if (available[0]) setForm((current) => ({ ...current, planCode: available[0].code }));
-    }).catch(() => setError("Não foi possível carregar os planos."));
-  }, []);
+  const parsedUnits = Number(form.requestedUnits);
+  const pricing = getPricingQuote(parsedUnits);
 
   function field(name: keyof typeof initial, label: string, type = "text", required = true) {
     return <label className="block text-sm font-semibold text-slate-700">{label}
@@ -47,7 +36,7 @@ export default function RegisterCompanyPage() {
         body: JSON.stringify({
           cnpj: form.cnpj, legalName: form.legalName, tradeName: form.tradeName,
           email: form.email, phone: form.phone, address: form.address,
-          planCode: form.planCode, password: form.password,
+          requestedUnits: parsedUnits, password: form.password,
           responsible: {
             name: form.responsibleName, cpf: form.responsibleCpf,
             email: form.responsibleEmail, phone: form.responsiblePhone,
@@ -97,17 +86,20 @@ export default function RegisterCompanyPage() {
               {field("password", "Senha (mínimo 8 caracteres)", "password")}
             </div>
           </section>
-          <section><h2 className="mb-4 text-lg font-bold">Plano desejado</h2>
-            <div className="grid gap-3 sm:grid-cols-3">{plans.map((plan) =>
-              <label key={plan.code} className={"cursor-pointer rounded-2xl border p-4 " + (form.planCode === plan.code ? "border-orange-500 bg-orange-50" : "border-slate-200")}>
-                <input className="mr-2" type="radio" name="plan" value={plan.code} checked={form.planCode === plan.code}
-                  onChange={() => setForm({ ...form, planCode: plan.code })} />
-                <span className="font-bold">{plan.name}</span>
-                <span className="mt-1 block text-xs text-slate-500">{plan.price === null ? "Preço a configurar" : plan.price}</span>
-              </label>)}</div>
+          <section><h2 className="mb-4 text-lg font-bold">Quantidade de unidades</h2>
+            <label className="block text-sm font-semibold text-slate-700">Unidades contratadas
+              <input type="number" required min={1} max={MAX_CONTRACTED_UNITS} step={1} value={form.requestedUnits}
+                onChange={(event) => setForm({ ...form, requestedUnits: event.target.value })}
+                className="mt-2 w-full rounded-xl border border-slate-300 px-4 py-3 font-normal outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100" />
+            </label>
+            {pricing ? <div className="mt-4 grid gap-3 rounded-2xl border border-orange-200 bg-orange-50 p-5 sm:grid-cols-3">
+              <div><span className="block text-xs font-bold uppercase text-slate-500">Por unidade</span><strong className="text-lg">{formatCurrencyCents(pricing.pricePerUnitCents)}</strong></div>
+              <div><span className="block text-xs font-bold uppercase text-slate-500">Total mensal</span><strong className="text-lg">{formatCurrencyCents(pricing.totalMonthlyCents)}</strong></div>
+              <div><span className="block text-xs font-bold uppercase text-slate-500">Economia mensal</span><strong className="text-lg text-green-700">{formatCurrencyCents(pricing.economyMonthlyCents)}</strong></div>
+            </div> : <p className="mt-3 text-sm font-semibold text-red-700">Informe uma quantidade inteira entre 1 e {MAX_CONTRACTED_UNITS.toLocaleString("pt-BR")}.</p>}
             <p className="mt-3 text-xs text-slate-500">O acesso às unidades será liberado somente após verificação e confirmação do pagamento pelo futuro provedor.</p>
           </section>
-          <button disabled={saving || !form.planCode} className="flex w-full items-center justify-center gap-2 rounded-xl bg-orange-500 px-5 py-4 font-bold text-white disabled:opacity-60">
+          <button disabled={saving || !pricing} className="flex w-full items-center justify-center gap-2 rounded-xl bg-orange-500 px-5 py-4 font-bold text-white disabled:opacity-60">
             {saving && <Loader2 className="animate-spin" size={18} />}{saving ? "Cadastrando..." : "Cadastrar instituição"}
           </button>
         </form>

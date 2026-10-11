@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
 import clientPromise from "@/lib/mongodb";
 import { authenticateRequest } from "@/lib/auth";
-import { getPlan } from "@/lib/plans";
+import { getPricingQuote, quantityLabel } from "@/lib/plans";
 import { DB_NAME } from "@/lib/saas";
 
 export const dynamic = "force-dynamic";
@@ -19,7 +19,8 @@ export async function GET(request: NextRequest) {
     const company = await db.collection("companies").findOne({ _id: auth.companyId });
     if (!company) return NextResponse.json({ error: "Empresa não encontrada." }, { status: 404 });
     const subscription = await db.collection("subscriptions").findOne({ companyId: auth.companyId }, { sort: { createdAt: -1 } });
-    const plan = getPlan(subscription?.planCode);
+    const requestedUnits = Number(subscription?.requestedMaxUnits ?? subscription?.maxUnits ?? 0);
+    const pricing = getPricingQuote(requestedUnits);
     const requestedSchoolId = new URL(request.url).searchParams.get("schoolId");
     const schoolFilter: Record<string, unknown> = { companyId: auth.companyId };
     if (requestedSchoolId) {
@@ -73,9 +74,11 @@ export async function GET(request: NextRequest) {
       },
       subscription: subscription ? {
         id: subscription._id.toString(), planCode: subscription.planCode,
-        planName: plan?.name ?? subscription.planCode, status: subscription.status,
+        planName: requestedUnits > 0 ? quantityLabel(requestedUnits) : subscription.planCode, status: subscription.status,
         maxUnits: Number(subscription.maxUnits ?? 0),
-        requestedMaxUnits: Number(subscription.requestedMaxUnits ?? subscription.maxUnits ?? 0),
+        requestedMaxUnits: requestedUnits,
+        pricePerUnitCents: Number(subscription.pricePerUnitCents ?? pricing?.pricePerUnitCents ?? 0),
+        totalMonthlyCents: Number(subscription.totalMonthlyCents ?? pricing?.totalMonthlyCents ?? 0),
         billingInterval: subscription.billingInterval,
         currentPeriodStart: subscription.currentPeriodStart,
         currentPeriodEnd: subscription.currentPeriodEnd,

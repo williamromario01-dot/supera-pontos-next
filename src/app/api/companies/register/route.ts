@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { MongoServerError } from "mongodb";
 import clientPromise from "@/lib/mongodb";
-import { getPlan } from "@/lib/plans";
+import { getPricingQuote, PRICING_MODEL_CODE } from "@/lib/plans";
 import {
   DB_NAME,
   assertCompanyRegistrationIndexes,
@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
     const responsiblePhone = normalizeDigits(body.responsible?.phone);
     const responsibleRole = String(body.responsible?.role ?? "");
     const password = String(body.password ?? "");
-    const requestedPlan = getPlan(body.planCode);
+    const pricing = getPricingQuote(body.requestedUnits);
 
     if (!isValidCnpj(cnpj)) return NextResponse.json({ error: "CNPJ inválido." }, { status: 400 });
     if (!isValidCpf(responsibleCpf)) return NextResponse.json({ error: "CPF do responsável inválido." }, { status: 400 });
@@ -39,7 +39,7 @@ export async function POST(request: NextRequest) {
     if (!responsibleName || responsibleName.length > 150) return NextResponse.json({ error: "Informe o nome completo do responsável." }, { status: 400 });
     if (!RESPONSIBLE_ROLES.includes(responsibleRole as typeof RESPONSIBLE_ROLES[number])) return NextResponse.json({ error: "Função do responsável inválida." }, { status: 400 });
     if (password.length < 8 || password.length > 100) return NextResponse.json({ error: "A senha deve ter entre 8 e 100 caracteres." }, { status: 400 });
-    if (!requestedPlan) return NextResponse.json({ error: "Selecione um plano válido." }, { status: 400 });
+    if (!pricing) return NextResponse.json({ error: "Informe uma quantidade inteira de unidades dentro do limite permitido." }, { status: 400 });
     if (phone.length < 10 || phone.length > 13 || responsiblePhone.length < 10 || responsiblePhone.length > 13) return NextResponse.json({ error: "Informe telefones válidos com DDD." }, { status: 400 });
     if (address.length > 300) return NextResponse.json({ error: "O endereço deve ter até 300 caracteres." }, { status: 400 });
 
@@ -82,12 +82,16 @@ export async function POST(request: NextRequest) {
         }, { session });
         await db.collection("subscriptions").insertOne({
           companyId: companyResult.insertedId,
-          planCode: requestedPlan.code,
-          requestedMaxUnits: requestedPlan.maxUnits,
+          planCode: PRICING_MODEL_CODE,
+          pricingModel: PRICING_MODEL_CODE,
+          requestedMaxUnits: pricing.requestedUnits,
           maxUnits: 0,
           unitCount: 0,
           status: "pending",
-          billingInterval: requestedPlan.billingInterval,
+          billingInterval: pricing.billingInterval,
+          pricePerUnitCents: pricing.pricePerUnitCents,
+          totalMonthlyCents: pricing.totalMonthlyCents,
+          economyMonthlyCents: pricing.economyMonthlyCents,
           provider: null,
           providerCustomerId: null,
           providerSubscriptionId: null,
@@ -104,7 +108,13 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       message: "Instituição cadastrada. A conta aguarda verificação e configuração do pagamento.",
       company: { id: companyId, status: "pending_verification" },
-      subscription: { planCode: requestedPlan.code, status: "pending", maxUnits: 0, requestedMaxUnits: requestedPlan.maxUnits },
+      subscription: {
+        planCode: PRICING_MODEL_CODE, status: "pending", maxUnits: 0,
+        requestedMaxUnits: pricing.requestedUnits,
+        pricePerUnitCents: pricing.pricePerUnitCents,
+        totalMonthlyCents: pricing.totalMonthlyCents,
+        economyMonthlyCents: pricing.economyMonthlyCents,
+      },
     }, { status: 201 });
   } catch (error) {
     if (error instanceof MongoServerError && error.code === 11000) return NextResponse.json({ error: "CNPJ ou e-mail já cadastrado." }, { status: 409 });
