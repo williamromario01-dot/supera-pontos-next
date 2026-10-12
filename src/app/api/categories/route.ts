@@ -1,52 +1,25 @@
 
 import { NextRequest, NextResponse } from "next/server";
-import { ObjectId } from "mongodb";
+import { MongoServerError, ObjectId } from "mongodb";
 import clientPromise from "@/lib/mongodb";
+import {
+  authenticateRequest,
+  getSchoolObjectId,
+  hasRequiredRole,
+  schoolExists,
+} from "@/lib/auth";
+import {
+  buildScopedCategorySlug,
+  getCategoryScopeFilter,
+  getEffectiveCategorySchoolId,
+  isProtectedLegacyCategory,
+  normalizeCategoryName,
+} from "@/lib/category-scope";
 
 const DB_NAME = "supera_pontos";
-const ALLOWED_ROLES = ["super_admin", "admin", "educator"];
+const ALLOWED_ROLES = ["super_admin", "admin", "educator"] as const;
 
 type CategoryType = "official" | "extra";
-
-async function getAuthenticatedUser(request: NextRequest) {
-  const sessionToken = request.cookies.get("supera_session")?.value;
-
-  if (!sessionToken) {
-    return null;
-  }
-
-  const client = await clientPromise;
-  const db = client.db(DB_NAME);
-
-  const session = await db.collection("sessions").findOne({
-    token: sessionToken,
-  });
-
-  if (!session) {
-    return null;
-  }
-
-  if (
-    !session.expiresAt ||
-    new Date(session.expiresAt) <= new Date()
-  ) {
-    await db.collection("sessions").deleteOne({
-      _id: session._id,
-    });
-
-    return null;
-  }
-
-  const user = await db.collection("users").findOne({
-    _id: session.userId,
-  });
-
-  if (!user || user.active === false) {
-    return null;
-  }
-
-  return user;
-}
 
 function isValidHexColor(color: string) {
   return /^#[0-9A-Fa-f]{6}$/.test(color);
@@ -57,33 +30,24 @@ function isValidIcon(icon: string) {
 }
 
 function getSchoolIdVariants(schoolId: unknown) {
-  if (!schoolId) {
-    return [];
-  }
-
+  if (!schoolId) return [];
   const value = String(schoolId);
-
-  if (ObjectId.isValid(value)) {
-    const objectId = new ObjectId(value);
-
-    return [objectId, value];
-  }
-
-  return [value];
+  return ObjectId.isValid(value) ? [new ObjectId(value), value] : [value];
 }
 
 export async function GET(request: NextRequest) {
   try {
-    const user = await getAuthenticatedUser(request);
+    const authResult = await authenticateRequest(request);
 
-    if (!user) {
+    if (!authResult.authenticated) {
       return NextResponse.json(
         { error: "Não autenticado ou usuário inativo." },
         { status: 401 }
       );
     }
 
-    if (!ALLOWED_ROLES.includes(user.role)) {
+    const { auth } = authResult;
+    if (!hasRequiredRole(auth, ALLOWED_ROLES)) {
       return NextResponse.json(
         {
           error: "Você não tem permissão para acessar as categorias.",
@@ -96,26 +60,32 @@ export async function GET(request: NextRequest) {
     const db = client.db(DB_NAME);
     const categoriesCollection = db.collection("categories");
 
-    let filter = {};
+    const effectiveSchoolId =
+      auth.role === "super_admin"
+        ? getSchoolObjectId(request.nextUrl.searchParams.get("schoolId"))
+        : auth.schoolId;
 
-    if (user.role !== "super_admin") {
-      const schoolIds = getSchoolIdVariants(user.schoolId);
+    if (!effectiveSchoolId) {
+      return NextResponse.json(
+        {
+          error:
+            auth.role === "super_admin"
+              ? "Selecione uma escola válida."
+              : "Seu usuário não está vinculado a uma escola.",
+        },
+        { status: auth.role === "super_admin" ? 400 : 403 }
+      );
+    }
 
-      filter = {
-        $or: [
-          ...(schoolIds.length > 0
-            ? [{ schoolId: { $in: schoolIds } }]
-            : []),
-          // Categorias antigas sem escola continuam visíveis
-          // temporariamente para preservar a compatibilidade.
-          { schoolId: { $exists: false } },
-          { schoolId: null },
-        ],
-      };
+    if (!(await schoolExists(effectiveSchoolId))) {
+      return NextResponse.json(
+        { error: "A escola informada não foi encontrada." },
+        { status: 404 }
+      );
     }
 
     const categories = await categoriesCollection
-      .find(filter)
+      .find(getCategoryScopeFilter(effectiveSchoolId))
       .sort({ createdAt: 1 })
       .toArray();
 
@@ -136,13 +106,13 @@ export async function GET(request: NextRequest) {
       participatesInRanking:
         category.participatesInRanking !== false,
       categoryType: category.categoryType || null,
-      schoolId: category.schoolId
-        ? String(category.schoolId)
-        : null,
+      schoolId:
+        getEffectiveCategorySchoolId(category)?.toString() ?? null,
       createdBy: category.createdBy
         ? String(category.createdBy)
         : null,
-      legacy: !category.schoolId,
+      legacy: isProtectedLegacyCategory(category),
+      protectedLegacy: isProtectedLegacyCategory(category),
       createdAt: category.createdAt,
       updatedAt: category.updatedAt,
     }));
@@ -162,16 +132,18 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const user = await getAuthenticatedUser(request);
+    const authResult = await authenticateRequest(request);
 
-    if (!user) {
+    if (!authResult.authenticated) {
       return NextResponse.json(
         { error: "Não autenticado ou usuário inativo." },
         { status: 401 }
       );
     }
 
-    if (!ALLOWED_ROLES.includes(user.role)) {
+    const { auth } = authResult;
+
+    if (!hasRequiredRole(auth, ALLOWED_ROLES)) {
       return NextResponse.json(
         {
           error: "Você não tem permissão para criar categorias.",
@@ -279,8 +251,8 @@ export async function POST(request: NextRequest) {
 
     let schoolId: ObjectId | string | null = null;
 
-    if (user.role === "admin" || user.role === "educator") {
-      if (!user.schoolId) {
+    if (auth.role === "admin" || auth.role === "educator") {
+      if (!auth.schoolId) {
         return NextResponse.json(
           {
             error:
@@ -290,7 +262,7 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      const schoolIds = getSchoolIdVariants(user.schoolId);
+      const schoolIds = getSchoolIdVariants(auth.schoolId);
 
       if (schoolIds.length === 0) {
         return NextResponse.json(
@@ -328,12 +300,32 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    const effectiveSchoolId = getSchoolObjectId(schoolId);
+    if (!effectiveSchoolId) {
+      return NextResponse.json(
+        {
+          error:
+            auth.role === "super_admin"
+              ? "Selecione uma escola válida."
+              : "A escola vinculada ao usuário é inválida.",
+        },
+        { status: auth.role === "super_admin" ? 400 : 403 }
+      );
+    }
+
+    if (!(await schoolExists(effectiveSchoolId))) {
+      return NextResponse.json(
+        { error: "A escola informada não foi encontrada." },
+        { status: 404 }
+      );
+    }
+
     let categoryType: CategoryType;
 
-    if (user.role === "educator") {
+    if (auth.role === "educator") {
       // Educadores só podem criar categorias extras.
       categoryType = "extra";
-    } else if (user.role === "admin") {
+    } else if (auth.role === "admin") {
       // Sem escolha explícita, a categoria será oficial.
       categoryType =
         body.categoryType === "extra" ? "extra" : "official";
@@ -354,11 +346,11 @@ export async function POST(request: NextRequest) {
     }
 
     const existingCategories = await categories
-      .find({ name: { $exists: true } })
+      .find(getCategoryScopeFilter(effectiveSchoolId))
       .project({ name: 1 })
       .toArray();
 
-    const normalizedName = name.toLocaleLowerCase("pt-BR");
+    const normalizedName = normalizeCategoryName(name);
 
     const duplicate = existingCategories.some(
       (category) =>
@@ -385,9 +377,10 @@ export async function POST(request: NextRequest) {
       defaultPoints,
       participatesInRanking,
       categoryType,
-      schoolId,
-      createdBy: user._id,
-      createdByRole: user.role,
+      schoolId: effectiveSchoolId,
+      slug: buildScopedCategorySlug(effectiveSchoolId, name),
+      createdBy: auth.userId,
+      createdByRole: auth.role,
       createdAt: now,
       updatedAt: now,
     };
@@ -400,13 +393,20 @@ export async function POST(request: NextRequest) {
         category: {
           id: result.insertedId.toString(),
           ...newCategory,
-          schoolId: schoolId ? String(schoolId) : null,
-          createdBy: String(user._id),
+          schoolId: effectiveSchoolId.toString(),
+          createdBy: auth.userId.toString(),
         },
       },
       { status: 201 }
     );
   } catch (error) {
+    if (error instanceof MongoServerError && error.code === 11000) {
+      return NextResponse.json(
+        { error: "Já existe uma categoria conflitante nesta escola." },
+        { status: 409 }
+      );
+    }
+
     console.error("Erro ao criar categoria:", error);
 
     return NextResponse.json(

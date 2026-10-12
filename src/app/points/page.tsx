@@ -42,6 +42,12 @@ interface AuthUser {
   name?: string;
   email?: string;
   role: string;
+  schoolId?: string | null;
+}
+
+interface School {
+  id: string;
+  name: string;
 }
 
 function PointsPageContent() {
@@ -50,6 +56,8 @@ function PointsPageContent() {
 
   const [students, setStudents] = useState<Student[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [schools, setSchools] = useState<School[]>([]);
+  const [selectedSchoolId, setSelectedSchoolId] = useState("");
 
   // Usuário logado
   const [currentUser, setCurrentUser] =
@@ -111,7 +119,7 @@ function PointsPageContent() {
   // =====================================================
 
   const canCreateCategory =
-    currentUser?.role === "super_admin" ||
+    (currentUser?.role === "super_admin" && Boolean(selectedSchoolId)) ||
     currentUser?.role === "admin" ||
     currentUser?.role === "educator";
 
@@ -121,12 +129,55 @@ function PointsPageContent() {
 
   useEffect(() => {
     loadData();
-  }, [queryStudentId]);
+  }, [queryStudentId, selectedSchoolId]);
 
   async function loadData() {
     try {
       setLoading(true);
       setError("");
+
+      const initialUserResponse = await fetch("/api/auth/me", {
+        credentials: "include",
+      });
+      if (!initialUserResponse.ok) {
+        throw new Error("Não foi possível identificar o usuário.");
+      }
+      const initialUserData = await initialUserResponse.json();
+      const initialUser =
+        initialUserData.user || initialUserData.data || initialUserData;
+      setCurrentUser(initialUser);
+
+      if (![
+        "super_admin",
+        "admin",
+        "educator",
+      ].includes(initialUser?.role)) {
+        router.push("/dashboard");
+        return;
+      }
+
+      if (initialUser?.role === "super_admin") {
+        const schoolsResponse = await fetch("/api/schools", {
+          credentials: "include",
+        });
+        const schoolsData = await schoolsResponse.json();
+        if (!schoolsResponse.ok) {
+          throw new Error(schoolsData.error || "Não foi possível carregar as escolas.");
+        }
+        setSchools(Array.isArray(schoolsData.schools) ? schoolsData.schools : []);
+        if (!selectedSchoolId) {
+          setStudents([]);
+          setCategories([]);
+          setSelectedStudent(null);
+          setSelectedCategory(null);
+          return;
+        }
+      }
+
+      const schoolQuery =
+        initialUser?.role === "super_admin"
+          ? `?schoolId=${encodeURIComponent(selectedSchoolId)}`
+          : "";
 
       const [
         userResponse,
@@ -137,11 +188,11 @@ function PointsPageContent() {
           credentials: "include",
         }),
 
-        fetch("/api/students", {
+        fetch(`/api/students${schoolQuery}`, {
           credentials: "include",
         }),
 
-        fetch("/api/categories", {
+        fetch(`/api/categories${schoolQuery}`, {
           credentials: "include",
         }),
       ]);
@@ -371,6 +422,9 @@ function PointsPageContent() {
             defaultPoints,
             participatesInRanking:
               categoryRanking,
+            ...(currentUser?.role === "super_admin"
+              ? { schoolId: selectedSchoolId }
+              : {}),
           }),
         });
 
@@ -510,6 +564,9 @@ function PointsPageContent() {
               selectedCategory.id,
 
             points: totalPoints,
+            ...(currentUser?.role === "super_admin"
+              ? { schoolId: selectedSchoolId }
+              : {}),
           }),
         });
 
@@ -599,6 +656,31 @@ function PointsPageContent() {
           </div>
         </div>
       </header>
+
+      {currentUser?.role === "super_admin" && (
+        <div className="mx-auto max-w-6xl px-4 pt-6 sm:px-6">
+          <label className="mb-2 block text-sm font-semibold text-slate-700">
+            Escola
+          </label>
+          <select
+            value={selectedSchoolId}
+            onChange={(event) => {
+              setSelectedSchoolId(event.target.value);
+              setSelectedStudent(null);
+              setSelectedCategory(null);
+              setSearch("");
+            }}
+            className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm outline-none focus:border-orange-500 sm:max-w-md"
+          >
+            <option value="">Selecione uma escola</option>
+            {schools.map((school) => (
+              <option key={school.id} value={school.id}>
+                {school.name}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
 
       <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
         {loading ? (

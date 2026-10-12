@@ -2,10 +2,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
 import clientPromise from "@/lib/mongodb";
+import {
+  authenticateRequest,
+  getSchoolObjectId,
+  hasRequiredRole,
+  schoolExists,
+} from "@/lib/auth";
+import { categoryBelongsToSchool } from "@/lib/category-scope";
 
 const DB_NAME = "supera_pontos";
 
-const ALLOWED_ROLES = ["super_admin", "admin", "educator"];
+const ALLOWED_ROLES = ["super_admin", "admin", "educator"] as const;
 
 const MAX_POINTS_PER_LAUNCH = 100000;
 
@@ -25,54 +32,12 @@ function sameId(a: unknown, b: unknown): boolean {
   return String(a) === String(b);
 }
 
-async function getAuthenticatedUser(request: NextRequest) {
-  const sessionToken = request.cookies.get("supera_session")?.value;
-
-  if (!sessionToken) {
-    return null;
-  }
-
-  const client = await clientPromise;
-  const db = client.db(DB_NAME);
-
-  const session = await db.collection("sessions").findOne({
-    token: sessionToken,
-  });
-
-  if (!session) {
-    return null;
-  }
-
-  const now = new Date();
-
-  if (
-    !session.expiresAt ||
-    new Date(session.expiresAt).getTime() <= now.getTime()
-  ) {
-    await db.collection("sessions").deleteOne({
-      _id: session._id,
-    });
-
-    return null;
-  }
-
-  const user = await db.collection("users").findOne({
-    _id: session.userId,
-  });
-
-  if (!user || user.active === false) {
-    return null;
-  }
-
-  return user;
-}
-
 export async function POST(request: NextRequest) {
   try {
     // 1. Autenticação
-    const user = await getAuthenticatedUser(request);
+    const authResult = await authenticateRequest(request);
 
-    if (!user) {
+    if (!authResult.authenticated) {
       return NextResponse.json(
         { error: "Sessão inválida, expirada ou usuário inativo." },
         { status: 401 }
@@ -80,7 +45,10 @@ export async function POST(request: NextRequest) {
     }
 
     // 2. Permissões de perfil
-    if (!ALLOWED_ROLES.includes(user.role)) {
+    const { auth } = authResult;
+    const user = auth.user;
+
+    if (!hasRequiredRole(auth, ALLOWED_ROLES)) {
       return NextResponse.json(
         { error: "Você não tem permissão para lançar pontos." },
         { status: 403 }
@@ -101,6 +69,7 @@ export async function POST(request: NextRequest) {
 
     const studentId = String(body.studentId || "").trim();
     const categoryId = String(body.categoryId || "").trim();
+    const requestedSchoolId = String(body.schoolId || "").trim();
     const points = Number(body.points);
 
     if (!studentId) {
@@ -191,25 +160,31 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 6. Validar o vínculo do aluno com a escola
-    // O super_admin pode atuar em qualquer escola.
-    if (user.role === "admin" || user.role === "educator") {
-      if (!user.schoolId) {
+    let effectiveSchoolId: ObjectId | null = null;
+
+    if (auth.role === "super_admin") {
+      effectiveSchoolId = getSchoolObjectId(requestedSchoolId);
+      if (!effectiveSchoolId || !(await schoolExists(effectiveSchoolId))) {
+        return NextResponse.json(
+          { error: "O Super Administrador deve informar uma escola válida." },
+          { status: 400 }
+        );
+      }
+    } else {
+      effectiveSchoolId = auth.schoolId;
+      if (!effectiveSchoolId) {
         return NextResponse.json(
           { error: "Seu usuário não está vinculado a uma unidade." },
           { status: 403 }
         );
       }
+    }
 
-      if (!sameId(student.schoolId, user.schoolId)) {
-        return NextResponse.json(
-          {
-            error:
-              "Você só pode pontuar alunos da sua própria unidade.",
-          },
-          { status: 403 }
-        );
-      }
+    if (!sameId(student.schoolId, effectiveSchoolId)) {
+      return NextResponse.json(
+        { error: "O aluno não pertence à escola autorizada." },
+        { status: 403 }
+      );
     }
 
     // 7. Validar a categoria
@@ -231,31 +206,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Administradores e educadores só podem usar categorias
-    // vinculadas à própria escola.
-    // Categorias antigas sem schoolId permanecem intactas,
-    // mas não podem ser utilizadas por esses perfis até
-    // que seu vínculo seja confirmado.
-    if (user.role === "admin" || user.role === "educator") {
-      if (!user.schoolId || !category.schoolId) {
-        return NextResponse.json(
-          {
-            error:
-              "Esta categoria não possui vínculo confirmado com uma unidade. Solicite a revisão ao super administrador.",
-          },
-          { status: 403 }
-        );
-      }
-
-      if (!sameId(category.schoolId, user.schoolId)) {
-        return NextResponse.json(
-          {
-            error:
-              "Você só pode utilizar categorias vinculadas à sua própria unidade.",
-          },
-          { status: 403 }
-        );
-      }
+    if (!categoryBelongsToSchool(category, effectiveSchoolId)) {
+      return NextResponse.json(
+        { error: "A categoria não pertence à escola autorizada." },
+        { status: 403 }
+      );
     }
 
     const now = new Date();
@@ -267,7 +222,7 @@ export async function POST(request: NextRequest) {
         const pointEvent = {
           studentId: studentObjectId,
           categoryId: categoryObjectId,
-          educatorId: user._id,
+          educatorId: auth.userId,
           points,
           createdAt: now,
         };
@@ -303,7 +258,7 @@ export async function POST(request: NextRequest) {
           categoryId: categoryObjectId.toString(),
           categoryName: category.name,
           points,
-          educatorId: user._id.toString(),
+          educatorId: auth.userId.toString(),
           educatorName: user.name,
           createdAt: now,
         },

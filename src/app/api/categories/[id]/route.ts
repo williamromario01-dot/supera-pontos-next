@@ -1,10 +1,23 @@
 
 import { NextRequest, NextResponse } from "next/server";
-import { ObjectId } from "mongodb";
+import { MongoServerError, ObjectId } from "mongodb";
 import clientPromise from "@/lib/mongodb";
+import {
+  authenticateRequest,
+  getSchoolObjectId,
+  hasRequiredRole,
+  schoolExists,
+} from "@/lib/auth";
+import {
+  buildScopedCategorySlug,
+  categoryBelongsToSchool,
+  getCategoryScopeFilter,
+  isProtectedLegacyCategory,
+  normalizeCategoryName,
+} from "@/lib/category-scope";
 
 const DB_NAME = "supera_pontos";
-const ALLOWED_ROLES = ["super_admin", "admin", "educator"];
+const ALLOWED_ROLES = ["super_admin", "admin", "educator"] as const;
 
 type CategoryUpdate = Record<string, unknown>;
 
@@ -83,6 +96,10 @@ function isSameId(first: unknown, second: unknown) {
 }
 
 function canManageCategory(user: any, category: any) {
+  if (isProtectedLegacyCategory(category)) {
+    return false;
+  }
+
   if (user.role === "super_admin") {
     return true;
   }
@@ -127,16 +144,19 @@ export async function PATCH(
   context: { params: { id: string } }
 ) {
   try {
-    const user = await getAuthenticatedUser(request);
+    const authResult = await authenticateRequest(request);
 
-    if (!user) {
+    if (!authResult.authenticated) {
       return NextResponse.json(
         { error: "Não autenticado ou usuário inativo." },
         { status: 401 }
       );
     }
 
-    if (!ALLOWED_ROLES.includes(user.role)) {
+    const { auth } = authResult;
+    const user = auth.user;
+
+    if (!hasRequiredRole(auth, ALLOWED_ROLES)) {
       return NextResponse.json(
         {
           error: "Você não tem permissão para editar categorias.",
@@ -202,6 +222,27 @@ export async function PATCH(
       );
     }
 
+    const targetSchoolId =
+      auth.role === "super_admin"
+        ? getSchoolObjectId(request.nextUrl.searchParams.get("schoolId"))
+        : auth.schoolId;
+    if (
+      !targetSchoolId ||
+      !categoryBelongsToSchool(currentCategory, targetSchoolId)
+    ) {
+      return NextResponse.json(
+        { error: "A categoria não pertence à escola autorizada." },
+        { status: 403 }
+      );
+    }
+
+    if (!(await schoolExists(targetSchoolId))) {
+      return NextResponse.json(
+        { error: "A escola informada não foi encontrada." },
+        { status: 404 }
+      );
+    }
+
     if (!canManageCategory(user, currentCategory)) {
       return NextResponse.json(
         {
@@ -236,13 +277,15 @@ export async function PATCH(
         );
       }
 
-      const normalizedName = name.toLocaleLowerCase("pt-BR");
-      const schoolIds = getSchoolIdVariants(user.schoolId);
+      const normalizedName = normalizeCategoryName(name);
 
       const existingCategories = await categories
         .find({
-          _id: { $ne: categoryId },
-          name: { $exists: true },
+          $and: [
+            getCategoryScopeFilter(targetSchoolId),
+            { _id: { $ne: categoryId } },
+            { name: { $exists: true } },
+          ],
         })
         .project({ name: 1, schoolId: 1 })
         .toArray();
@@ -257,15 +300,7 @@ export async function PATCH(
           return false;
         }
 
-        if (user.role === "super_admin") {
-          return true;
-        }
-
-        const sameSchool =
-          schoolIds.some((id) => isSameId(category.schoolId, id)) ||
-          !category.schoolId;
-
-        return sameSchool;
+        return true;
       });
 
       if (duplicate) {
@@ -279,6 +314,7 @@ export async function PATCH(
       }
 
       updateData.name = name;
+      updateData.slug = buildScopedCategorySlug(targetSchoolId, name);
     }
 
     if (body.description !== undefined) {
@@ -467,6 +503,13 @@ export async function PATCH(
       },
     });
   } catch (error) {
+    if (error instanceof MongoServerError && error.code === 11000) {
+      return NextResponse.json(
+        { error: "Já existe uma categoria conflitante nesta escola." },
+        { status: 409 }
+      );
+    }
+
     console.error("Erro ao editar categoria:", error);
 
     return NextResponse.json(
@@ -481,16 +524,19 @@ export async function DELETE(
   context: { params: { id: string } }
 ) {
   try {
-    const user = await getAuthenticatedUser(request);
+    const authResult = await authenticateRequest(request);
 
-    if (!user) {
+    if (!authResult.authenticated) {
       return NextResponse.json(
         { error: "Não autenticado ou usuário inativo." },
         { status: 401 }
       );
     }
 
-    if (!ALLOWED_ROLES.includes(user.role)) {
+    const { auth } = authResult;
+    const user = auth.user;
+
+    if (!hasRequiredRole(auth, ALLOWED_ROLES)) {
       return NextResponse.json(
         {
           error: "Você não tem permissão para excluir categorias.",
@@ -519,6 +565,24 @@ export async function DELETE(
     if (!category) {
       return NextResponse.json(
         { error: "Categoria não encontrada." },
+        { status: 404 }
+      );
+    }
+
+    const targetSchoolId =
+      auth.role === "super_admin"
+        ? getSchoolObjectId(request.nextUrl.searchParams.get("schoolId"))
+        : auth.schoolId;
+    if (!targetSchoolId || !categoryBelongsToSchool(category, targetSchoolId)) {
+      return NextResponse.json(
+        { error: "A categoria não pertence à escola autorizada." },
+        { status: 403 }
+      );
+    }
+
+    if (!(await schoolExists(targetSchoolId))) {
+      return NextResponse.json(
+        { error: "A escola informada não foi encontrada." },
         { status: 404 }
       );
     }

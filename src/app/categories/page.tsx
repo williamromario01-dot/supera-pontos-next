@@ -29,6 +29,11 @@ interface CurrentUser {
   schoolId?: string | null;
 }
 
+interface School {
+  id: string;
+  name: string;
+}
+
 interface Category {
   id: string;
   name: string;
@@ -43,6 +48,7 @@ interface Category {
   schoolId?: string | null;
   createdBy?: string | null;
   legacy?: boolean;
+  protectedLegacy?: boolean;
   active?: boolean;
 }
 
@@ -92,6 +98,7 @@ function normalizeCategory(value: any): Category {
     schoolId: value.schoolId ? String(value.schoolId) : null,
     createdBy: value.createdBy ? String(value.createdBy) : null,
     legacy: value.legacy === true || !value.schoolId,
+    protectedLegacy: value.protectedLegacy === true,
     active: value.active !== false,
   };
 }
@@ -113,6 +120,8 @@ export default function CategoriesPage() {
 
   const [user, setUser] = useState<CurrentUser | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [schools, setSchools] = useState<School[]>([]);
+  const [selectedSchoolId, setSelectedSchoolId] = useState("");
   const [form, setForm] = useState<CategoryForm>(emptyForm);
 
   const [loading, setLoading] = useState(true);
@@ -127,7 +136,8 @@ export default function CategoriesPage() {
   const isAdmin = user?.role === "admin";
   const isEducator = user?.role === "educator";
 
-  const canCreate = isSuperAdmin || isAdmin || isEducator;
+  const canCreate =
+    (isSuperAdmin && Boolean(selectedSchoolId)) || isAdmin || isEducator;
 
   const getUserId = useCallback(() => {
     return String(user?.id ?? user?._id ?? "");
@@ -136,6 +146,8 @@ export default function CategoriesPage() {
   const canManageCategory = useCallback(
     (category: Category) => {
       if (!user) return false;
+
+      if (category.protectedLegacy) return false;
 
       if (user.role === "super_admin") return true;
 
@@ -183,18 +195,42 @@ export default function CategoriesPage() {
       setLoading(true);
       setError("");
 
-      const [userResponse, categoriesResponse] = await Promise.all([
-        fetch("/api/auth/me", {
+      const userResponse = await fetch("/api/auth/me", {
+        credentials: "include",
+        cache: "no-store",
+      });
+      const initialUserData = await readResponse(userResponse);
+      const initialUser = initialUserData.user ?? initialUserData;
+      if (userResponse.ok && initialUser?.role === "super_admin") {
+        const schoolsResponse = await fetch("/api/schools", {
           credentials: "include",
           cache: "no-store",
-        }),
-        fetch("/api/categories", {
-          credentials: "include",
-          cache: "no-store",
-        }),
-      ]);
+        });
+        const schoolsData = await readResponse(schoolsResponse);
+        if (schoolsResponse.ok) {
+          setSchools(Array.isArray(schoolsData.schools) ? schoolsData.schools : []);
+        }
+        setUser({
+          id: initialUser.id ? String(initialUser.id) : undefined,
+          _id: initialUser._id ? String(initialUser._id) : undefined,
+          role: "super_admin",
+          schoolId: null,
+        });
+        if (!selectedSchoolId) {
+          setCategories([]);
+          return;
+        }
+      }
+      const categoriesUrl =
+        initialUser?.role === "super_admin" && selectedSchoolId
+          ? `/api/categories?schoolId=${encodeURIComponent(selectedSchoolId)}`
+          : "/api/categories";
+      const categoriesResponse = await fetch(categoriesUrl, {
+        credentials: "include",
+        cache: "no-store",
+      });
 
-      const userData = await readResponse(userResponse);
+      const userData = initialUserData;
       const categoryData = await readResponse(categoriesResponse);
 
       if (
@@ -260,7 +296,7 @@ export default function CategoriesPage() {
     } finally {
       setLoading(false);
     }
-  }, [router]);
+  }, [router, selectedSchoolId]);
 
   useEffect(() => {
     void loadCategories();
@@ -376,6 +412,7 @@ export default function CategoriesPage() {
         weeklyGoal,
         defaultPoints,
         participatesInRanking: form.participatesInRanking,
+        ...(isSuperAdmin ? { schoolId: selectedSchoolId } : {}),
         ...(editingId
           ? {}
           : {
@@ -386,7 +423,9 @@ export default function CategoriesPage() {
       };
 
       const response = await fetch(
-        editingId ? `/api/categories/${editingId}` : "/api/categories",
+        editingId
+          ? `/api/categories/${editingId}${isSuperAdmin ? `?schoolId=${encodeURIComponent(selectedSchoolId)}` : ""}`
+          : "/api/categories",
         {
           method: editingId ? "PATCH" : "POST",
           headers: { "Content-Type": "application/json" },
@@ -454,10 +493,13 @@ export default function CategoriesPage() {
       setError("");
       setSuccess("");
 
-      const response = await fetch(`/api/categories/${category.id}`, {
+      const response = await fetch(
+        `/api/categories/${category.id}${isSuperAdmin ? `?schoolId=${encodeURIComponent(selectedSchoolId)}` : ""}`,
+        {
         method: "DELETE",
         credentials: "include",
-      });
+        }
+      );
 
       const data = await readResponse(response);
 
@@ -539,6 +581,31 @@ export default function CategoriesPage() {
           </div>
         </div>
       </header>
+
+      {isSuperAdmin && (
+        <div className="mx-auto max-w-7xl px-4 pt-6 sm:px-6">
+          <label className="mb-2 block text-sm font-semibold text-slate-700">
+            Escola
+          </label>
+          <select
+            value={selectedSchoolId}
+            onChange={(event) => {
+              setSelectedSchoolId(event.target.value);
+              setCategories([]);
+              setEditingId(null);
+              setShowForm(false);
+            }}
+            className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm outline-none focus:border-orange-500 sm:max-w-md"
+          >
+            <option value="">Selecione uma escola</option>
+            {schools.map((school) => (
+              <option key={school.id} value={school.id}>
+                {school.name}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
 
       <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-8">
         <section className="relative mb-6 overflow-hidden rounded-3xl bg-gradient-to-br from-orange-500 via-orange-500 to-orange-600 p-6 text-white shadow-lg sm:p-8">
