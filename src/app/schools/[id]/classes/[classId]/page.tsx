@@ -42,12 +42,21 @@ interface ClassData {
   availableStudents: Student[];
 }
 
+function getRouteParam(
+  value: string | string[] | undefined
+): string {
+  return Array.isArray(value) ? value[0] ?? "" : value ?? "";
+}
+
 export default function ClassManagementPage() {
-  const params = useParams();
+  const params = useParams<{
+    id: string | string[];
+    classId: string | string[];
+  }>();
   const router = useRouter();
 
-  const schoolId = params.id as string;
-  const classId = params.classId as string;
+  const schoolId = getRouteParam(params.id);
+  const classId = getRouteParam(params.classId);
 
   const [classData, setClassData] =
     useState<ClassData | null>(null);
@@ -111,7 +120,7 @@ export default function ClassManagementPage() {
       setClassError("");
 
       const response = await fetch(
-        `/api/classes/${classId}/students`,
+        `/api/classes/${encodeURIComponent(classId)}/students`,
         {
           credentials: "include",
         }
@@ -208,10 +217,17 @@ export default function ClassManagementPage() {
   }
 
   useEffect(() => {
-    if (classId) {
-      loadClass();
+    if (!/^[a-f\d]{24}$/i.test(classId)) {
+      if (schoolId) {
+        router.replace(
+          `/schools/${encodeURIComponent(schoolId)}#turmas`
+        );
+      }
+      return;
     }
-  }, [classId, schoolId]);
+
+    loadClass();
+  }, [classId, schoolId, router]);
 
   // ============================================================
   // SELEÇÃO DE ALUNOS PARA ALOCAR
@@ -258,7 +274,7 @@ export default function ClassManagementPage() {
       setSuccess("");
 
       const response = await fetch(
-        `/api/classes/${classId}/students`,
+        `/api/classes/${encodeURIComponent(classId)}/students`,
         {
           method: "POST",
           headers: {
@@ -322,7 +338,7 @@ export default function ClassManagementPage() {
       setSuccess("");
 
       const response = await fetch(
-        `/api/classes/${classId}/students`,
+        `/api/classes/${encodeURIComponent(classId)}/students`,
         {
           method: "DELETE",
           headers: {

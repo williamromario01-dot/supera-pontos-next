@@ -123,6 +123,10 @@ export async function GET(request: NextRequest) {
 
       return {
         ...classItem,
+        id: classItem._id.toString(),
+        classId: classItem._id.toString(),
+        schoolId: schoolObjectId.toString(),
+        educatorId,
         educator,
         studentCount: Array.isArray(classItem.studentIds)
           ? classItem.studentIds.length
