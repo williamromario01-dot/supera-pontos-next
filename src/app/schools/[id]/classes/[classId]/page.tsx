@@ -125,6 +125,7 @@ export default function ClassManagementPage() {
       }
 
       setClassData(data);
+      await loadCategories(data.schoolId);
     } catch (err: any) {
       setError(
         err.message ||
@@ -139,12 +140,12 @@ export default function ClassManagementPage() {
   // CARREGAR CATEGORIAS
   // ============================================================
 
-  async function loadCategories() {
+  async function loadCategories(classSchoolId: string) {
     try {
       setLoadingCategories(true);
 
       const response = await fetch(
-        "/api/categories",
+        `/api/categories?schoolId=${encodeURIComponent(classSchoolId)}`,
         {
           credentials: "include",
         }
@@ -179,7 +180,6 @@ export default function ClassManagementPage() {
   useEffect(() => {
     if (classId) {
       loadClass();
-      loadCategories();
     }
   }, [classId]);
 
@@ -408,6 +408,7 @@ export default function ClassManagementPage() {
             studentId: student.id,
             categoryId: quickCategoryId,
             points: quickPoints,
+            schoolId: classData?.schoolId,
             observation:
               quickObservation.trim() || undefined,
           }),
