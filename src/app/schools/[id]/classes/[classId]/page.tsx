@@ -74,6 +74,8 @@ export default function ClassManagementPage() {
   const [searchAllocated, setSearchAllocated] =
     useState("");
 
+  const [classError, setClassError] = useState("");
+  const [categoriesError, setCategoriesError] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
@@ -106,7 +108,7 @@ export default function ClassManagementPage() {
   async function loadClass() {
     try {
       setLoading(true);
-      setError("");
+      setClassError("");
 
       const response = await fetch(
         `/api/classes/${classId}/students`,
@@ -115,19 +117,39 @@ export default function ClassManagementPage() {
         }
       );
 
-      const data = await response.json();
+      console.info("[ClassPage] students request", {
+        status: response.status,
+      });
+
+      const data = await response.json().catch(() => ({}));
 
       if (!response.ok) {
         throw new Error(
-          data.error ||
-            "Não foi possível carregar a turma."
+          `TURMA_STUDENTS_${response.status}: ${
+            data.error || "Não foi possível carregar a turma."
+          }`
+        );
+      }
+
+      if (
+        typeof data.schoolId !== "string" ||
+        !Array.isArray(data.students) ||
+        !Array.isArray(data.availableStudents)
+      ) {
+        throw new Error(
+          "TURMA_STUDENTS_200: Resposta da turma inválida."
         );
       }
 
       setClassData(data);
-      await loadCategories(data.schoolId);
+      console.info("[ClassPage] resolved schoolId", {
+        schoolId: data.schoolId,
+        routeSchoolId: schoolId,
+        matchesRoute: data.schoolId === schoolId,
+      });
+      void loadCategories(data.schoolId);
     } catch (err: any) {
-      setError(
+      setClassError(
         err.message ||
           "Erro ao carregar os dados da turma."
       );
@@ -143,6 +165,7 @@ export default function ClassManagementPage() {
   async function loadCategories(classSchoolId: string) {
     try {
       setLoadingCategories(true);
+      setCategoriesError("");
 
       const response = await fetch(
         `/api/categories?schoolId=${encodeURIComponent(classSchoolId)}`,
@@ -151,12 +174,18 @@ export default function ClassManagementPage() {
         }
       );
 
-      const data = await response.json();
+      console.info("[ClassPage] categories request", {
+        status: response.status,
+      });
+
+      const data = await response.json().catch(() => ({}));
 
       if (!response.ok) {
         throw new Error(
-          data.error ||
-            "Não foi possível carregar as categorias."
+          `TURMA_CATEGORIES_${response.status}: ${
+            data.error ||
+            "Não foi possível carregar as categorias para pontuação."
+          }`
         );
       }
 
@@ -168,9 +197,10 @@ export default function ClassManagementPage() {
 
       setCategories(categoriesList);
     } catch (err: any) {
-      setError(
+      setCategories([]);
+      setCategoriesError(
         err.message ||
-          "Erro ao carregar as categorias."
+          "Não foi possível carregar as categorias para pontuação."
       );
     } finally {
       setLoadingCategories(false);
@@ -181,7 +211,7 @@ export default function ClassManagementPage() {
     if (classId) {
       loadClass();
     }
-  }, [classId]);
+  }, [classId, schoolId]);
 
   // ============================================================
   // SELEÇÃO DE ALUNOS PARA ALOCAR
@@ -579,9 +609,9 @@ export default function ClassManagementPage() {
               Não foi possível carregar a turma
             </h1>
 
-            {error && (
+            {classError && (
               <p className="text-red-600 mt-2">
-                {error}
+                {classError}
               </p>
             )}
 
@@ -1238,6 +1268,7 @@ export default function ClassManagementPage() {
                                   }
                                   disabled={
                                     loadingCategories ||
+                                    Boolean(categoriesError) ||
                                     registeringPoints
                                   }
                                   className="w-full border border-gray-300 rounded-xl px-4 py-3 bg-white outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500 disabled:bg-gray-100"
@@ -1246,7 +1277,9 @@ export default function ClassManagementPage() {
                                   <option value="">
                                     {loadingCategories
                                       ? "Carregando categorias..."
-                                      : "Selecione uma categoria"}
+                                      : categoriesError
+                                        ? "Categorias indisponíveis"
+                                        : "Selecione uma categoria"}
                                   </option>
 
                                   {categories.map(
@@ -1270,6 +1303,12 @@ export default function ClassManagementPage() {
                                   )}
 
                                 </select>
+
+                                {categoriesError && (
+                                  <p className="mt-2 text-sm text-red-600">
+                                    {categoriesError}
+                                  </p>
+                                )}
 
                               </div>
 
