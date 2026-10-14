@@ -50,6 +50,26 @@ export async function POST(request: NextRequest) {
   }
   const event = parseAsaasPaymentWebhookEvent(parsed);
   if (!event) {
+    const body = parsed && typeof parsed === "object"
+      ? parsed as Record<string, unknown>
+      : null;
+    const payment = body?.payment && typeof body.payment === "object"
+      ? body.payment as Record<string, unknown>
+      : null;
+    const paymentId = payment?.id;
+    console.warn("Asaas webhook payload structure rejected:", {
+      bodyIsObject: typeof parsed === "object" && parsed !== null,
+      eventIdType: body ? typeof body.id : "unavailable",
+      eventIdLength: typeof body?.id === "string" ? body.id.length : null,
+      eventTypeType: body ? typeof body.event : "unavailable",
+      eventType: typeof body?.event === "string" ? body.event : null,
+      paymentIsObject:
+        typeof body?.payment === "object" && body.payment !== null,
+      paymentIdType: payment ? typeof paymentId : "unavailable",
+      paymentIdHasPayPrefix:
+        typeof paymentId === "string" && paymentId.startsWith("pay_"),
+      paymentIdLength: typeof paymentId === "string" ? paymentId.length : null,
+    });
     return NextResponse.json({ error: "Evento não suportado." }, { status: 400 });
   }
 
