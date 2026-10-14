@@ -3,6 +3,10 @@ import "server-only";
 import type { ClientSession, Db, Document, ObjectId } from "mongodb";
 import { MongoServerError } from "mongodb";
 import { getPricingQuote } from "@/lib/plans";
+import {
+  canCompleteQuantityChange,
+  matchesQuantityChangePayment,
+} from "@/lib/quantity-change";
 
 export const ASAAS_PAYMENT_EVENT_TYPES = [
   "PAYMENT_CONFIRMED",
@@ -89,7 +93,13 @@ async function processInTransaction(
 ): Promise<"processed" | "duplicate"> {
   const subscriptions = db.collection("subscriptions");
   const subscription = await subscriptions.findOne(
-    { provider: "asaas", providerPaymentId: event.payment.id },
+    {
+      provider: "asaas",
+      $or: [
+        { providerPaymentId: event.payment.id },
+        { "quantityChange.providerPaymentId": event.payment.id },
+      ],
+    },
     { session },
   );
   if (!subscription) throw new Error("PAYMENT_NOT_LINKED");
@@ -100,10 +110,20 @@ async function processInTransaction(
     (event.payment.customer &&
       event.payment.customer !== subscription.providerCustomerId)
   ) throw new Error("PAYMENT_LINK_CONFLICT");
-  const pricing = getPricingQuote(subscription.requestedMaxUnits);
+  const quantityPayment = subscription.quantityChange?.providerPaymentId === event.payment.id;
+  const quantityChangeMatches = quantityPayment && matchesQuantityChangePayment(
+    subscription.quantityChange,
+    event.payment,
+  );
+  if (quantityPayment && !quantityChangeMatches) {
+    throw new Error("PAYMENT_LINK_CONFLICT");
+  }
+  const pricing = getPricingQuote(
+    quantityPayment ? subscription.quantityChange.toUnits : subscription.maxUnits,
+  );
   if (!pricing) throw new Error("SUBSCRIPTION_DATA_INVALID");
   if (
-    event.payment.value !== undefined &&
+    !quantityPayment && event.payment.value !== undefined &&
     Math.round(event.payment.value * 100) !== pricing.totalMonthlyCents
   ) throw new Error("PAYMENT_VALUE_CONFLICT");
 
@@ -119,21 +139,53 @@ async function processInTransaction(
     createdAt: now,
   }, { session });
 
-  const subscriptionSet: Record<string, unknown> = {
-    providerPaymentStatus: event.payment.status ?? event.event,
-    providerPaymentLastEvent: event.event,
-    providerPaymentUpdatedAt: now,
-    updatedAt: now,
-  };
+  const subscriptionSet: Record<string, unknown> = { updatedAt: now };
+  if (quantityPayment) {
+    subscriptionSet["quantityChange.providerPaymentStatus"] =
+      event.payment.status ?? event.event;
+    subscriptionSet["quantityChange.providerPaymentLastEvent"] = event.event;
+    subscriptionSet["quantityChange.providerPaymentUpdatedAt"] = now;
+  } else {
+    subscriptionSet.providerPaymentStatus = event.payment.status ?? event.event;
+    subscriptionSet.providerPaymentLastEvent = event.event;
+    subscriptionSet.providerPaymentUpdatedAt = now;
+  }
   if (event.event === "PAYMENT_CONFIRMED" || event.event === "PAYMENT_RECEIVED") {
     subscriptionSet.status = "active";
-    subscriptionSet.maxUnits = pricing.requestedUnits;
-    subscriptionSet.providerPaymentConfirmedAt = now;
+    if (quantityPayment) {
+      subscriptionSet["quantityChange.providerPaymentConfirmedAt"] = now;
+    } else {
+      subscriptionSet.providerPaymentConfirmedAt = now;
+    }
+    if (
+      quantityChangeMatches &&
+      canCompleteQuantityChange(subscription.quantityChange)
+    ) {
+      subscriptionSet.maxUnits = subscription.quantityChange.toUnits;
+      subscriptionSet.requestedMaxUnits = subscription.quantityChange.toUnits;
+      subscriptionSet["quantityChange.status"] = "completed";
+      subscriptionSet["quantityChange.completedAt"] = now;
+      subscriptionSet["quantityChange.updatedAt"] = now;
+    } else if (!quantityPayment) {
+      subscriptionSet.maxUnits = pricing.requestedUnits;
+    }
   } else if (event.event === "PAYMENT_OVERDUE") {
     subscriptionSet.status = "past_due";
+    if (quantityChangeMatches && subscription.quantityChange.status === "pending_payment") {
+      subscriptionSet["quantityChange.status"] = "overdue";
+      subscriptionSet["quantityChange.updatedAt"] = now;
+    }
   } else if (event.event === "PAYMENT_REFUNDED") {
     subscriptionSet.status = "past_due";
-    subscriptionSet.providerPaymentRefundedAt = now;
+    if (quantityPayment) {
+      subscriptionSet["quantityChange.providerPaymentRefundedAt"] = now;
+    } else {
+      subscriptionSet.providerPaymentRefundedAt = now;
+    }
+    if (quantityChangeMatches) {
+      subscriptionSet["quantityChange.status"] = "refunded";
+      subscriptionSet["quantityChange.updatedAt"] = now;
+    }
   }
   await subscriptions.updateOne(
     { _id: subscription._id },

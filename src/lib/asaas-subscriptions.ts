@@ -12,6 +12,7 @@ export interface AsaasSubscription {
   customer: string;
   billingType: "PIX" | "BOLETO";
   value: number;
+  status?: string;
   nextDueDate: string;
   cycle: "MONTHLY";
   externalReference?: string;
@@ -29,6 +30,7 @@ export interface CreateAsaasSubscriptionInput {
 
 export interface AsaasPayment {
   id: string;
+  customer?: string;
   subscription?: string;
   billingType: "PIX" | "BOLETO";
   status: string;
@@ -148,6 +150,7 @@ function parseSubscription(value: unknown): AsaasSubscription | null {
     customer: item.customer,
     billingType: item.billingType,
     value: item.value,
+    status: typeof item.status === "string" ? item.status : undefined,
     nextDueDate: item.nextDueDate,
     cycle: item.cycle,
     externalReference: typeof item.externalReference === "string"
@@ -171,6 +174,38 @@ export async function findAsaasSubscriptions(
   return data.map(parseSubscription).filter(
     (item): item is AsaasSubscription => item !== null,
   );
+}
+
+export async function getAsaasSubscription(
+  subscriptionId: string,
+): Promise<AsaasSubscription> {
+  const response = await requestAsaas(
+    `/subscriptions/${encodeURIComponent(subscriptionId)}`,
+    { method: "GET" },
+  );
+  const subscription = parseSubscription(response);
+  if (!subscription) {
+    throw new AsaasCustomerRequestError("ASAAS_INVALID_RESPONSE", 200, true);
+  }
+  return subscription;
+}
+
+export async function updateAsaasSubscriptionValue(
+  subscriptionId: string,
+  value: number,
+): Promise<AsaasSubscription> {
+  const response = await requestAsaas(
+    `/subscriptions/${encodeURIComponent(subscriptionId)}`,
+    {
+      method: "PUT",
+      body: JSON.stringify({ value, updatePendingPayments: true }),
+    },
+  );
+  const subscription = parseSubscription(response);
+  if (!subscription) {
+    throw new AsaasCustomerRequestError("ASAAS_INVALID_RESPONSE", 200, true);
+  }
+  return subscription;
 }
 
 export async function createAsaasSubscription(
@@ -197,6 +232,7 @@ function parsePayment(value: unknown): AsaasPayment | null {
   ) return null;
   return {
     id: item.id,
+    customer: typeof item.customer === "string" ? item.customer : undefined,
     subscription: typeof item.subscription === "string" ? item.subscription : undefined,
     billingType: item.billingType,
     status: item.status,
@@ -209,7 +245,7 @@ export async function listAsaasSubscriptionPayments(
   subscriptionId: string,
 ): Promise<AsaasPayment[]> {
   const response = await requestAsaas(
-    `/subscriptions/${encodeURIComponent(subscriptionId)}/payments`,
+    `/subscriptions/${encodeURIComponent(subscriptionId)}/payments?limit=100`,
     { method: "GET" },
   );
   const data = response && typeof response === "object"
