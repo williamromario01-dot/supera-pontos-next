@@ -24,26 +24,7 @@ function validWebhookToken(provided: string | null): boolean {
 }
 
 export async function POST(request: NextRequest) {
-  const provided = request.headers.get("asaas-access-token");
-  if (!validWebhookToken(provided)) {
-    const expected = process.env.ASAAS_WEBHOOK_TOKEN;
-    console.warn("Asaas webhook authentication failed:", {
-      expectedConfigured: Boolean(expected),
-      expectedLength: expected?.length ?? 0,
-      expectedFormatValid: Boolean(
-        expected &&
-        expected.length >= 32 &&
-        expected.length <= 255 &&
-        !/\s/.test(expected)
-      ),
-      receivedPresent: Boolean(provided),
-      receivedLength: provided?.length ?? 0,
-      sameByteLength:
-        expected && provided
-          ? Buffer.byteLength(expected, "utf8") ===
-            Buffer.byteLength(provided, "utf8")
-          : false,
-    });
+  if (!validWebhookToken(request.headers.get("asaas-access-token"))) {
     return NextResponse.json({ error: "Webhook não autorizado." }, { status: 401 });
   }
   const declaredLength = Number(request.headers.get("content-length") ?? 0);

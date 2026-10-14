@@ -54,7 +54,6 @@ export function parseAsaasPaymentWebhookEvent(
   const event = value as Record<string, unknown>;
   if (
     typeof event.id !== "string" || event.id.length < 3 || event.id.length > 150 ||
-    !/^[A-Za-z0-9_.:-]+$/.test(event.id) ||
     !isEventType(event.event) ||
     !event.payment || typeof event.payment !== "object"
   ) return null;
