@@ -5,6 +5,7 @@ import { MongoServerError } from "mongodb";
 import { getPricingQuote } from "@/lib/plans";
 import {
   canCompleteQuantityChange,
+  hasCapacityForQuantityChange,
   matchesQuantityChangePayment,
 } from "@/lib/quantity-change";
 import { activeSchoolFilter } from "@/lib/schools";
@@ -128,6 +129,26 @@ async function processInTransaction(
     Math.round(event.payment.value * 100) !== pricing.totalMonthlyCents
   ) throw new Error("PAYMENT_VALUE_CONFLICT");
 
+  const confirmsPayment = event.event === "PAYMENT_CONFIRMED" ||
+    event.event === "PAYMENT_RECEIVED";
+  let activeUnitsForCompletion: number | null = null;
+  let downgradeCapacitySafe = true;
+  if (
+    confirmsPayment &&
+    quantityChangeMatches &&
+    canCompleteQuantityChange(subscription.quantityChange) &&
+    subscription.quantityChange.type === "downgrade"
+  ) {
+    activeUnitsForCompletion = await db.collection("schools").countDocuments(
+      activeSchoolFilter(subscription.companyId as ObjectId),
+      { session },
+    );
+    downgradeCapacitySafe = hasCapacityForQuantityChange(
+      subscription.quantityChange,
+      activeUnitsForCompletion,
+    );
+  }
+
   const now = new Date();
   await db.collection("billingEvents").insertOne({
     provider: "asaas",
@@ -151,7 +172,7 @@ async function processInTransaction(
     subscriptionSet.providerPaymentLastEvent = event.event;
     subscriptionSet.providerPaymentUpdatedAt = now;
   }
-  if (event.event === "PAYMENT_CONFIRMED" || event.event === "PAYMENT_RECEIVED") {
+  if (confirmsPayment) {
     subscriptionSet.status = "active";
     if (quantityPayment) {
       subscriptionSet["quantityChange.providerPaymentConfirmedAt"] = now;
@@ -160,12 +181,22 @@ async function processInTransaction(
     }
     if (
       quantityChangeMatches &&
-      canCompleteQuantityChange(subscription.quantityChange)
+      canCompleteQuantityChange(subscription.quantityChange) &&
+      downgradeCapacitySafe
     ) {
       subscriptionSet.maxUnits = subscription.quantityChange.toUnits;
       subscriptionSet.requestedMaxUnits = subscription.quantityChange.toUnits;
       subscriptionSet["quantityChange.status"] = "completed";
       subscriptionSet["quantityChange.completedAt"] = now;
+      subscriptionSet["quantityChange.updatedAt"] = now;
+    } else if (
+      quantityChangeMatches &&
+      canCompleteQuantityChange(subscription.quantityChange) &&
+      subscription.quantityChange.type === "downgrade" &&
+      !downgradeCapacitySafe
+    ) {
+      subscriptionSet["quantityChange.status"] = "capacity_conflict";
+      subscriptionSet["quantityChange.failureCode"] = "ACTIVE_UNITS_EXCEED_DOWNGRADE_TARGET";
       subscriptionSet["quantityChange.updatedAt"] = now;
     } else if (!quantityPayment) {
       subscriptionSet.maxUnits = pricing.requestedUnits;
@@ -194,11 +225,12 @@ async function processInTransaction(
     { session },
   );
 
-  if (event.event === "PAYMENT_CONFIRMED" || event.event === "PAYMENT_RECEIVED") {
-    const usedUnits = await db.collection("schools").countDocuments(
-      activeSchoolFilter(subscription.companyId as ObjectId),
-      { session },
-    );
+  if (confirmsPayment) {
+    const usedUnits = activeUnitsForCompletion ??
+      await db.collection("schools").countDocuments(
+        activeSchoolFilter(subscription.companyId as ObjectId),
+        { session },
+      );
     await subscriptions.updateOne(
       { _id: subscription._id },
       { $set: { unitCount: usedUnits } },

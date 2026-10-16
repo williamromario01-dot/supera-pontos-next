@@ -6,7 +6,7 @@ import clientPromise from "@/lib/mongodb";
 import { DB_NAME } from "@/lib/saas";
 import { AsaasCustomerRequestError } from "@/lib/asaas";
 import {
-  getAsaasSubscription,
+  findAsaasSubscriptions,
   listAsaasSubscriptionPayments,
   updateAsaasSubscriptionValue,
   type AsaasPayment,
@@ -100,9 +100,18 @@ async function readRemoteState(
   subscription: Document,
   providerSubscriptionId: string,
   providerCustomerId: string,
+  currentMonthlyValueCents: number,
   targetMonthlyValueCents: number,
 ) {
-  const remote = await getAsaasSubscription(providerSubscriptionId);
+  const compatibleSubscriptions = await findAsaasSubscriptions(
+    `subscription:${subscription._id.toString()}`,
+    providerCustomerId,
+  );
+  if (
+    compatibleSubscriptions.length !== 1 ||
+    compatibleSubscriptions[0].id !== providerSubscriptionId
+  ) throw new QuantityChangeError("PROVIDER_SUBSCRIPTION_CONFLICT", 409);
+  const remote = compatibleSubscriptions[0];
   validateRemoteSubscription(
     remote,
     subscription,
@@ -110,17 +119,29 @@ async function readRemoteState(
     providerCustomerId,
   );
   const payments = await listAsaasSubscriptionPayments(providerSubscriptionId);
+  const remoteValueCents = cents(remote.value);
+  if (
+    remoteValueCents !== currentMonthlyValueCents &&
+    remoteValueCents !== targetMonthlyValueCents
+  ) throw new QuantityChangeError("PROVIDER_VALUE_CONFLICT", 409);
+  const expectedPendingValueCents = remoteValueCents === targetMonthlyValueCents
+    ? targetMonthlyValueCents
+    : currentMonthlyValueCents;
   const payment = matchingPendingPayment(
     payments,
     remote,
     providerSubscriptionId,
     providerCustomerId,
-    targetMonthlyValueCents,
+    expectedPendingValueCents,
   );
+  if (!payment) {
+    throw new QuantityChangeError("PROVIDER_PENDING_PAYMENT_CONFLICT", 409);
+  }
   return {
     remote,
     payment,
-    ready: cents(remote.value) === targetMonthlyValueCents && payment !== null,
+    ready: remoteValueCents === targetMonthlyValueCents,
+    canUpdate: remoteValueCents === currentMonthlyValueCents,
   };
 }
 
@@ -221,9 +242,6 @@ export async function POST(request: NextRequest) {
         { status: 409 },
       );
     }
-    if (requestedQuote.requestedUnits < currentUnits) {
-      throw new QuantityChangeError("DOWNGRADE_NOT_ENABLED", 409);
-    }
     if (requestedQuote.requestedUnits === currentUnits) {
       return NextResponse.json({
         currentUnits,
@@ -236,19 +254,22 @@ export async function POST(request: NextRequest) {
         asaasUpdatePerformed: false,
       });
     }
+    const changeType = requestedQuote.requestedUnits > currentUnits
+      ? "upgrade"
+      : "downgrade";
 
     const existingChange = subscription.quantityChange;
     if (isOpenQuantityChange(existingChange)) {
       const change = existingChange as Record<string, unknown>;
       if (
-        change.type === "upgrade" &&
+        change.type === changeType &&
         change.status === "pending_payment" &&
         change.fromUnits === currentUnits &&
         change.toUnits === requestedQuote.requestedUnits
       ) return NextResponse.json(responseForPending(subscription));
       const expiredPreparation = change.status === "preparing" &&
         change.lockExpiresAt instanceof Date && change.lockExpiresAt <= new Date();
-      const recoverable = change.type === "upgrade" &&
+      const recoverable = change.type === changeType &&
         change.fromUnits === currentUnits &&
         change.toUnits === requestedQuote.requestedUnits &&
         (change.status === "reconciliation_required" || expiredPreparation);
@@ -267,7 +288,7 @@ export async function POST(request: NextRequest) {
       requestedQuote.requestedUnits,
       activeSchoolCount,
     );
-    if (!quote || quote.changeType !== "upgrade") {
+    if (!quote || quote.changeType !== changeType) {
       throw new QuantityChangeError("QUANTITY_CHANGE_INVALID", 409);
     }
 
@@ -293,7 +314,7 @@ export async function POST(request: NextRequest) {
       {
         $set: {
           quantityChange: {
-            type: "upgrade",
+            type: changeType,
             status: "preparing",
             fromUnits: currentUnits,
             toUnits: quote.requestedUnits,
@@ -320,6 +341,7 @@ export async function POST(request: NextRequest) {
         subscription,
         providerSubscriptionId,
         providerCustomerId,
+        currentQuote.totalMonthlyCents,
         quote.totalMonthlyCents,
       );
     } catch (error) {
@@ -328,12 +350,16 @@ export async function POST(request: NextRequest) {
         subscription,
         providerSubscriptionId,
         providerCustomerId,
+        currentQuote.totalMonthlyCents,
         quote.totalMonthlyCents,
       );
     }
 
     let asaasUpdatePerformed = false;
     if (!snapshot.ready) {
+      if (!snapshot.canUpdate) {
+        throw new QuantityChangeError("PROVIDER_STATE_NOT_RECONCILED", 409);
+      }
       try {
         await updateAsaasSubscriptionValue(
           providerSubscriptionId,
@@ -347,6 +373,7 @@ export async function POST(request: NextRequest) {
         subscription,
         providerSubscriptionId,
         providerCustomerId,
+        currentQuote.totalMonthlyCents,
         quote.totalMonthlyCents,
       );
     }

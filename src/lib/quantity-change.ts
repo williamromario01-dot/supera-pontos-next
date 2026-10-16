@@ -3,6 +3,7 @@ export const OPEN_QUANTITY_CHANGE_STATUSES = [
   "reconciliation_required",
   "pending_payment",
   "overdue",
+  "capacity_conflict",
 ] as const;
 
 export type QuantityChangeStatus =
@@ -12,7 +13,7 @@ export type QuantityChangeStatus =
   | "failed";
 
 export interface QuantityChangeRecord {
-  type: "upgrade";
+  type: "upgrade" | "downgrade";
   status: QuantityChangeStatus;
   fromUnits: number;
   toUnits: number;
@@ -56,18 +57,21 @@ export function matchesQuantityChangePayment(
   if (!change || typeof change !== "object") return false;
   const item = change as Record<string, unknown>;
   if (
-    item.type !== "upgrade" ||
+    (item.type !== "upgrade" && item.type !== "downgrade") ||
     !["pending_payment", "overdue", "completed", "refunded"].includes(String(item.status)) ||
     !Number.isSafeInteger(item.fromUnits) ||
     !Number.isSafeInteger(item.toUnits) ||
-    (item.toUnits as number) <= (item.fromUnits as number) ||
+    (item.toUnits as number) === (item.fromUnits as number) ||
     !Number.isSafeInteger(item.targetMonthlyValueCents) ||
     (item.targetMonthlyValueCents as number) <= 0 ||
     typeof item.providerPaymentId !== "string" ||
     typeof item.providerSubscriptionId !== "string" ||
     typeof item.providerCustomerId !== "string"
   ) return false;
-  return payment.id === item.providerPaymentId &&
+  const directionIsValid = item.type === "upgrade"
+    ? (item.toUnits as number) > (item.fromUnits as number)
+    : (item.toUnits as number) < (item.fromUnits as number);
+  return directionIsValid && payment.id === item.providerPaymentId &&
     payment.subscription === item.providerSubscriptionId &&
     payment.customer === item.providerCustomerId &&
     typeof payment.value === "number" && Number.isFinite(payment.value) &&
@@ -76,4 +80,12 @@ export function matchesQuantityChangePayment(
 
 export function canCompleteQuantityChange(change: QuantityChangeRecord): boolean {
   return change.status === "pending_payment" || change.status === "overdue";
+}
+
+export function hasCapacityForQuantityChange(
+  change: QuantityChangeRecord,
+  activeUnits: number,
+): boolean {
+  return Number.isSafeInteger(activeUnits) && activeUnits >= 0 &&
+    (change.type !== "downgrade" || activeUnits <= change.toUnits);
 }
