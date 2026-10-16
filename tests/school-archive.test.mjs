@@ -80,4 +80,3 @@ test("one active school satisfies the operational prerequisite for 2 to 1", () =
   assert.equal(quote?.changeType, "downgrade");
   assert.equal(quote?.totalMonthlyCents, 11990);
 });
-
