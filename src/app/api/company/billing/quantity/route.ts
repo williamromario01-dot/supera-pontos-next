@@ -17,6 +17,7 @@ import {
   isOpenQuantityChange,
   parseQuantityChangeRequest,
 } from "@/lib/quantity-change";
+import { activeSchoolFilter } from "@/lib/schools";
 
 export const dynamic = "force-dynamic";
 
@@ -194,10 +195,7 @@ export async function POST(request: NextRequest) {
         { companyId: auth.companyId },
         { sort: { createdAt: -1 } },
       ),
-      db.collection("schools").countDocuments({
-        companyId: auth.companyId,
-        active: { $ne: false },
-      }),
+      db.collection("schools").countDocuments(activeSchoolFilter(auth.companyId)),
     ]);
     if (!company || company.status !== "active") {
       throw new QuantityChangeError("COMPANY_NOT_ACTIVE", 403);

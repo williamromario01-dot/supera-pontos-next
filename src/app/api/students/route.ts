@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { ObjectId } from "mongodb";
 import clientPromise from "@/lib/mongodb";
+import { isSchoolArchived } from "@/lib/schools";
 
 const ALLOWED_ROLES = ["super_admin", "admin", "educator"];
 
@@ -252,6 +253,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: "A escola informada não existe." },
         { status: 404 }
+      );
+    }
+
+    if (isSchoolArchived(school)) {
+      return NextResponse.json(
+        { error: "A unidade esta arquivada e nao aceita novas operacoes.", code: "SCHOOL_ARCHIVED" },
+        { status: 409 }
       );
     }
 

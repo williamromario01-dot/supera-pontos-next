@@ -4,6 +4,7 @@ import clientPromise from "@/lib/mongodb";
 import { authenticateRequest } from "@/lib/auth";
 import { getPricingQuote, quantityLabel } from "@/lib/plans";
 import { DB_NAME } from "@/lib/saas";
+import { isSchoolActive } from "@/lib/schools";
 
 export const dynamic = "force-dynamic";
 
@@ -49,7 +50,9 @@ export async function GET(request: NextRequest) {
         name: school.name,
         description: school.description ?? "",
         address: school.address ?? "",
-        active: school.active !== false,
+        status: school.status === "archived" ? "archived" : "active",
+        active: isSchoolActive(school),
+        archivedAt: school.archivedAt ?? null,
         metrics: { students, educators, classes, pointsDistributed: Number(totals[0]?.points ?? 0) },
       };
     }));
@@ -83,7 +86,7 @@ export async function GET(request: NextRequest) {
         currentPeriodStart: subscription.currentPeriodStart,
         currentPeriodEnd: subscription.currentPeriodEnd,
       } : null,
-      usage: { usedUnits: schools.length, maxUnits: Number(subscription?.maxUnits ?? 0) },
+      usage: { usedUnits: schools.filter((school) => school.active).length, maxUnits: Number(subscription?.maxUnits ?? 0) },
       metrics,
       schools,
     });

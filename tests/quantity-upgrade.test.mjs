@@ -95,7 +95,7 @@ test("incompatible downgrade is blocked before provider or local mutations", asy
     new URL("../src/app/api/company/billing/quantity/route.ts", import.meta.url),
     "utf8",
   );
-  const activeCount = source.indexOf('active: { $ne: false }');
+  const activeCount = source.indexOf("activeSchoolFilter(auth.companyId)");
   const downgradeBlock = source.indexOf('code: "DOWNGRADE_REQUIRES_UNIT_REDUCTION"');
   const providerRead = source.indexOf("await readRemoteState(", downgradeBlock);
   const providerWrite = source.indexOf("await updateAsaasSubscriptionValue(", downgradeBlock);

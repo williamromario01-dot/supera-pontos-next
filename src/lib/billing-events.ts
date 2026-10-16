@@ -7,6 +7,7 @@ import {
   canCompleteQuantityChange,
   matchesQuantityChangePayment,
 } from "@/lib/quantity-change";
+import { activeSchoolFilter } from "@/lib/schools";
 
 export const ASAAS_PAYMENT_EVENT_TYPES = [
   "PAYMENT_CONFIRMED",
@@ -195,7 +196,7 @@ async function processInTransaction(
 
   if (event.event === "PAYMENT_CONFIRMED" || event.event === "PAYMENT_RECEIVED") {
     const usedUnits = await db.collection("schools").countDocuments(
-      { companyId: subscription.companyId },
+      activeSchoolFilter(subscription.companyId as ObjectId),
       { session },
     );
     await subscriptions.updateOne(

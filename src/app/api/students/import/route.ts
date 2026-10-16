@@ -3,6 +3,7 @@ import { ObjectId } from "mongodb";
 import bcrypt from "bcryptjs";
 import * as XLSX from "xlsx";
 import clientPromise from "@/lib/mongodb";
+import { isSchoolArchived } from "@/lib/schools";
 
 async function getAuthenticatedUser(request: NextRequest) {
   const token = request.cookies.get("supera_session")?.value;
@@ -97,6 +98,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: "Escola não encontrada." },
         { status: 404 }
+      );
+    }
+
+    if (isSchoolArchived(school)) {
+      return NextResponse.json(
+        { error: "A unidade esta arquivada e nao aceita novas operacoes.", code: "SCHOOL_ARCHIVED" },
+        { status: 409 }
       );
     }
 

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { ObjectId } from "mongodb";
 import clientPromise from "@/lib/mongodb";
+import { isSchoolArchived } from "@/lib/schools";
 
 async function getAuthenticatedUser(request: NextRequest) {
   const token = request.cookies.get("supera_session")?.value;
@@ -266,6 +267,13 @@ export async function POST(request: NextRequest) {
           error: "Escola não encontrada.",
         },
         { status: 404 }
+      );
+    }
+
+    if (isSchoolArchived(school)) {
+      return NextResponse.json(
+        { error: "A unidade esta arquivada e nao aceita novas operacoes.", code: "SCHOOL_ARCHIVED" },
+        { status: 409 }
       );
     }
 

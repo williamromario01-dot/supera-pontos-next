@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
 import clientPromise from "@/lib/mongodb";
+import { isSchoolActive } from "@/lib/schools";
 
 const DB_NAME = "supera_pontos";
 
@@ -94,7 +95,9 @@ export async function GET(request: NextRequest) {
           address: school.address || "",
           phone: school.phone || "",
           email: school.email || "",
-          active: school.active !== false,
+          status: school.status === "archived" ? "archived" : "active",
+          active: isSchoolActive(school),
+          archivedAt: school.archivedAt ?? null,
           educators,
           administrators,
           students,

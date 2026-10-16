@@ -15,6 +15,7 @@ import {
   isProtectedLegacyCategory,
   normalizeCategoryName,
 } from "@/lib/category-scope";
+import { isSchoolArchived } from "@/lib/schools";
 
 const DB_NAME = "supera_pontos";
 const ALLOWED_ROLES = ["super_admin", "admin", "educator"] as const;
@@ -240,6 +241,14 @@ export async function PATCH(
       return NextResponse.json(
         { error: "A escola informada não foi encontrada." },
         { status: 404 }
+      );
+    }
+
+    const operationalSchool = await db.collection("schools").findOne({ _id: targetSchoolId });
+    if (isSchoolArchived(operationalSchool)) {
+      return NextResponse.json(
+        { error: "A unidade esta arquivada e nao aceita novas operacoes.", code: "SCHOOL_ARCHIVED" },
+        { status: 409 },
       );
     }
 

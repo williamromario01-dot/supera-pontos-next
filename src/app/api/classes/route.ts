@@ -10,6 +10,7 @@ import {
   hasSchoolAccess,
   schoolExists,
 } from "@/lib/auth";
+import { isSchoolArchived } from "@/lib/schools";
 
 const DB_NAME = "supera_pontos";
 
@@ -217,6 +218,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: "Escola não encontrada." },
         { status: 404 }
+      );
+    }
+
+    if (isSchoolArchived(school)) {
+      return NextResponse.json(
+        { error: "A unidade esta arquivada e nao aceita novas operacoes.", code: "SCHOOL_ARCHIVED" },
+        { status: 409 }
       );
     }
 

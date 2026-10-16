@@ -9,6 +9,7 @@ import {
   schoolExists,
 } from "@/lib/auth";
 import { categoryBelongsToSchool } from "@/lib/category-scope";
+import { isSchoolArchived } from "@/lib/schools";
 
 const DB_NAME = "supera_pontos";
 
@@ -184,6 +185,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: "O aluno não pertence à escola autorizada." },
         { status: 403 }
+      );
+    }
+
+    const school = await db.collection("schools").findOne({ _id: effectiveSchoolId });
+    if (!school) {
+      return NextResponse.json({ error: "Unidade nao encontrada." }, { status: 404 });
+    }
+    if (isSchoolArchived(school)) {
+      return NextResponse.json(
+        { error: "A unidade esta arquivada e nao aceita novas operacoes.", code: "SCHOOL_ARCHIVED" },
+        { status: 409 },
       );
     }
 

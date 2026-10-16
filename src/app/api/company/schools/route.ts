@@ -4,6 +4,7 @@ import clientPromise from "@/lib/mongodb";
 import { authenticateRequest } from "@/lib/auth";
 import { getUpgradeQuote } from "@/lib/plans";
 import { assertCompanySchoolIndexes, DB_NAME, isValidEmail, normalizeEmail } from "@/lib/saas";
+import { activeSchoolFilter } from "@/lib/schools";
 
 export const dynamic = "force-dynamic";
 
@@ -31,7 +32,7 @@ export async function POST(request: NextRequest) {
     const [company, subscription, usedUnits] = await Promise.all([
       db.collection("companies").findOne({ _id: auth.companyId }),
       db.collection("subscriptions").findOne({ companyId: auth.companyId }, { sort: { createdAt: -1 } }),
-      db.collection("schools").countDocuments({ companyId: auth.companyId }),
+      db.collection("schools").countDocuments(activeSchoolFilter(auth.companyId)),
     ]);
     if (!company || company.status !== "active") return NextResponse.json({ error: "A empresa precisa estar ativa para adicionar unidades.", companyStatus: company?.status ?? null }, { status: 403 });
     if (!subscription || subscription.status !== "active") return NextResponse.json({ error: "A assinatura precisa estar ativa para adicionar unidades.", subscriptionStatus: subscription?.status ?? null }, { status: 403 });
@@ -85,7 +86,7 @@ export async function POST(request: NextRequest) {
         }
         const inserted = await db.collection("schools").insertOne({
           companyId: auth.companyId, name, nameKey, description, address, phone, email,
-          active: true, createdAt: now, updatedAt: now, createdBy: auth.userId,
+          status: "active", active: true, createdAt: now, updatedAt: now, createdBy: auth.userId,
         }, { session });
         insertedId = inserted.insertedId.toString();
       });
