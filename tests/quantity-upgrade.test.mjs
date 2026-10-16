@@ -83,6 +83,33 @@ test("downgrade quote below real schools is rejected", () => {
   assert.equal(getQuantityChangeQuote(2, 1, 2), null);
 });
 
+test("invalid quantities are rejected server-side", () => {
+  assert.equal(parseQuantityChangeRequest({ requestedUnits: 0 }), 0);
+  assert.equal(getPricingQuote(0), null);
+  assert.equal(getPricingQuote(1.5), null);
+  assert.equal(getPricingQuote("1"), null);
+});
+
+test("incompatible downgrade is blocked before provider or local mutations", async () => {
+  const source = await readFile(
+    new URL("../src/app/api/company/billing/quantity/route.ts", import.meta.url),
+    "utf8",
+  );
+  const activeCount = source.indexOf('active: { $ne: false }');
+  const downgradeBlock = source.indexOf('code: "DOWNGRADE_REQUIRES_UNIT_REDUCTION"');
+  const providerRead = source.indexOf("await readRemoteState(", downgradeBlock);
+  const providerWrite = source.indexOf("await updateAsaasSubscriptionValue(", downgradeBlock);
+  const quantityChangeWrite = source.indexOf('quantityChange: {', downgradeBlock);
+
+  assert.ok(activeCount >= 0);
+  assert.ok(downgradeBlock > activeCount);
+  assert.ok(providerRead > downgradeBlock);
+  assert.ok(providerWrite > downgradeBlock);
+  assert.ok(quantityChangeWrite > downgradeBlock);
+  assert.match(source, /requestedQuote\.requestedUnits < activeSchoolCount/);
+  assert.doesNotMatch(source, /deleteOne|deleteMany|findOneAndDelete/);
+});
+
 test("route derives identity and price server-side and uses an atomic lock", async () => {
   const source = await readFile(
     new URL("../src/app/api/company/billing/quantity/route.ts", import.meta.url),

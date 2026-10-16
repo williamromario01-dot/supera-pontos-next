@@ -188,13 +188,16 @@ export async function POST(request: NextRequest) {
     const client = await clientPromise;
     const db = client.db(DB_NAME);
     subscriptions = db.collection("subscriptions");
-    const [company, subscription, schoolCount] = await Promise.all([
+    const [company, subscription, activeSchoolCount] = await Promise.all([
       db.collection("companies").findOne({ _id: auth.companyId }),
       subscriptions.findOne(
         { companyId: auth.companyId },
         { sort: { createdAt: -1 } },
       ),
-      db.collection("schools").countDocuments({ companyId: auth.companyId }),
+      db.collection("schools").countDocuments({
+        companyId: auth.companyId,
+        active: { $ne: false },
+      }),
     ]);
     if (!company || company.status !== "active") {
       throw new QuantityChangeError("COMPANY_NOT_ACTIVE", 403);
@@ -211,8 +214,14 @@ export async function POST(request: NextRequest) {
     if (!currentQuote || !Number.isSafeInteger(subscription.unitCount)) {
       throw new QuantityChangeError("SUBSCRIPTION_DATA_INVALID", 409);
     }
-    if (requestedQuote.requestedUnits < schoolCount) {
-      throw new QuantityChangeError("DOWNGRADE_BELOW_CURRENT_USAGE", 409);
+    if (requestedQuote.requestedUnits < activeSchoolCount) {
+      return NextResponse.json(
+        {
+          error: `Para reduzir seu plano para ${requestedQuote.requestedUnits} unidade${requestedQuote.requestedUnits === 1 ? "" : "s"}, primeiro reduza a quantidade de unidades ativas da empresa para no máximo ${requestedQuote.requestedUnits}.`,
+          code: "DOWNGRADE_REQUIRES_UNIT_REDUCTION",
+        },
+        { status: 409 },
+      );
     }
     if (requestedQuote.requestedUnits < currentUnits) {
       throw new QuantityChangeError("DOWNGRADE_NOT_ENABLED", 409);
@@ -258,7 +267,7 @@ export async function POST(request: NextRequest) {
     const quote = getQuantityChangeQuote(
       currentUnits,
       requestedQuote.requestedUnits,
-      schoolCount,
+      activeSchoolCount,
     );
     if (!quote || quote.changeType !== "upgrade") {
       throw new QuantityChangeError("QUANTITY_CHANGE_INVALID", 409);
