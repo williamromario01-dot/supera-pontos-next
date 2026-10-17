@@ -36,6 +36,9 @@ export interface AsaasPayment {
   status: string;
   dueDate: string;
   value: number;
+  paymentDate?: string;
+  confirmedDate?: string;
+  externalReference?: string;
 }
 
 export interface AsaasPixQrCode {
@@ -238,7 +241,24 @@ function parsePayment(value: unknown): AsaasPayment | null {
     status: item.status,
     dueDate: item.dueDate,
     value: item.value,
+    paymentDate: typeof item.paymentDate === "string" ? item.paymentDate : undefined,
+    confirmedDate: typeof item.confirmedDate === "string" ? item.confirmedDate : undefined,
+    externalReference: typeof item.externalReference === "string"
+      ? item.externalReference
+      : undefined,
   };
+}
+
+export async function getAsaasPayment(paymentId: string): Promise<AsaasPayment> {
+  const response = await requestAsaas(
+    `/payments/${encodeURIComponent(paymentId)}`,
+    { method: "GET" },
+  );
+  const payment = parsePayment(response);
+  if (!payment) {
+    throw new AsaasCustomerRequestError("ASAAS_INVALID_RESPONSE", 200, true);
+  }
+  return payment;
 }
 
 export async function listAsaasSubscriptionPayments(

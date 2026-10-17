@@ -2,7 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { authenticateRequest } from "@/lib/auth";
 import clientPromise from "@/lib/mongodb";
 import { DB_NAME } from "@/lib/saas";
-import { getAsaasPaymentPixQrCode } from "@/lib/asaas-subscriptions";
+import {
+  getAsaasPayment,
+  getAsaasPaymentPixQrCode,
+} from "@/lib/asaas-subscriptions";
 import { AsaasCustomerRequestError } from "@/lib/asaas";
 
 export const dynamic = "force-dynamic";
@@ -30,18 +33,32 @@ export async function GET(
       companyId: auth.companyId,
       provider: "asaas",
       providerEnvironment: "sandbox",
-      providerPaymentId: paymentId,
     },
-    { projection: { _id: 1, providerPaymentId: 1 } },
+    {
+      sort: { createdAt: -1 },
+      projection: {
+        _id: 1,
+        providerSubscriptionId: 1,
+        providerCustomerId: 1,
+      },
+    },
   );
   if (!subscription) {
     return NextResponse.json({ error: "Cobrança não encontrada." }, { status: 404 });
   }
 
   try {
+    const payment = await getAsaasPayment(paymentId);
+    if (
+      payment.subscription !== subscription.providerSubscriptionId ||
+      payment.customer !== subscription.providerCustomerId ||
+      payment.status !== "PENDING" ||
+      payment.billingType !== "PIX"
+    ) {
+      return NextResponse.json({ error: "Cobrança não disponível para Pix." }, { status: 404 });
+    }
     const qrCode = await getAsaasPaymentPixQrCode(paymentId);
     return NextResponse.json({
-      paymentId,
       encodedImage: qrCode.encodedImage,
       payload: qrCode.payload,
       expirationDate: qrCode.expirationDate,

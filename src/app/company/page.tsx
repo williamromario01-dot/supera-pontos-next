@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
-import { Building2, GraduationCap, Plus, School, Users } from "lucide-react";
+import { Building2, CreditCard, GraduationCap, Plus, School, Users } from "lucide-react";
 
 type Dashboard = {
   company: { tradeName: string; legalName: string; cnpj: string; status: string };
@@ -61,7 +61,7 @@ export default function CompanyPage() {
     <header className="border-b bg-white"><div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-5">
       <div><Link href="/dashboard" className="text-sm font-semibold text-orange-600">← Home</Link>
       <h1 className="mt-2 text-2xl font-black">{data.company.tradeName}</h1><p className="text-sm text-slate-500">Painel empresarial consolidado</p></div>
-      <button onClick={() => setShowForm(!showForm)} className="flex items-center gap-2 rounded-xl bg-orange-500 px-4 py-3 font-bold text-white"><Plus size={18}/>Adicionar unidade</button>
+      <div className="flex gap-2"><Link href="/company/billing" className="flex items-center gap-2 rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 font-bold text-orange-700"><CreditCard size={18}/>Financeiro</Link><button onClick={() => setShowForm(!showForm)} className="flex items-center gap-2 rounded-xl bg-orange-500 px-4 py-3 font-bold text-white"><Plus size={18}/>Adicionar unidade</button></div>
     </div></header>
     <div className="mx-auto max-w-6xl space-y-6 px-4 py-8">
       {error && <p className="rounded-xl bg-red-50 p-4 text-sm font-semibold text-red-700">{error}</p>}
