@@ -27,9 +27,46 @@ test("provider renewal and real pending payment remain distinct", () => {
   assert.match(summary, /renewalPaymentGenerated/);
 });
 
-test("browser uses the internal summary and offers no quantity mutation", () => {
+test("browser uses only internal billing APIs", () => {
   assert.match(page, /api\/company\/billing\/summary/);
-  assert.match(page, /Alterações são apenas informativas/);
+  assert.match(page, /api\/company\/billing\/quantity/);
   assert.doesNotMatch(page, /api\.asaas|providerSubscriptionId|providerCustomerId/);
-  assert.doesNotMatch(page, /method:\s*["']POST["']/);
+});
+
+test("quantity modal supports the trusted 1 to 10 quote", () => {
+  assert.match(page, /Alterar quantidade de unidades/);
+  assert.match(page, /Quantidade atual contratada/);
+  assert.match(page, /data\.pricingOptions.*\.map/);
+  assert.match(page, /option\.pricePerUnitCents/);
+  assert.match(page, /option\.totalMonthlyCents/);
+  assert.match(page, /Você está aumentando seu plano/);
+  assert.match(page, /Você está reduzindo seu plano/);
+  assert.match(page, /Esta já é a quantidade contratada/);
+});
+
+test("unsafe and conflicting choices cannot be confirmed in the UI", () => {
+  assert.match(page, /selected<plan\.activeUnits/);
+  assert.match(page, /same\|\|blocked\|\|pending/);
+  assert.match(page, /primeiro arquive as unidades excedentes/);
+  assert.match(page, /Confirmar aumento do plano/);
+  assert.match(page, /Confirmar redução do plano/);
+});
+
+test("POST sends only requestedUnits and blocks double submission", () => {
+  assert.match(page, /JSON\.stringify\(\{requestedUnits:selected\}\)/);
+  assert.match(page, /if\(posting\.current/);
+  assert.match(page, /posting\.current=true/);
+  assert.doesNotMatch(page, /JSON\.stringify\(\{[^}]*companyId/);
+  assert.doesNotMatch(page, /JSON\.stringify\(\{[^}]*price/);
+  assert.doesNotMatch(page, /JSON\.stringify\(\{[^}]*monthlyValue/);
+});
+
+test("operation feedback is sanitized and summary is refetched", () => {
+  assert.match(page, /DOWNGRADE_REQUIRES_UNIT_REDUCTION/);
+  assert.match(page, /PROVIDER_PENDING_PAYMENT_CONFLICT/);
+  assert.match(page, /QUANTITY_CHANGE_IN_PROGRESS/);
+  assert.match(page, /Seu plano será atualizado após a confirmação do pagamento/);
+  assert.match(page, /finally\{await load\(\)/);
+  assert.doesNotMatch(page, /stack|payload bruto/);
+  assert.doesNotMatch(page, /createPayment|createAsaas|\/payments/);
 });
