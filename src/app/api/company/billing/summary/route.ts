@@ -22,7 +22,7 @@ function cents(value: number): number {
   return Math.round(value * 100);
 }
 
-function publicPayment(payment: AsaasPayment) {
+function publicPayment(payment: AsaasPayment, relatedToQuantityChange = false) {
   return {
     status: payment.status,
     statusLabel: paymentStatusLabel(payment.status),
@@ -31,8 +31,9 @@ function publicPayment(payment: AsaasPayment) {
     paymentDate: payment.paymentDate ?? payment.confirmedDate ?? null,
     billingType: payment.billingType,
     billingTypeLabel: billingTypeLabel(payment.billingType),
-    action: payment.status === "PENDING" && payment.billingType === "PIX"
-      ? { label: "Ver Pix", href: `/api/company/billing/payment/${payment.id}/pix` }
+    relatedToQuantityChange,
+    action: payment.status === "PENDING"
+      ? { label: "Pagar agora", href: `/api/company/billing/payment/${payment.id}/pix` }
       : null,
   };
 }
@@ -140,8 +141,12 @@ export async function GET(request: NextRequest) {
           valueCents: cents(providerSubscription.value),
           paymentGenerated: renewalPaymentGenerated,
         },
-        pendingPayment: pending ? publicPayment(pending) : null,
-        payments: orderedPayments.map(publicPayment),
+        pendingPayment: pending ? publicPayment(
+          pending,
+          subscription.quantityChange?.status === "pending_payment" &&
+            subscription.quantityChange?.providerPaymentId === pending.id,
+        ) : null,
+        payments: orderedPayments.map((payment) => publicPayment(payment)),
       };
     } catch {
       // O resumo local continua disponível; erros do provedor nunca são expostos.

@@ -52,8 +52,7 @@ export async function GET(
     if (
       payment.subscription !== subscription.providerSubscriptionId ||
       payment.customer !== subscription.providerCustomerId ||
-      payment.status !== "PENDING" ||
-      payment.billingType !== "PIX"
+      payment.status !== "PENDING"
     ) {
       return NextResponse.json({ error: "Cobrança não disponível para Pix." }, { status: 404 });
     }

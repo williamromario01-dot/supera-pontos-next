@@ -44,7 +44,7 @@ export interface AsaasPayment {
 export interface AsaasPixQrCode {
   encodedImage: string;
   payload: string;
-  expirationDate: string;
+  expirationDate?: string;
 }
 
 async function requestAsaas(
@@ -290,12 +290,18 @@ export async function getAsaasPaymentPixQrCode(
   const item = response as Record<string, unknown>;
   if (
     typeof item.encodedImage !== "string" ||
+    item.encodedImage.length < 16 ||
+    item.encodedImage.length > 2_000_000 ||
+    !/^[A-Za-z0-9+/]+={0,2}$/.test(item.encodedImage) ||
     typeof item.payload !== "string" ||
-    typeof item.expirationDate !== "string"
+    item.payload.length < 10 ||
+    item.payload.length > 10_000
   ) throw new AsaasCustomerRequestError("ASAAS_INVALID_RESPONSE", 200, true);
   return {
     encodedImage: item.encodedImage,
     payload: item.payload,
-    expirationDate: item.expirationDate,
+    expirationDate: typeof item.expirationDate === "string"
+      ? item.expirationDate
+      : undefined,
   };
 }
