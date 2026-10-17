@@ -9,6 +9,7 @@ import {
   matchesQuantityChangePayment,
 } from "@/lib/quantity-change";
 import { activeSchoolFilter } from "@/lib/schools";
+import { PAST_DUE_GRACE_PERIOD_MS } from "@/lib/subscription-access";
 
 export const ASAAS_PAYMENT_EVENT_TYPES = [
   "PAYMENT_CONFIRMED",
@@ -173,7 +174,7 @@ async function processInTransaction(
     subscriptionSet.providerPaymentUpdatedAt = now;
   }
   if (confirmsPayment) {
-    subscriptionSet.status = "active";
+    if (!quantityPayment) subscriptionSet.status = "active";
     if (quantityPayment) {
       subscriptionSet["quantityChange.providerPaymentConfirmedAt"] = now;
     } else {
@@ -202,26 +203,48 @@ async function processInTransaction(
       subscriptionSet.maxUnits = pricing.requestedUnits;
     }
   } else if (event.event === "PAYMENT_OVERDUE") {
-    subscriptionSet.status = "past_due";
+    if (!quantityPayment) {
+      subscriptionSet.status = "past_due";
+      const pastDueAt = subscription.pastDueAt instanceof Date
+        ? subscription.pastDueAt
+        : now;
+      subscriptionSet.pastDueAt = pastDueAt;
+      subscriptionSet.gracePeriodEndsAt = subscription.gracePeriodEndsAt instanceof Date
+        ? subscription.gracePeriodEndsAt
+        : new Date(pastDueAt.getTime() + PAST_DUE_GRACE_PERIOD_MS);
+    }
     if (quantityChangeMatches && subscription.quantityChange.status === "pending_payment") {
       subscriptionSet["quantityChange.status"] = "overdue";
       subscriptionSet["quantityChange.updatedAt"] = now;
     }
   } else if (event.event === "PAYMENT_REFUNDED") {
-    subscriptionSet.status = "past_due";
     if (quantityPayment) {
       subscriptionSet["quantityChange.providerPaymentRefundedAt"] = now;
     } else {
+      subscriptionSet.status = "past_due";
       subscriptionSet.providerPaymentRefundedAt = now;
+      const pastDueAt = subscription.pastDueAt instanceof Date
+        ? subscription.pastDueAt
+        : now;
+      subscriptionSet.pastDueAt = pastDueAt;
+      subscriptionSet.gracePeriodEndsAt = subscription.gracePeriodEndsAt instanceof Date
+        ? subscription.gracePeriodEndsAt
+        : new Date(pastDueAt.getTime() + PAST_DUE_GRACE_PERIOD_MS);
     }
     if (quantityChangeMatches) {
       subscriptionSet["quantityChange.status"] = "refunded";
       subscriptionSet["quantityChange.updatedAt"] = now;
     }
   }
+  const subscriptionUpdate: Record<string, unknown> = { $set: subscriptionSet };
+  if (confirmsPayment && !quantityPayment && subscription.status === "past_due") {
+    subscriptionSet.lastPastDueAt = subscription.pastDueAt ?? now;
+    subscriptionSet.lastReactivatedAt = now;
+    subscriptionUpdate.$unset = { pastDueAt: "", gracePeriodEndsAt: "" };
+  }
   await subscriptions.updateOne(
     { _id: subscription._id },
-    { $set: subscriptionSet },
+    subscriptionUpdate,
     { session },
   );
 
@@ -236,11 +259,13 @@ async function processInTransaction(
       { $set: { unitCount: usedUnits } },
       { session },
     );
-    await db.collection("companies").updateOne(
-      { _id: subscription.companyId as ObjectId },
-      { $set: { status: "active", updatedAt: now } },
-      { session },
-    );
+    if (!quantityPayment) {
+      await db.collection("companies").updateOne(
+        { _id: subscription.companyId as ObjectId },
+        { $set: { status: "active", updatedAt: now } },
+        { session },
+      );
+    }
   }
   return "processed";
 }

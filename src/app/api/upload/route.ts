@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { put } from "@vercel/blob";
 import clientPromise from "@/lib/mongodb";
+import { getOperationalAccessForAuth, subscriptionPastDueResponse } from "@/lib/subscription-access";
 
 const MAX_FILE_SIZE = 1 * 1024 * 1024; // 1 MB
 const MAX_IMAGES_PER_SCHOOL = 50;
@@ -85,6 +86,13 @@ export async function POST(request: NextRequest) {
           status: 403,
         }
       );
+    }
+
+    const client = await clientPromise;
+    const db = client.db("supera_pontos");
+    const access = await getOperationalAccessForAuth(db, user);
+    if (!access.canPerformOperationalMutation) {
+      return NextResponse.json(subscriptionPastDueResponse, { status: 403 });
     }
 
     /*
@@ -207,9 +215,6 @@ export async function POST(request: NextRequest) {
      *
      * Cada escola pode possuir no máximo 50 imagens.
      */
-
-    const client = await clientPromise;
-    const db = client.db("supera_pontos");
 
     const imageCount = await db
       .collection("uploadedImages")

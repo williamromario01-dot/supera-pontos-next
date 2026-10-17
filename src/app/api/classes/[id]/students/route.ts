@@ -9,6 +9,7 @@ import {
   hasRequiredRole,
   hasSchoolAccess,
 } from "@/lib/auth";
+import { getOperationalAccessForAuth, subscriptionPastDueResponse } from "@/lib/subscription-access";
 
 const DB_NAME = "supera_pontos";
 const ALLOWED_ROLES = ["super_admin", "admin", "educator"] as const;
@@ -270,7 +271,11 @@ export async function POST(
       return result.response;
     }
 
-    const { db, classId, schoolId } = result;
+    const { auth, db, classId, schoolId } = result;
+    const access = await getOperationalAccessForAuth(db, auth);
+    if (!access.canPerformOperationalMutation) {
+      return NextResponse.json(subscriptionPastDueResponse, { status: 403 });
+    }
     const schoolVariants = getSchoolVariants(schoolId);
 
     const body = await request.json();
@@ -465,7 +470,11 @@ export async function DELETE(
       return result.response;
     }
 
-    const { db, classId, schoolId } = result;
+    const { auth, db, classId, schoolId } = result;
+    const access = await getOperationalAccessForAuth(db, auth);
+    if (!access.canPerformOperationalMutation) {
+      return NextResponse.json(subscriptionPastDueResponse, { status: 403 });
+    }
     const schoolVariants = getSchoolVariants(schoolId);
 
     const body = await request.json();

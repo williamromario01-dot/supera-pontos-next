@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
 import clientPromise from "@/lib/mongodb";
+import { getOperationalAccessForAuth, subscriptionPastDueResponse } from "@/lib/subscription-access";
 
 const DB_NAME = "supera_pontos";
 
@@ -312,6 +313,10 @@ export async function PATCH(
       classData,
       db,
     } = result;
+    const access = await getOperationalAccessForAuth(db, user);
+    if (!access.canPerformOperationalMutation) {
+      return NextResponse.json(subscriptionPastDueResponse, { status: 403 });
+    }
 
     const body = await request.json();
 
@@ -564,10 +569,15 @@ export async function DELETE(
     }
 
     const {
+      user,
       classObjectId,
       classData,
       db,
     } = result;
+    const access = await getOperationalAccessForAuth(db, user);
+    if (!access.canPerformOperationalMutation) {
+      return NextResponse.json(subscriptionPastDueResponse, { status: 403 });
+    }
 
     const studentIds = Array.isArray(
       classData.studentIds

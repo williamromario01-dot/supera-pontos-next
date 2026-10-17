@@ -3,6 +3,7 @@ import bcrypt from "bcryptjs";
 import { ObjectId } from "mongodb";
 import clientPromise from "@/lib/mongodb";
 import { isSchoolArchived } from "@/lib/schools";
+import { getOperationalAccessForAuth, subscriptionPastDueResponse } from "@/lib/subscription-access";
 
 const ALLOWED_ROLES = ["super_admin", "admin", "educator"];
 
@@ -177,6 +178,10 @@ export async function POST(request: NextRequest) {
         { error: "Você não tem permissão para cadastrar alunos." },
         { status: 403 }
       );
+    }
+    const access = await getOperationalAccessForAuth(db, currentUser);
+    if (!access.canPerformOperationalMutation) {
+      return NextResponse.json(subscriptionPastDueResponse, { status: 403 });
     }
 
     const body = await request.json();

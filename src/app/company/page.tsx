@@ -10,6 +10,7 @@ type Dashboard = {
   usage: { usedUnits: number; maxUnits: number };
   metrics: { students: number; educators: number; classes: number; pointsDistributed: number };
   schools: Array<{ id: string; name: string; address: string; active: boolean; metrics: Dashboard["metrics"] }>;
+  access?: { state: "active" | "grace_period" | "blocked"; daysPastDue: number; gracePeriodEndsAt: string | null };
 };
 
 export default function CompanyPage() {
@@ -64,6 +65,8 @@ export default function CompanyPage() {
       <div className="flex gap-2"><Link href="/company/billing" className="flex items-center gap-2 rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 font-bold text-orange-700"><CreditCard size={18}/>Financeiro</Link><button onClick={() => setShowForm(!showForm)} className="flex items-center gap-2 rounded-xl bg-orange-500 px-4 py-3 font-bold text-white"><Plus size={18}/>Adicionar unidade</button></div>
     </div></header>
     <div className="mx-auto max-w-6xl space-y-6 px-4 py-8">
+      {data.access?.state === "grace_period" && <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-900"><b>Pagamento em atraso</b><p className="mt-1 text-sm">Identificamos um pagamento em atraso. Regularize até {data.access.gracePeriodEndsAt ? new Date(data.access.gracePeriodEndsAt).toLocaleDateString("pt-BR") : "a data limite"} para evitar a suspensão temporária das operações.</p><Link href="/company/billing" className="mt-3 inline-block font-bold text-orange-700">Ir para Financeiro</Link></div>}
+      {data.access?.state === "blocked" && <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-red-900"><b>Operações temporariamente suspensas</b><p className="mt-1 text-sm">Regularize o pagamento para voltar a utilizar as funções operacionais. Seus dados permanecem preservados.</p><Link href="/company/billing" className="mt-3 inline-block font-bold text-orange-700">Ir para Financeiro</Link></div>}
       {error && <p className="rounded-xl bg-red-50 p-4 text-sm font-semibold text-red-700">{error}</p>}
       {message && <p className="rounded-xl bg-green-50 p-4 text-sm font-semibold text-green-700">{message}</p>}
       <section className="grid gap-4 md:grid-cols-2">

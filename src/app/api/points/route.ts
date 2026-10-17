@@ -10,6 +10,7 @@ import {
 } from "@/lib/auth";
 import { categoryBelongsToSchool } from "@/lib/category-scope";
 import { isSchoolArchived } from "@/lib/schools";
+import { getOperationalAccessForAuth, subscriptionPastDueResponse } from "@/lib/subscription-access";
 
 const DB_NAME = "supera_pontos";
 
@@ -130,6 +131,10 @@ export async function POST(request: NextRequest) {
 
     const client = await clientPromise;
     const db = client.db(DB_NAME);
+    const access = await getOperationalAccessForAuth(db, auth);
+    if (!access.canPerformOperationalMutation) {
+      return NextResponse.json(subscriptionPastDueResponse, { status: 403 });
+    }
 
     const users = db.collection("users");
     const categories = db.collection("categories");

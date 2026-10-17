@@ -5,6 +5,7 @@ import { authenticateRequest } from "@/lib/auth";
 import { getUpgradeQuote } from "@/lib/plans";
 import { assertCompanySchoolIndexes, DB_NAME, isValidEmail, normalizeEmail } from "@/lib/saas";
 import { activeSchoolFilter } from "@/lib/schools";
+import { getOperationalAccessForAuth, subscriptionPastDueResponse } from "@/lib/subscription-access";
 
 export const dynamic = "force-dynamic";
 
@@ -28,6 +29,8 @@ export async function POST(request: NextRequest) {
 
     const client = await clientPromise;
     const db = client.db(DB_NAME);
+    const access = await getOperationalAccessForAuth(db, auth);
+    if (!access.canPerformOperationalMutation) return NextResponse.json(subscriptionPastDueResponse, { status: 403 });
     await assertCompanySchoolIndexes(db);
     const [company, subscription, usedUnits] = await Promise.all([
       db.collection("companies").findOne({ _id: auth.companyId }),
@@ -35,7 +38,7 @@ export async function POST(request: NextRequest) {
       db.collection("schools").countDocuments(activeSchoolFilter(auth.companyId)),
     ]);
     if (!company || company.status !== "active") return NextResponse.json({ error: "A empresa precisa estar ativa para adicionar unidades.", companyStatus: company?.status ?? null }, { status: 403 });
-    if (!subscription || subscription.status !== "active") return NextResponse.json({ error: "A assinatura precisa estar ativa para adicionar unidades.", subscriptionStatus: subscription?.status ?? null }, { status: 403 });
+    if (!subscription || !["active", "past_due"].includes(subscription.status)) return NextResponse.json({ error: "A assinatura precisa estar ativa para adicionar unidades.", subscriptionStatus: subscription?.status ?? null }, { status: 403 });
 
     const maxUnits = Number(subscription.maxUnits ?? 0);
     if (usedUnits >= maxUnits) {
@@ -64,7 +67,7 @@ export async function POST(request: NextRequest) {
           {
             _id: subscription._id,
             companyId: auth.companyId,
-            status: "active",
+            status: { $in: ["active", "past_due"] },
             $expr: {
               $lt: [
                 { $max: [{ $ifNull: ["$unitCount", 0] }, usedUnits] },

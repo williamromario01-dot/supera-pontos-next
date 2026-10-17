@@ -15,6 +15,7 @@ import {
   listAsaasSubscriptionPayments,
   type AsaasPayment,
 } from "@/lib/asaas-subscriptions";
+import { getSubscriptionAccessState } from "@/lib/subscription-access";
 
 export const dynamic = "force-dynamic";
 
@@ -32,7 +33,7 @@ function publicPayment(payment: AsaasPayment, relatedToQuantityChange = false) {
     billingType: payment.billingType,
     billingTypeLabel: billingTypeLabel(payment.billingType),
     relatedToQuantityChange,
-    action: payment.status === "PENDING"
+    action: ["PENDING", "OVERDUE"].includes(payment.status)
       ? { label: "Pagar agora", href: `/api/company/billing/payment/${payment.id}/pix` }
       : null,
   };
@@ -76,6 +77,7 @@ export async function GET(request: NextRequest) {
 
     const maxUnits = Number(subscription.maxUnits ?? 0);
     const pricing = getPricingQuote(maxUnits);
+    const access = getSubscriptionAccessState(subscription);
     const availableUnits = Math.max(0, maxUnits - activeUnits);
     const quantityChange = isPendingQuantityChange(subscription.quantityChange)
       ? {
@@ -129,7 +131,9 @@ export async function GET(request: NextRequest) {
       const orderedPayments = [...payments].sort((left, right) =>
         right.dueDate.localeCompare(left.dueDate)
       );
-      const pending = orderedPayments.find((payment) => payment.status === "PENDING") ?? null;
+      const pending = orderedPayments.find((payment) =>
+        payment.status === "PENDING" || payment.status === "OVERDUE"
+      ) ?? null;
       const renewalPaymentGenerated = orderedPayments.some(
         (payment) => payment.dueDate === providerSubscription.nextDueDate,
       );
@@ -154,6 +158,11 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       company: { status: company.status },
+      access: {
+        state: access.state,
+        daysPastDue: access.daysPastDue,
+        gracePeriodEndsAt: access.gracePeriodEndsAt,
+      },
       subscription: {
         status: subscription.status,
         statusLabel: subscriptionStatusLabel(subscription.status),

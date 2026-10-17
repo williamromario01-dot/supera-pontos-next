@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
 import clientPromise from "@/lib/mongodb";
+import { getOperationalAccessForAuth, subscriptionPastDueResponse } from "@/lib/subscription-access";
 
 async function getAuthenticatedUser(request: NextRequest) {
   const token = request.cookies.get("supera_session")?.value;
@@ -70,6 +71,10 @@ export async function POST(request: NextRequest) {
 
     const client = await clientPromise;
     const db = client.db("supera_pontos");
+    const access = await getOperationalAccessForAuth(db, user);
+    if (!access.canPerformOperationalMutation) {
+      return NextResponse.json(subscriptionPastDueResponse, { status: 403 });
+    }
 
     const productObjectId = new ObjectId(productId);
 

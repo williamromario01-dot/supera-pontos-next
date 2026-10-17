@@ -4,6 +4,7 @@ import bcrypt from "bcryptjs";
 import * as XLSX from "xlsx";
 import clientPromise from "@/lib/mongodb";
 import { isSchoolArchived } from "@/lib/schools";
+import { getOperationalAccessForAuth, subscriptionPastDueResponse } from "@/lib/subscription-access";
 
 async function getAuthenticatedUser(request: NextRequest) {
   const token = request.cookies.get("supera_session")?.value;
@@ -86,6 +87,10 @@ export async function POST(request: NextRequest) {
 
     const client = await clientPromise;
     const db = client.db("supera_pontos");
+    const access = await getOperationalAccessForAuth(db, user);
+    if (!access.canPerformOperationalMutation) {
+      return NextResponse.json(subscriptionPastDueResponse, { status: 403 });
+    }
 
     const schools = db.collection("schools");
     const users = db.collection("users");

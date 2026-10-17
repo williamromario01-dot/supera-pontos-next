@@ -48,7 +48,7 @@ test("payment ownership and status are revalidated server-side", () => {
   assert.match(pixRoute, /companyId: auth\.companyId/);
   assert.match(pixRoute, /payment\.subscription !== subscription\.providerSubscriptionId/);
   assert.match(pixRoute, /payment\.customer !== subscription\.providerCustomerId/);
-  assert.match(pixRoute, /payment\.status !== "PENDING"/);
+  assert.match(pixRoute, /\["PENDING", "OVERDUE"\]\.includes\(payment\.status\)/);
   assert.doesNotMatch(pixRoute, /request\.json\(/);
 });
 
@@ -59,7 +59,7 @@ test("BOLETO remains eligible for server-side Pix data without billing mutation"
 });
 
 test("received payments lose the action and remain in history as paid", () => {
-  assert.match(summary, /action: payment\.status === "PENDING"/);
+  assert.match(summary, /action: \["PENDING", "OVERDUE"\]\.includes\(payment\.status\)/);
   assert.match(summary, /payments: orderedPayments\.map/);
   assert.match(summary, /paymentStatusLabel\(payment\.status\)/);
 });

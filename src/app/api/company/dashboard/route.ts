@@ -5,6 +5,7 @@ import { authenticateRequest } from "@/lib/auth";
 import { getPricingQuote, quantityLabel } from "@/lib/plans";
 import { DB_NAME } from "@/lib/saas";
 import { isSchoolActive } from "@/lib/schools";
+import { getSubscriptionAccessState } from "@/lib/subscription-access";
 
 export const dynamic = "force-dynamic";
 
@@ -62,6 +63,7 @@ export async function GET(request: NextRequest) {
       classes: total.classes + school.metrics.classes,
       pointsDistributed: total.pointsDistributed + school.metrics.pointsDistributed,
     }), { students: 0, educators: 0, classes: 0, pointsDistributed: 0 });
+    const access = getSubscriptionAccessState(subscription);
 
     return NextResponse.json({
       company: {
@@ -86,6 +88,11 @@ export async function GET(request: NextRequest) {
         currentPeriodStart: subscription.currentPeriodStart,
         currentPeriodEnd: subscription.currentPeriodEnd,
       } : null,
+      access: {
+        state: access.state,
+        daysPastDue: access.daysPastDue,
+        gracePeriodEndsAt: access.gracePeriodEndsAt,
+      },
       usage: { usedUnits: schools.filter((school) => school.active).length, maxUnits: Number(subscription?.maxUnits ?? 0) },
       metrics,
       schools,

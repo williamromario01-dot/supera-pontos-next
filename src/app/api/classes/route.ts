@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
 import clientPromise from "@/lib/mongodb";
+import { getOperationalAccessForAuth, subscriptionPastDueResponse } from "@/lib/subscription-access";
 import {
   authenticateRequest,
   AuthInfrastructureError,
@@ -82,7 +83,6 @@ export async function GET(request: NextRequest) {
 
     const client = await clientPromise;
     const db = client.db(DB_NAME);
-
     const classes = await db
       .collection("classes")
       .find({ schoolId: schoolObjectId })
@@ -209,6 +209,10 @@ export async function POST(request: NextRequest) {
 
     const client = await clientPromise;
     const db = client.db(DB_NAME);
+    const access = await getOperationalAccessForAuth(db, auth);
+    if (!access.canPerformOperationalMutation) {
+      return NextResponse.json(subscriptionPastDueResponse, { status: 403 });
+    }
 
     const school = await db.collection("schools").findOne({
       _id: schoolObjectId,

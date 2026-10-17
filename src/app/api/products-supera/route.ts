@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import clientPromise from "@/lib/mongodb";
 import { ObjectId } from "mongodb";
+import { getOperationalAccessForAuth, subscriptionPastDueResponse } from "@/lib/subscription-access";
 
 const DB_NAME = "supera_pontos";
 
@@ -453,6 +454,10 @@ export async function POST(
 
     const client = await clientPromise;
     const db = client.db(DB_NAME);
+    const access = await getOperationalAccessForAuth(db, user);
+    if (!access.canPerformOperationalMutation) {
+      return NextResponse.json(subscriptionPastDueResponse, { status: 403 });
+    }
 
     /**
      * Confirma que a escola existe.

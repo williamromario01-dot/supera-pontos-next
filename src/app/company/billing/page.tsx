@@ -35,6 +35,7 @@ type Option = {
 };
 type Data = {
   company: { status: string };
+  access?: { state: "active" | "grace_period" | "blocked"; daysPastDue: number; gracePeriodEndsAt: string | null };
   subscription: null | {
     statusLabel: string;
     maxUnits: number;
@@ -286,6 +287,8 @@ export default function Billing() {
         </div>
       </header>
       <div className="mx-auto max-w-6xl space-y-5 px-4 py-8">
+        {data.access?.state === "grace_period" && <Notice warning title="Pagamento em atraso">Você está no período de tolerância. Regularize até {data.access.gracePeriodEndsAt ? new Date(data.access.gracePeriodEndsAt).toLocaleDateString("pt-BR") : "a data limite"} para evitar a suspensão temporária das operações.</Notice>}
+        {data.access?.state === "blocked" && <Notice warning title="Pagamento em atraso">Algumas funções do SUPERPONTOS estão temporariamente suspensas até a regularização. Seus dados continuam preservados.</Notice>}
         {feedback && (
           <Notice warning={feedback.tone !== "success"} title={feedback.title}>
             {feedback.text}

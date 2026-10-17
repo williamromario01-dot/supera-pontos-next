@@ -16,6 +16,7 @@ import {
   normalizeCategoryName,
 } from "@/lib/category-scope";
 import { isSchoolArchived } from "@/lib/schools";
+import { getOperationalAccessForAuth, subscriptionPastDueResponse } from "@/lib/subscription-access";
 
 const DB_NAME = "supera_pontos";
 const ALLOWED_ROLES = ["super_admin", "admin", "educator"] as const;
@@ -210,6 +211,10 @@ export async function PATCH(
 
     const client = await clientPromise;
     const db = client.db(DB_NAME);
+    const access = await getOperationalAccessForAuth(db, auth);
+    if (!access.canPerformOperationalMutation) {
+      return NextResponse.json(subscriptionPastDueResponse, { status: 403 });
+    }
     const categories = db.collection("categories");
 
     const currentCategory = await categories.findOne({
@@ -565,6 +570,10 @@ export async function DELETE(
 
     const client = await clientPromise;
     const db = client.db(DB_NAME);
+    const access = await getOperationalAccessForAuth(db, auth);
+    if (!access.canPerformOperationalMutation) {
+      return NextResponse.json(subscriptionPastDueResponse, { status: 403 });
+    }
     const categories = db.collection("categories");
 
     const category = await categories.findOne({
