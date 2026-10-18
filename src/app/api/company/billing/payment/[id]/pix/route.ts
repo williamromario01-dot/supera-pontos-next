@@ -40,6 +40,9 @@ export async function GET(
         _id: 1,
         providerSubscriptionId: 1,
         providerCustomerId: 1,
+        providerPaymentId: 1,
+        "quantityChange.providerPaymentId": 1,
+        "reactivation.providerPaymentId": 1,
       },
     },
   );
@@ -49,6 +52,12 @@ export async function GET(
 
   try {
     const payment = await getAsaasPayment(paymentId);
+    const linkedLocally = paymentId === subscription.providerPaymentId ||
+      paymentId === subscription.quantityChange?.providerPaymentId ||
+      paymentId === subscription.reactivation?.providerPaymentId;
+    if (!linkedLocally) {
+      return NextResponse.json({ error: "Cobrança não disponível para Pix." }, { status: 404 });
+    }
     if (
       payment.subscription !== subscription.providerSubscriptionId ||
       payment.customer !== subscription.providerCustomerId ||

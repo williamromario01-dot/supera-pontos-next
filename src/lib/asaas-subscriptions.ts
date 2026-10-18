@@ -234,6 +234,30 @@ export async function updateAsaasSubscriptionEndDate(
   return subscription;
 }
 
+export async function reactivateAsaasSubscription(
+  subscriptionId: string,
+  input: { value: number; nextDueDate: string },
+): Promise<AsaasSubscription> {
+  const response = await requestAsaas(
+    `/subscriptions/${encodeURIComponent(subscriptionId)}`,
+    {
+      method: "PUT",
+      body: JSON.stringify({
+        status: "ACTIVE",
+        endDate: null,
+        value: input.value,
+        nextDueDate: input.nextDueDate,
+        updatePendingPayments: false,
+      }),
+    },
+  );
+  const subscription = parseSubscription(response);
+  if (!subscription) {
+    throw new AsaasCustomerRequestError("ASAAS_INVALID_RESPONSE", 200, true);
+  }
+  return subscription;
+}
+
 export async function createAsaasSubscription(
   input: CreateAsaasSubscriptionInput,
 ): Promise<AsaasSubscription> {

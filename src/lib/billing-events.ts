@@ -8,6 +8,7 @@ import {
   hasCapacityForQuantityChange,
   matchesQuantityChangePayment,
 } from "@/lib/quantity-change";
+import { matchesReactivationPayment } from "@/lib/subscription-reactivation";
 import { activeSchoolFilter } from "@/lib/schools";
 import { PAST_DUE_GRACE_PERIOD_MS } from "@/lib/subscription-access";
 
@@ -101,6 +102,7 @@ async function processInTransaction(
       $or: [
         { providerPaymentId: event.payment.id },
         { "quantityChange.providerPaymentId": event.payment.id },
+        { "reactivation.providerPaymentId": event.payment.id },
       ],
     },
     { session },
@@ -121,12 +123,24 @@ async function processInTransaction(
   if (quantityPayment && !quantityChangeMatches) {
     throw new Error("PAYMENT_LINK_CONFLICT");
   }
+  const reactivationPayment = subscription.reactivation?.providerPaymentId === event.payment.id;
+  const reactivationMatches = reactivationPayment && matchesReactivationPayment(
+    subscription.reactivation,
+    event.payment,
+  );
+  if (reactivationPayment && !reactivationMatches) {
+    throw new Error("PAYMENT_LINK_CONFLICT");
+  }
   const pricing = getPricingQuote(
-    quantityPayment ? subscription.quantityChange.toUnits : subscription.maxUnits,
+    quantityPayment
+      ? subscription.quantityChange.toUnits
+      : reactivationPayment
+        ? subscription.reactivation.requestedUnits
+        : subscription.maxUnits,
   );
   if (!pricing) throw new Error("SUBSCRIPTION_DATA_INVALID");
   if (
-    !quantityPayment && event.payment.value !== undefined &&
+    !quantityPayment && !reactivationPayment && event.payment.value !== undefined &&
     Math.round(event.payment.value * 100) !== pricing.totalMonthlyCents
   ) throw new Error("PAYMENT_VALUE_CONFLICT");
 
@@ -168,6 +182,10 @@ async function processInTransaction(
       event.payment.status ?? event.event;
     subscriptionSet["quantityChange.providerPaymentLastEvent"] = event.event;
     subscriptionSet["quantityChange.providerPaymentUpdatedAt"] = now;
+  } else if (reactivationPayment) {
+    subscriptionSet["reactivation.providerPaymentStatus"] = event.payment.status ?? event.event;
+    subscriptionSet["reactivation.providerPaymentLastEvent"] = event.event;
+    subscriptionSet["reactivation.providerPaymentUpdatedAt"] = now;
   } else {
     subscriptionSet.providerPaymentStatus = event.payment.status ?? event.event;
     subscriptionSet.providerPaymentLastEvent = event.event;
@@ -177,10 +195,21 @@ async function processInTransaction(
     if (!quantityPayment) subscriptionSet.status = "active";
     if (quantityPayment) {
       subscriptionSet["quantityChange.providerPaymentConfirmedAt"] = now;
+    } else if (reactivationPayment) {
+      subscriptionSet["reactivation.providerPaymentConfirmedAt"] = now;
     } else {
       subscriptionSet.providerPaymentConfirmedAt = now;
     }
-    if (
+    if (reactivationMatches) {
+      subscriptionSet.cancelAtPeriodEnd = false;
+      subscriptionSet.maxUnits = subscription.reactivation.requestedUnits;
+      subscriptionSet.requestedMaxUnits = subscription.reactivation.requestedUnits;
+      subscriptionSet["reactivation.status"] = "completed";
+      subscriptionSet["reactivation.completedAt"] = now;
+      subscriptionSet["reactivation.updatedAt"] = now;
+      subscriptionSet.reactivatedAt = now;
+      subscriptionSet.reactivatedByPaymentId = event.payment.id;
+    } else if (
       quantityChangeMatches &&
       canCompleteQuantityChange(subscription.quantityChange) &&
       downgradeCapacitySafe
@@ -199,11 +228,14 @@ async function processInTransaction(
       subscriptionSet["quantityChange.status"] = "capacity_conflict";
       subscriptionSet["quantityChange.failureCode"] = "ACTIVE_UNITS_EXCEED_DOWNGRADE_TARGET";
       subscriptionSet["quantityChange.updatedAt"] = now;
-    } else if (!quantityPayment) {
+    } else if (!quantityPayment && !reactivationPayment) {
       subscriptionSet.maxUnits = pricing.requestedUnits;
     }
   } else if (event.event === "PAYMENT_OVERDUE") {
-    if (!quantityPayment) {
+    if (reactivationMatches) {
+      subscriptionSet["reactivation.status"] = "overdue";
+      subscriptionSet["reactivation.updatedAt"] = now;
+    } else if (!quantityPayment) {
       subscriptionSet.status = "past_due";
       const pastDueAt = subscription.pastDueAt instanceof Date
         ? subscription.pastDueAt
@@ -218,7 +250,11 @@ async function processInTransaction(
       subscriptionSet["quantityChange.updatedAt"] = now;
     }
   } else if (event.event === "PAYMENT_REFUNDED") {
-    if (quantityPayment) {
+    if (reactivationMatches) {
+      subscriptionSet["reactivation.status"] = "refunded";
+      subscriptionSet["reactivation.providerPaymentRefundedAt"] = now;
+      subscriptionSet["reactivation.updatedAt"] = now;
+    } else if (quantityPayment) {
       subscriptionSet["quantityChange.providerPaymentRefundedAt"] = now;
     } else {
       subscriptionSet.status = "past_due";

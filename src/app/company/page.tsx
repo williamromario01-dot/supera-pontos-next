@@ -11,7 +11,7 @@ type Dashboard = {
   metrics: { students: number; educators: number; classes: number; pointsDistributed: number };
   schools: Array<{ id: string; name: string; address: string; active: boolean; metrics: Dashboard["metrics"] }>;
   access?: {
-    state: "active" | "grace_period" | "blocked" | "cancellation_scheduled" | "cancelled";
+    state: "active" | "grace_period" | "blocked" | "cancellation_scheduled" | "cancelled" | "reactivation_pending";
     daysPastDue: number;
     gracePeriodEndsAt: string | null;
     cancellationEffectiveAt: string | null;
@@ -74,6 +74,7 @@ export default function CompanyPage() {
       {data.access?.state === "blocked" && <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-red-900"><b>Operações temporariamente suspensas</b><p className="mt-1 text-sm">Regularize o pagamento para voltar a utilizar as funções operacionais. Seus dados permanecem preservados.</p><Link href="/company/billing" className="mt-3 inline-block font-bold text-orange-700">Ir para Financeiro</Link></div>}
       {data.access?.state === "cancellation_scheduled" && <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-900"><b>Cancelamento agendado</b><p className="mt-1 text-sm">Seu plano permanecerá disponível até {data.access.cancellationEffectiveAt ? new Date(data.access.cancellationEffectiveAt).toLocaleDateString("pt-BR", { timeZone: "UTC" }) : "a data informada no financeiro"}.</p><Link href="/company/billing" className="mt-3 inline-block font-bold text-orange-700">Ver assinatura</Link></div>}
       {data.access?.state === "cancelled" && <div className="rounded-xl border border-slate-300 bg-slate-100 p-4 text-slate-900"><b>Assinatura encerrada</b><p className="mt-1 text-sm">Novas operações estão suspensas, mas seus dados permanecem preservados.</p><Link href="/company/billing" className="mt-3 inline-block font-bold text-orange-700">Reativar assinatura</Link></div>}
+      {data.access?.state === "reactivation_pending" && <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-900"><b>Reativação aguardando pagamento</b><p className="mt-1 text-sm">Conclua o pagamento no Financeiro para voltar a utilizar as funções operacionais.</p><Link href="/company/billing" className="mt-3 inline-block font-bold text-orange-700">Ir para Financeiro</Link></div>}
       {error && <p className="rounded-xl bg-red-50 p-4 text-sm font-semibold text-red-700">{error}</p>}
       {message && <p className="rounded-xl bg-green-50 p-4 text-sm font-semibold text-green-700">{message}</p>}
       <section className="grid gap-4 md:grid-cols-2">

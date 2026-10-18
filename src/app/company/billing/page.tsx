@@ -21,6 +21,7 @@ type Payment = {
   paymentDate: string | null;
   billingTypeLabel: string;
   relatedToQuantityChange?: boolean;
+  relatedToReactivation?: boolean;
   action: null | { label: string; href: string };
 };
 type PixData = {
@@ -35,7 +36,7 @@ type Option = {
 };
 type Data = {
   company: { status: string };
-  access?: { state: "active" | "grace_period" | "blocked" | "cancellation_scheduled" | "cancelled"; daysPastDue: number; gracePeriodEndsAt: string | null; cancellationEffectiveAt: string | null };
+  access?: { state: "active" | "grace_period" | "blocked" | "cancellation_scheduled" | "cancelled" | "reactivation_pending"; daysPastDue: number; gracePeriodEndsAt: string | null; cancellationEffectiveAt: string | null };
   cancellation?: {
     state: "none" | "cancellation_scheduled" | "cancelled";
     cancelAtPeriodEnd: boolean;
@@ -61,6 +62,12 @@ type Data = {
     statusLabel: string;
   };
   pricingOptions?: Option[];
+  reactivation?: {
+    status: "none" | "reactivation_pending";
+    requestedUnits: number;
+    pricePerUnitCents: number | null;
+    targetMonthlyValueCents: number | null;
+  };
   remote: {
     available: boolean;
     warning: string | null;
@@ -106,7 +113,10 @@ export default function Billing() {
     [pixError, setPixError] = useState(""),
     [pix, setPix] = useState<PixData | null>(null),
     [copied, setCopied] = useState(false),
-    [cancellationProcessing, setCancellationProcessing] = useState(false);
+    [cancellationProcessing, setCancellationProcessing] = useState(false),
+    [reactivationModal, setReactivationModal] = useState(false),
+    [reactivationUnits, setReactivationUnits] = useState(1),
+    [reactivationProcessing, setReactivationProcessing] = useState(false);
   const posting = useRef(false);
   async function load() {
     setError("");
@@ -234,6 +244,42 @@ export default function Billing() {
       setProcessing(false);
     }
   }
+  function openReactivation() {
+    if (!data?.subscription || data.access?.state !== "cancelled") return;
+    setReactivationUnits(Math.max(1, data.subscription.activeUnits));
+    setFeedback(null);
+    setReactivationModal(true);
+  }
+  async function submitReactivation() {
+    if (reactivationProcessing) return;
+    setReactivationProcessing(true);
+    setFeedback(null);
+    try {
+      const response = await fetch("/api/company/billing/reactivation", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ requestedUnits: reactivationUnits }),
+      });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error);
+      setReactivationModal(false);
+      setFeedback({
+        tone: "success",
+        title: "Reativação aguardando pagamento",
+        text: "Conclua o pagamento indicado para liberar novamente as funções do SUPERPONTOS.",
+      });
+      await load();
+    } catch (e) {
+      setFeedback({
+        tone: "error",
+        title: "Reativação não iniciada",
+        text: e instanceof Error ? e.message : "Tente novamente mais tarde.",
+      });
+    } finally {
+      setReactivationProcessing(false);
+    }
+  }
+
   async function changeCancellation(method: "POST" | "DELETE") {
     if (cancellationProcessing) return;
     if (method === "POST" && !window.confirm("Confirma o cancelamento ao fim do período já pago?")) return;
@@ -296,6 +342,7 @@ export default function Billing() {
   const plan = data.subscription,
     payments = data.remote.payments ?? [],
     option = data.pricingOptions?.find((o) => o.units === selected),
+    reactivationOption = data.pricingOptions?.find((o) => o.units === reactivationUnits),
     same = selected === plan?.maxUnits,
     blocked = Boolean(plan && selected < plan.activeUnits),
     upgrade = Boolean(plan && selected > plan.maxUnits),
@@ -333,7 +380,8 @@ export default function Billing() {
         {data.access?.state === "grace_period" && <Notice warning title="Pagamento em atraso">Você está no período de tolerância. Regularize até {data.access.gracePeriodEndsAt ? new Date(data.access.gracePeriodEndsAt).toLocaleDateString("pt-BR") : "a data limite"} para evitar a suspensão temporária das operações.</Notice>}
         {data.access?.state === "blocked" && <Notice warning title="Pagamento em atraso">Algumas funções do SUPERPONTOS estão temporariamente suspensas até a regularização. Seus dados continuam preservados.</Notice>}
         {data.access?.state === "cancellation_scheduled" && <Notice warning title="Cancelamento agendado">A assinatura permanece disponível até {data.cancellation?.effectiveAt ? new Date(data.cancellation.effectiveAt).toLocaleDateString("pt-BR", { timeZone: "UTC" }) : "o fim do período contratado"}.</Notice>}
-        {data.access?.state === "cancelled" && <Notice warning title="Assinatura encerrada">Novas operações estão suspensas. Seus dados continuam preservados.</Notice>}
+        {data.access?.state === "cancelled" && <Notice warning title="Assinatura encerrada">Seus dados continuam preservados. Reative sua assinatura para voltar a utilizar as funções do SUPERPONTOS.</Notice>}
+        {data.access?.state === "reactivation_pending" && <Notice warning title="Reativação aguardando pagamento">Conclua o pagamento pendente para voltar a utilizar as funções do SUPERPONTOS.</Notice>}
         {feedback && (
           <Notice warning={feedback.tone !== "success"} title={feedback.title}>
             {feedback.text}
@@ -451,13 +499,17 @@ export default function Billing() {
                   <p className="mt-1 text-sm text-slate-500">
                     {data.cancellation?.state === "cancellation_scheduled"
                       ? "O cancelamento pode ser desfeito antes da data efetiva."
-                      : data.cancellation?.state === "cancelled"
-                        ? "Entre em contato para reativar sua assinatura."
+                      : data.access?.state === "reactivation_pending"
+                        ? "A reativação será concluída após a confirmação do pagamento."
+                        : data.cancellation?.state === "cancelled"
+                          ? "Seus dados e unidades existentes serão preservados."
                         : "O cancelamento ocorre somente ao fim do período já pago."}
                   </p>
                 </div>
                 {data.cancellation?.canRevert ? (
                   <button disabled={cancellationProcessing} onClick={() => void changeCancellation("DELETE")} className="rounded-xl border border-orange-500 px-4 py-3 font-bold text-orange-700 disabled:opacity-50">Desfazer cancelamento</button>
+                ) : data.cancellation?.reactivationAvailable && data.access?.state === "cancelled" ? (
+                  <button onClick={openReactivation} className="rounded-xl bg-orange-500 px-4 py-3 font-bold text-white">Reativar assinatura</button>
                 ) : data.cancellation?.state === "none" ? (
                   <button disabled={pending || cancellationProcessing || data.access?.state === "blocked"} onClick={() => void changeCancellation("POST")} className="rounded-xl border border-red-300 px-4 py-3 font-bold text-red-700 disabled:opacity-50">Cancelar assinatura</button>
                 ) : null}
@@ -497,6 +549,39 @@ export default function Billing() {
               {pix.expirationDate && <p className="text-center text-sm text-slate-500">Este código Pix é válido até {new Date(pix.expirationDate).toLocaleString("pt-BR")}.</p>}
             </div>}
             <button onClick={() => void refreshPixStatus()} className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl border p-3 font-bold"><RefreshCw size={18} />Atualizar status</button>
+          </div>
+        </div>
+      )}
+      {reactivationModal && plan && reactivationOption && (
+        <div className="fixed inset-0 z-[70] grid place-items-center bg-slate-950/50 p-4" role="dialog" aria-modal="true" aria-label="Reativar assinatura">
+          <div className="w-full max-w-lg rounded-3xl bg-white p-6">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-2xl font-black">Reativar assinatura</h2>
+                <p className="mt-2 text-sm text-slate-600">Seus dados e unidades existentes serão preservados.</p>
+              </div>
+              <button disabled={reactivationProcessing} onClick={() => setReactivationModal(false)} aria-label="Fechar reativação"><X /></button>
+            </div>
+            <label className="mt-6 block font-bold">
+              Quantidade de unidades
+              <select value={reactivationUnits} onChange={(e) => setReactivationUnits(Number(e.target.value))} className="mt-2 w-full rounded-xl border px-4 py-3">
+                {(data.pricingOptions ?? []).filter((item) => item.units >= plan.activeUnits).map((item) => (
+                  <option key={item.units} value={item.units}>{item.units} unidade{item.units === 1 ? "" : "s"}</option>
+                ))}
+              </select>
+            </label>
+            <dl className="mt-5 grid grid-cols-2 gap-3 rounded-2xl bg-slate-50 p-5 text-sm">
+              <dt>Quantidade</dt><dd className="text-right font-bold">{reactivationOption.units}</dd>
+              <dt>Valor por unidade</dt><dd className="text-right font-bold">{money(reactivationOption.pricePerUnitCents)}</dd>
+              <dt>Nova mensalidade</dt><dd className="text-right font-bold">{money(reactivationOption.totalMonthlyCents)}/mês</dd>
+            </dl>
+            <p className="mt-4 text-sm text-slate-600">A liberação ocorrerá somente após a confirmação financeira válida.</p>
+            <div className="mt-6 flex justify-end gap-3">
+              <button disabled={reactivationProcessing} onClick={() => setReactivationModal(false)} className="rounded-xl border px-5 py-3 font-bold">Agora não</button>
+              <button disabled={reactivationProcessing || reactivationUnits < plan.activeUnits} onClick={() => void submitReactivation()} className="rounded-xl bg-orange-500 px-5 py-3 font-bold text-white disabled:opacity-50">
+                {reactivationProcessing ? "Processando..." : "Confirmar reativação"}
+              </button>
+            </div>
           </div>
         </div>
       )}

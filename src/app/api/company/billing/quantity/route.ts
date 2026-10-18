@@ -18,6 +18,7 @@ import {
   parseQuantityChangeRequest,
 } from "@/lib/quantity-change";
 import { activeSchoolFilter } from "@/lib/schools";
+import { isOpenReactivation } from "@/lib/subscription-reactivation";
 
 export const dynamic = "force-dynamic";
 
@@ -233,6 +234,9 @@ export async function POST(request: NextRequest) {
     ) {
       throw new QuantityChangeError("CANCELLATION_IN_PROGRESS", 409);
     }
+    if (isOpenReactivation(subscription.reactivation)) {
+      throw new QuantityChangeError("REACTIVATION_IN_PROGRESS", 409);
+    }
     if (subscription.provider !== "asaas" || subscription.providerEnvironment !== "sandbox") {
       throw new QuantityChangeError("BILLING_PROVIDER_CONFLICT", 409);
     }
@@ -311,6 +315,9 @@ export async function POST(request: NextRequest) {
         status: "active",
         cancelAtPeriodEnd: { $ne: true },
         "cancellationOperation.status": {
+        "reactivation.status": {
+          $nin: ["preparing", "pending_payment", "reconciliation_required"],
+        },
           $nin: ["preparing", "reconciliation_required"],
         },
         maxUnits: currentUnits,

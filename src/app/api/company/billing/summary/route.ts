@@ -17,6 +17,7 @@ import {
 } from "@/lib/asaas-subscriptions";
 import { getSubscriptionAccessState } from "@/lib/subscription-access";
 import { getCancellationAccessState } from "@/lib/subscription-cancellation";
+import { isOpenReactivation } from "@/lib/subscription-reactivation";
 
 export const dynamic = "force-dynamic";
 
@@ -24,7 +25,7 @@ function cents(value: number): number {
   return Math.round(value * 100);
 }
 
-function publicPayment(payment: AsaasPayment, relatedToQuantityChange = false) {
+function publicPayment(payment: AsaasPayment, relatedToQuantityChange = false, relatedToReactivation = false) {
   return {
     status: payment.status,
     statusLabel: paymentStatusLabel(payment.status),
@@ -33,6 +34,7 @@ function publicPayment(payment: AsaasPayment, relatedToQuantityChange = false) {
     paymentDate: payment.paymentDate ?? payment.confirmedDate ?? null,
     billingType: payment.billingType,
     billingTypeLabel: billingTypeLabel(payment.billingType),
+    relatedToReactivation,
     relatedToQuantityChange,
     action: ["PENDING", "OVERDUE"].includes(payment.status)
       ? { label: "Pagar agora", href: `/api/company/billing/payment/${payment.id}/pix` }
@@ -80,6 +82,19 @@ export async function GET(request: NextRequest) {
     const pricing = getPricingQuote(maxUnits);
     const access = getSubscriptionAccessState(subscription);
     const cancellation = getCancellationAccessState(subscription);
+    const reactivationOpen = isOpenReactivation(subscription.reactivation);
+    const reactivation = {
+      status: reactivationOpen ? "reactivation_pending" : "none",
+      requestedUnits: reactivationOpen
+        ? Number(subscription.reactivation.requestedUnits)
+        : Math.max(1, activeUnits),
+      pricePerUnitCents: reactivationOpen
+        ? Number(subscription.reactivation.pricePerUnitCents)
+        : null,
+      targetMonthlyValueCents: reactivationOpen
+        ? Number(subscription.reactivation.targetMonthlyValueCents)
+        : null,
+    };
     const availableUnits = Math.max(0, maxUnits - activeUnits);
     const quantityChange = isPendingQuantityChange(subscription.quantityChange)
       ? {
@@ -151,6 +166,8 @@ export async function GET(request: NextRequest) {
           pending,
           subscription.quantityChange?.status === "pending_payment" &&
             subscription.quantityChange?.providerPaymentId === pending.id,
+          subscription.reactivation?.status === "pending_payment" &&
+            subscription.reactivation?.providerPaymentId === pending.id,
         ) : null,
         payments: orderedPayments.map((payment) => publicPayment(payment)),
       };
@@ -168,7 +185,9 @@ export async function GET(request: NextRequest) {
       },
       subscription: {
         status: subscription.status,
-        statusLabel: cancellation.state === "cancelled"
+        statusLabel: reactivationOpen
+          ? "Reativação aguardando pagamento"
+          : cancellation.state === "cancelled"
           ? "Cancelado"
           : cancellation.state === "cancellation_scheduled"
             ? "Cancelamento agendado"
@@ -190,10 +209,11 @@ export async function GET(request: NextRequest) {
         cancelAtPeriodEnd: subscription.cancelAtPeriodEnd === true,
         effectiveAt: cancellation.effectiveAt,
         canRevert: cancellation.state === "cancellation_scheduled",
-        reactivationAvailable: cancellation.state === "cancelled",
+        reactivationAvailable: cancellation.state === "cancelled" && !reactivationOpen,
       },
       quantityChange,
       pricingOptions,
+      reactivation,
       remote,
     });
   } catch (error) {

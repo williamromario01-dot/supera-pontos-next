@@ -1,10 +1,11 @@
 import { ObjectId, type Db, type Document } from "mongodb";
 import type { UserRole } from "@/lib/types";
 import { getCancellationAccessState } from "./subscription-cancellation.ts";
+import { isOpenReactivation } from "./subscription-reactivation.ts";
 
 export const PAST_DUE_GRACE_PERIOD_MS = 5 * 24 * 60 * 60 * 1000;
 export type SubscriptionAccessState = {
-  state: "active" | "grace_period" | "blocked" | "cancellation_scheduled" | "cancelled";
+  state: "active" | "grace_period" | "blocked" | "cancellation_scheduled" | "cancelled" | "reactivation_pending";
   pastDueAt: Date | null;
   gracePeriodEndsAt: Date | null;
   daysPastDue: number;
@@ -21,6 +22,16 @@ export function getSubscriptionAccessState(
   now = new Date(),
 ): SubscriptionAccessState {
   const cancellation = getCancellationAccessState(subscription, now);
+  if (subscription && isOpenReactivation(subscription.reactivation)) {
+    return {
+      state: "reactivation_pending",
+      pastDueAt: null,
+      gracePeriodEndsAt: null,
+      daysPastDue: 0,
+      cancellationEffectiveAt: validDate(subscription.cancellationEffectiveAt),
+      canPerformOperationalMutation: false,
+    };
+  }
   if (cancellation.state === "cancelled") {
     return {
       state: "cancelled",
@@ -112,7 +123,15 @@ export const subscriptionCancelledResponse = {
   code: "SUBSCRIPTION_CANCELLED",
 };
 
+export const subscriptionReactivationPendingResponse = {
+  error: "A reativação da assinatura está aguardando confirmação financeira.",
+  code: "SUBSCRIPTION_REACTIVATION_PENDING",
+};
+
 export function subscriptionPastDueResponseForAccess(access: SubscriptionAccessState) {
+  if (access.state === "reactivation_pending") {
+    return subscriptionReactivationPendingResponse;
+  }
   return access.state === "cancelled"
     ? subscriptionCancelledResponse
     : subscriptionPastDueResponse;
