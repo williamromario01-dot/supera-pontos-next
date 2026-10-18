@@ -7,7 +7,8 @@ const DB_NAME = "supera_pontos";
 const generic = { message: "Se o e-mail estiver cadastrado, você receberá um link para redefinir sua senha." };
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
+    let body;
+    try { body = await request.json(); } catch { return NextResponse.json({ error: "Dados inválidos." }, { status: 400 }); }
     const email = String(body.email ?? "").trim().toLowerCase();
     if (!email) return NextResponse.json({ error: "Informe seu e-mail." }, { status: 400 });
     const capture = sandboxCaptureEnabled();
