@@ -84,9 +84,9 @@ export async function GET(
       );
     }
 
-    if (user.role !== "super_admin") {
+    if (user.role !== "super_admin" && user.role !== "company_admin") {
       return NextResponse.json(
-        { error: "Apenas o super administrador pode consultar este administrador." },
+        { error: "Acesso n?o autorizado para consultar este administrador." },
         { status: 403 }
       );
     }
@@ -112,6 +112,13 @@ export async function GET(
         { error: "Escola não encontrada." },
         { status: 404 }
       );
+    }
+
+    if (
+      user.role === "company_admin" &&
+      (!user.companyId || String(school.companyId) !== String(user.companyId))
+    ) {
+      return NextResponse.json({ error: "Unidade n?o encontrada." }, { status: 404 });
     }
 
     const adminDocuments = await db
@@ -161,9 +168,9 @@ export async function POST(
       );
     }
 
-    if (user.role !== "super_admin") {
+    if (user.role !== "super_admin" && user.role !== "company_admin") {
       return NextResponse.json(
-        { error: "Apenas o super administrador pode criar administradores." },
+        { error: "Acesso n?o autorizado para criar administradores." },
         { status: 403 }
       );
     }
@@ -235,6 +242,13 @@ export async function POST(
       );
     }
 
+    if (
+      user.role === "company_admin" &&
+      (!user.companyId || String(school.companyId) !== String(user.companyId))
+    ) {
+      return NextResponse.json({ error: "Unidade n?o encontrada." }, { status: 404 });
+    }
+
     if (school.active === false) {
       return NextResponse.json(
         { error: "Esta escola está inativa." },
@@ -279,6 +293,7 @@ export async function POST(
       role: "admin",
       schoolId,
       points: 0,
+      companyId: school.companyId,
       createdAt: now,
       updatedAt: now,
     });

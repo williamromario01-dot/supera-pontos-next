@@ -19,11 +19,19 @@ import {
 
 type Profile =
   | "super_admin"
+  | "company_admin"
   | "admin"
   | "educator"
   | "student";
 
 const profiles = [
+  {
+    id: "company_admin" as Profile,
+    title: "Empresa",
+    description: "Plano e unidades da empresa",
+    icon: Building2,
+  },
+
   {
     id: "student" as Profile,
     title: "Aluno",
@@ -104,7 +112,7 @@ export default function LoginPage() {
         return;
       }
 
-      router.push("/dashboard");
+      router.push(userRole === "company_admin" ? "/company/onboarding" : "/dashboard");
       router.refresh();
     } catch (error) {
       console.error(

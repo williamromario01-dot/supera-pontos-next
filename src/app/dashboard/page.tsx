@@ -241,7 +241,7 @@ export default function DashboardPage() {
       setUser(meData.user);
 
       if (meData.user.role === "company_admin") {
-        router.replace("/company");
+        router.replace("/company/onboarding");
         return;
       }
 
