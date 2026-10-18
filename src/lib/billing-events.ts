@@ -110,10 +110,8 @@ async function processInTransaction(
   if (!subscription) throw new Error("PAYMENT_NOT_LINKED");
   if (
     subscription.providerEnvironment !== "sandbox" ||
-    (event.payment.subscription &&
-      event.payment.subscription !== subscription.providerSubscriptionId) ||
-    (event.payment.customer &&
-      event.payment.customer !== subscription.providerCustomerId)
+    event.payment.subscription !== subscription.providerSubscriptionId ||
+    event.payment.customer !== subscription.providerCustomerId
   ) throw new Error("PAYMENT_LINK_CONFLICT");
   const quantityPayment = subscription.quantityChange?.providerPaymentId === event.payment.id;
   const quantityChangeMatches = quantityPayment && matchesQuantityChangePayment(
@@ -136,12 +134,15 @@ async function processInTransaction(
       ? subscription.quantityChange.toUnits
       : reactivationPayment
         ? subscription.reactivation.requestedUnits
-        : subscription.maxUnits,
+        : Number(subscription.maxUnits ?? 0) > 0
+          ? subscription.maxUnits
+          : subscription.requestedMaxUnits,
   );
   if (!pricing) throw new Error("SUBSCRIPTION_DATA_INVALID");
   if (
-    !quantityPayment && !reactivationPayment && event.payment.value !== undefined &&
-    Math.round(event.payment.value * 100) !== pricing.totalMonthlyCents
+    !quantityPayment && !reactivationPayment &&
+    (typeof event.payment.value !== "number" ||
+      Math.round(event.payment.value * 100) !== pricing.totalMonthlyCents)
   ) throw new Error("PAYMENT_VALUE_CONFLICT");
 
   const confirmsPayment = event.event === "PAYMENT_CONFIRMED" ||

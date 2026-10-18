@@ -84,16 +84,17 @@ function compatibleSubscription(
 function firstCompatiblePayment(
   payments: AsaasPayment[],
   providerSubscriptionId: string,
+  providerCustomerId: string,
   expectedValueCents: number,
 ): AsaasPayment | null {
   const compatible = payments.filter(
-    (payment) => (!payment.subscription || payment.subscription === providerSubscriptionId) &&
+    (payment) => payment.subscription === providerSubscriptionId &&
+      payment.customer === providerCustomerId &&
+      payment.status === "PENDING" &&
       (payment.billingType === "PIX" || payment.billingType === "BOLETO") &&
       Math.round(payment.value * 100) === expectedValueCents,
   );
-  if (compatible.length > 1) {
-    compatible.sort((left, right) => left.dueDate.localeCompare(right.dueDate));
-  }
+  if (compatible.length > 1) throw new BillingSubscriptionError("PAYMENT_REFERENCE_CONFLICT");
   return compatible[0] ?? null;
 }
 
@@ -229,6 +230,7 @@ export async function POST(request: NextRequest) {
     const payment = firstCompatiblePayment(
       payments,
       providerSubscription.id,
+      input.customer,
       pricing.totalMonthlyCents,
     );
     await saveProviderLinks(
