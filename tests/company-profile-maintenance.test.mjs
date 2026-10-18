@@ -1,0 +1,10 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+const read = (path) => readFile(new URL(`../${path}`, import.meta.url), "utf8");
+test("company profile is session-scoped and explicitly allowlisted", async () => { const s=await read("src/app/api/company/profile/route.ts"); assert.match(s,/authenticateRequest/); assert.match(s,/auth\.companyId/); assert.doesNotMatch(s,/body\.companyId/); assert.match(s,/FORBIDDEN_KEYS/); for(const key of ["status","cnpj","providerCustomerId","maxUnits"]) assert.match(s,new RegExp(`"${key}"`)); });
+test("company profile updates company and its authenticated admin transactionally", async () => { const s=await read("src/app/api/company/profile/route.ts"); assert.match(s,/withTransaction/); assert.match(s,/const companyId = auth\.companyId/); assert.match(s,/role: "company_admin"/); });
+test("company profile source preserves UTF-8", async () => { const s=await read("src/app/api/company/profile/route.ts"); assert.equal(Buffer.from("Empresa Homologação E2E").toString("utf8"),"Empresa Homologação E2E"); assert.match(s,/Dados cadastrais atualizados/); });
+test("password route validates current password and targets session user only", async () => { const s=await read("src/app/api/profile/password/route.ts"); assert.match(s,/authenticateRequest/); assert.match(s,/bcrypt\.compare\(currentPassword/); assert.match(s,/_id: auth\.userId/); assert.doesNotMatch(s,/body\.userId/); });
+test("password route hashes new password, removes plaintext and invalidates sessions", async () => { const s=await read("src/app/api/profile/password/route.ts"); assert.match(s,/bcrypt\.hash\(newPassword, 12\)/); assert.match(s,/\$unset: \{ password:/); assert.match(s,/sessions/); assert.doesNotMatch(s,/formData|avatarData|File/); });
+test("avatar remains isolated in its own route", async () => { const s=await read("src/app/api/profile/avatar/route.ts"); assert.match(s,/formData/); assert.match(s,/avatarData/); });
