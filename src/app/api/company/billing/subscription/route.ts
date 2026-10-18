@@ -14,6 +14,7 @@ import {
   type AsaasSubscription,
   type CreateAsaasSubscriptionInput,
 } from "@/lib/asaas-subscriptions";
+import { isSandboxSubscriptionCreationAllowed } from "@/lib/sandbox-subscription-creation-gate";
 
 export const dynamic = "force-dynamic";
 
@@ -167,6 +168,7 @@ export async function POST(request: NextRequest) {
 
     const input = buildInput(subscription);
     const pricing = getPricingQuote(subscription.requestedMaxUnits)!;
+    const scopedCreationAllowed = isSandboxSubscriptionCreationAllowed({ companyId: auth.companyId.toString(), subscriptionId: subscription._id.toString(), providerCustomerId: input.customer, externalReference: input.externalReference, requestedMaxUnits: pricing.requestedUnits, valueCents: pricing.totalMonthlyCents });
     subscriptionId = subscription._id;
     lockToken = randomUUID();
     const now = new Date();
@@ -211,7 +213,7 @@ export async function POST(request: NextRequest) {
 
     if (!providerSubscription) {
       stage = "before_create_subscription";
-      if (BLOCK_ASAAS_SUBSCRIPTION_CREATION) {
+      if (BLOCK_ASAAS_SUBSCRIPTION_CREATION && !scopedCreationAllowed) {
         return NextResponse.json({
           ok: true,
           diagnostic: { stage, subscriptionCreationBlocked: true },
