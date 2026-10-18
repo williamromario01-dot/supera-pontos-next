@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import clientPromise from "@/lib/mongodb";
+import { hashRecoveryToken } from "@/lib/sandbox-recovery-capture";
 
 const DB_NAME = "supera_pontos";
 
@@ -27,11 +28,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (password.length < 6) {
+    if (password.length < 8) {
       return NextResponse.json(
         {
           error:
-            "A nova senha deve ter pelo menos 6 caracteres.",
+            "A nova senha deve ter pelo menos 8 caracteres.",
         },
         { status: 400 }
       );
@@ -54,7 +55,7 @@ export async function POST(request: NextRequest) {
       db.collection("passwordResetTokens");
 
     const tokenRecord = await resetTokens.findOne({
-      token,
+      tokenHash: hashRecoveryToken(token),
       used: false,
       expiresAt: {
         $gt: new Date(),
