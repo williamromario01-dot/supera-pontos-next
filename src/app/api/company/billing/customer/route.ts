@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import type { Collection, Document, ObjectId } from "mongodb";
 import clientPromise from "@/lib/mongodb";
 import { authenticateRequest } from "@/lib/auth";
+import { isSandboxCustomerCreationAllowed } from "@/lib/sandbox-customer-creation-gate";
 import {
   AsaasCustomerRequestError,
   createAsaasCustomer,
@@ -241,6 +242,11 @@ export async function POST(request: NextRequest) {
 
     stage = 'build_customer_payload';
     const input = buildCustomerInput(company);
+    const scopedCreationAllowed = isSandboxCustomerCreationAllowed({
+      companyId: auth.companyId.toString(),
+      externalReference: input.externalReference,
+      subscriptionId: subscription._id.toString(),
+    });
     const now = new Date();
     subscriptionId = subscription._id;
     lockToken = randomUUID();
@@ -359,7 +365,7 @@ export async function POST(request: NextRequest) {
     retainUncertainAttempt = true;
 
     stage = 'before_create_customer';
-    if (BLOCK_ASAAS_CUSTOMER_CREATION) {
+    if (BLOCK_ASAAS_CUSTOMER_CREATION && !scopedCreationAllowed) {
       retainUncertainAttempt = false;
       return NextResponse.json({
         ok: true,
