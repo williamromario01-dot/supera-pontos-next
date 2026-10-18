@@ -92,6 +92,7 @@ export async function GET(request: NextRequest) {
         state: access.state,
         daysPastDue: access.daysPastDue,
         gracePeriodEndsAt: access.gracePeriodEndsAt,
+        cancellationEffectiveAt: access.cancellationEffectiveAt,
       },
       usage: { usedUnits: schools.filter((school) => school.active).length, maxUnits: Number(subscription?.maxUnits ?? 0) },
       metrics,

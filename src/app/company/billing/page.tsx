@@ -35,7 +35,14 @@ type Option = {
 };
 type Data = {
   company: { status: string };
-  access?: { state: "active" | "grace_period" | "blocked"; daysPastDue: number; gracePeriodEndsAt: string | null };
+  access?: { state: "active" | "grace_period" | "blocked" | "cancellation_scheduled" | "cancelled"; daysPastDue: number; gracePeriodEndsAt: string | null; cancellationEffectiveAt: string | null };
+  cancellation?: {
+    state: "none" | "cancellation_scheduled" | "cancelled";
+    cancelAtPeriodEnd: boolean;
+    effectiveAt: string | null;
+    canRevert: boolean;
+    reactivationAvailable: boolean;
+  };
   subscription: null | {
     statusLabel: string;
     maxUnits: number;
@@ -98,7 +105,8 @@ export default function Billing() {
     [pixLoading, setPixLoading] = useState(false),
     [pixError, setPixError] = useState(""),
     [pix, setPix] = useState<PixData | null>(null),
-    [copied, setCopied] = useState(false);
+    [copied, setCopied] = useState(false),
+    [cancellationProcessing, setCancellationProcessing] = useState(false);
   const posting = useRef(false);
   async function load() {
     setError("");
@@ -226,6 +234,41 @@ export default function Billing() {
       setProcessing(false);
     }
   }
+  async function changeCancellation(method: "POST" | "DELETE") {
+    if (cancellationProcessing) return;
+    if (method === "POST" && !window.confirm("Confirma o cancelamento ao fim do período já pago?")) return;
+    setCancellationProcessing(true);
+    setFeedback(null);
+    try {
+      const response = await fetch("/api/company/billing/cancellation", {
+        method,
+        ...(method === "POST" ? {
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({}),
+        } : {}),
+      });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error);
+      setFeedback(method === "POST" ? {
+        tone: "success",
+        title: "Cancelamento agendado",
+        text: "A assinatura continuará ativa até o fim do período já pago.",
+      } : {
+        tone: "success",
+        title: "Cancelamento desfeito",
+        text: "A assinatura continuará renovando normalmente.",
+      });
+      await load();
+    } catch (e) {
+      setFeedback({
+        tone: "error",
+        title: "Não foi possível atualizar o cancelamento",
+        text: e instanceof Error ? e.message : "Tente novamente mais tarde.",
+      });
+    } finally {
+      setCancellationProcessing(false);
+    }
+  }
   if (error)
     return (
       <main className="grid min-h-screen place-items-center bg-slate-50">
@@ -276,7 +319,7 @@ export default function Billing() {
             {plan && (
               <button
                 onClick={openQuantity}
-                disabled={pending}
+                disabled={pending || data.cancellation?.cancelAtPeriodEnd === true}
                 className="flex items-center gap-2 rounded-xl bg-orange-500 px-4 py-3 font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <SlidersHorizontal size={18} />
@@ -289,6 +332,8 @@ export default function Billing() {
       <div className="mx-auto max-w-6xl space-y-5 px-4 py-8">
         {data.access?.state === "grace_period" && <Notice warning title="Pagamento em atraso">Você está no período de tolerância. Regularize até {data.access.gracePeriodEndsAt ? new Date(data.access.gracePeriodEndsAt).toLocaleDateString("pt-BR") : "a data limite"} para evitar a suspensão temporária das operações.</Notice>}
         {data.access?.state === "blocked" && <Notice warning title="Pagamento em atraso">Algumas funções do SUPERPONTOS estão temporariamente suspensas até a regularização. Seus dados continuam preservados.</Notice>}
+        {data.access?.state === "cancellation_scheduled" && <Notice warning title="Cancelamento agendado">A assinatura permanece disponível até {data.cancellation?.effectiveAt ? new Date(data.cancellation.effectiveAt).toLocaleDateString("pt-BR", { timeZone: "UTC" }) : "o fim do período contratado"}.</Notice>}
+        {data.access?.state === "cancelled" && <Notice warning title="Assinatura encerrada">Novas operações estão suspensas. Seus dados continuam preservados.</Notice>}
         {feedback && (
           <Notice warning={feedback.tone !== "success"} title={feedback.title}>
             {feedback.text}
@@ -399,6 +444,25 @@ export default function Billing() {
                 </div>
               </Card>
             </section>
+            <Card>
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <div>
+                  <h2 className="font-black">Gerenciar assinatura</h2>
+                  <p className="mt-1 text-sm text-slate-500">
+                    {data.cancellation?.state === "cancellation_scheduled"
+                      ? "O cancelamento pode ser desfeito antes da data efetiva."
+                      : data.cancellation?.state === "cancelled"
+                        ? "Entre em contato para reativar sua assinatura."
+                        : "O cancelamento ocorre somente ao fim do período já pago."}
+                  </p>
+                </div>
+                {data.cancellation?.canRevert ? (
+                  <button disabled={cancellationProcessing} onClick={() => void changeCancellation("DELETE")} className="rounded-xl border border-orange-500 px-4 py-3 font-bold text-orange-700 disabled:opacity-50">Desfazer cancelamento</button>
+                ) : data.cancellation?.state === "none" ? (
+                  <button disabled={pending || cancellationProcessing || data.access?.state === "blocked"} onClick={() => void changeCancellation("POST")} className="rounded-xl border border-red-300 px-4 py-3 font-bold text-red-700 disabled:opacity-50">Cancelar assinatura</button>
+                ) : null}
+              </div>
+            </Card>
             {plan.archivedUnits > 0 && (
               <Notice title="Unidades arquivadas não consomem capacidade">
                 <Archive className="mr-2 inline" />

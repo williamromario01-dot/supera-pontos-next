@@ -1,12 +1,14 @@
 import { ObjectId, type Db, type Document } from "mongodb";
 import type { UserRole } from "@/lib/types";
+import { getCancellationAccessState } from "./subscription-cancellation.ts";
 
 export const PAST_DUE_GRACE_PERIOD_MS = 5 * 24 * 60 * 60 * 1000;
 export type SubscriptionAccessState = {
-  state: "active" | "grace_period" | "blocked";
+  state: "active" | "grace_period" | "blocked" | "cancellation_scheduled" | "cancelled";
   pastDueAt: Date | null;
   gracePeriodEndsAt: Date | null;
   daysPastDue: number;
+  cancellationEffectiveAt: Date | null;
   canPerformOperationalMutation: boolean;
 };
 
@@ -18,8 +20,28 @@ export function getSubscriptionAccessState(
   subscription: Document | null,
   now = new Date(),
 ): SubscriptionAccessState {
+  const cancellation = getCancellationAccessState(subscription, now);
+  if (cancellation.state === "cancelled") {
+    return {
+      state: "cancelled",
+      pastDueAt: null,
+      gracePeriodEndsAt: null,
+      daysPastDue: 0,
+      cancellationEffectiveAt: cancellation.effectiveAt,
+      canPerformOperationalMutation: false,
+    };
+  }
   if (!subscription || subscription.status !== "past_due") {
-    return { state: "active", pastDueAt: null, gracePeriodEndsAt: null, daysPastDue: 0, canPerformOperationalMutation: true };
+    return {
+      state: cancellation.state === "cancellation_scheduled"
+        ? "cancellation_scheduled"
+        : "active",
+      pastDueAt: null,
+      gracePeriodEndsAt: null,
+      daysPastDue: 0,
+      cancellationEffectiveAt: cancellation.effectiveAt,
+      canPerformOperationalMutation: true,
+    };
   }
   const pastDueAt = validDate(subscription.pastDueAt) ??
     validDate(subscription.providerPaymentUpdatedAt) ??
@@ -34,6 +56,7 @@ export function getSubscriptionAccessState(
     pastDueAt,
     gracePeriodEndsAt,
     daysPastDue: Math.max(0, Math.floor((now.getTime() - pastDueAt.getTime()) / (24 * 60 * 60 * 1000))),
+    cancellationEffectiveAt: cancellation.effectiveAt,
     canPerformOperationalMutation: !blocked,
   };
 }
@@ -83,3 +106,14 @@ export const subscriptionPastDueResponse = {
   error: "A assinatura da empresa está em atraso. Regularize o pagamento para continuar utilizando as funções operacionais.",
   code: "SUBSCRIPTION_PAST_DUE",
 };
+
+export const subscriptionCancelledResponse = {
+  error: "Sua assinatura foi encerrada. Reative seu plano para voltar a utilizar as funções operacionais.",
+  code: "SUBSCRIPTION_CANCELLED",
+};
+
+export function subscriptionPastDueResponseForAccess(access: SubscriptionAccessState) {
+  return access.state === "cancelled"
+    ? subscriptionCancelledResponse
+    : subscriptionPastDueResponse;
+}

@@ -10,7 +10,12 @@ type Dashboard = {
   usage: { usedUnits: number; maxUnits: number };
   metrics: { students: number; educators: number; classes: number; pointsDistributed: number };
   schools: Array<{ id: string; name: string; address: string; active: boolean; metrics: Dashboard["metrics"] }>;
-  access?: { state: "active" | "grace_period" | "blocked"; daysPastDue: number; gracePeriodEndsAt: string | null };
+  access?: {
+    state: "active" | "grace_period" | "blocked" | "cancellation_scheduled" | "cancelled";
+    daysPastDue: number;
+    gracePeriodEndsAt: string | null;
+    cancellationEffectiveAt: string | null;
+  };
 };
 
 export default function CompanyPage() {
@@ -67,6 +72,8 @@ export default function CompanyPage() {
     <div className="mx-auto max-w-6xl space-y-6 px-4 py-8">
       {data.access?.state === "grace_period" && <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-900"><b>Pagamento em atraso</b><p className="mt-1 text-sm">Identificamos um pagamento em atraso. Regularize até {data.access.gracePeriodEndsAt ? new Date(data.access.gracePeriodEndsAt).toLocaleDateString("pt-BR") : "a data limite"} para evitar a suspensão temporária das operações.</p><Link href="/company/billing" className="mt-3 inline-block font-bold text-orange-700">Ir para Financeiro</Link></div>}
       {data.access?.state === "blocked" && <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-red-900"><b>Operações temporariamente suspensas</b><p className="mt-1 text-sm">Regularize o pagamento para voltar a utilizar as funções operacionais. Seus dados permanecem preservados.</p><Link href="/company/billing" className="mt-3 inline-block font-bold text-orange-700">Ir para Financeiro</Link></div>}
+      {data.access?.state === "cancellation_scheduled" && <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-900"><b>Cancelamento agendado</b><p className="mt-1 text-sm">Seu plano permanecerá disponível até {data.access.cancellationEffectiveAt ? new Date(data.access.cancellationEffectiveAt).toLocaleDateString("pt-BR", { timeZone: "UTC" }) : "a data informada no financeiro"}.</p><Link href="/company/billing" className="mt-3 inline-block font-bold text-orange-700">Ver assinatura</Link></div>}
+      {data.access?.state === "cancelled" && <div className="rounded-xl border border-slate-300 bg-slate-100 p-4 text-slate-900"><b>Assinatura encerrada</b><p className="mt-1 text-sm">Novas operações estão suspensas, mas seus dados permanecem preservados.</p><Link href="/company/billing" className="mt-3 inline-block font-bold text-orange-700">Reativar assinatura</Link></div>}
       {error && <p className="rounded-xl bg-red-50 p-4 text-sm font-semibold text-red-700">{error}</p>}
       {message && <p className="rounded-xl bg-green-50 p-4 text-sm font-semibold text-green-700">{message}</p>}
       <section className="grid gap-4 md:grid-cols-2">

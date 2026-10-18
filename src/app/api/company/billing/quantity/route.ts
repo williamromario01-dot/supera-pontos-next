@@ -224,6 +224,15 @@ export async function POST(request: NextRequest) {
     if (!subscription || subscription.status !== "active") {
       throw new QuantityChangeError("SUBSCRIPTION_NOT_ACTIVE", 403);
     }
+    if (subscription.cancelAtPeriodEnd === true) {
+      throw new QuantityChangeError("CANCELLATION_SCHEDULED", 409);
+    }
+    if (
+      subscription.cancellationOperation?.status === "preparing" ||
+      subscription.cancellationOperation?.status === "reconciliation_required"
+    ) {
+      throw new QuantityChangeError("CANCELLATION_IN_PROGRESS", 409);
+    }
     if (subscription.provider !== "asaas" || subscription.providerEnvironment !== "sandbox") {
       throw new QuantityChangeError("BILLING_PROVIDER_CONFLICT", 409);
     }
@@ -300,6 +309,10 @@ export async function POST(request: NextRequest) {
         _id: subscription._id,
         companyId: auth.companyId,
         status: "active",
+        cancelAtPeriodEnd: { $ne: true },
+        "cancellationOperation.status": {
+          $nin: ["preparing", "reconciliation_required"],
+        },
         maxUnits: currentUnits,
         $or: [
           { quantityChange: { $exists: false } },

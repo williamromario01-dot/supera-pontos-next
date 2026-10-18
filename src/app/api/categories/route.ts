@@ -2,7 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { MongoServerError, ObjectId } from "mongodb";
 import clientPromise from "@/lib/mongodb";
-import { getOperationalAccessForAuth, subscriptionPastDueResponse } from "@/lib/subscription-access";
+import { getOperationalAccessForAuth, subscriptionPastDueResponseForAccess } from "@/lib/subscription-access";
 import {
   authenticateRequest,
   getSchoolObjectId,
@@ -251,7 +251,7 @@ export async function POST(request: NextRequest) {
     const db = client.db(DB_NAME);
     const access = await getOperationalAccessForAuth(db, auth);
     if (!access.canPerformOperationalMutation) {
-      return NextResponse.json(subscriptionPastDueResponse, { status: 403 });
+      return NextResponse.json(subscriptionPastDueResponseForAccess(access), { status: 403 });
     }
     const categories = db.collection("categories");
 

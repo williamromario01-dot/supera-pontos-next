@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { ObjectId } from "mongodb";
 import clientPromise from "@/lib/mongodb";
-import { getOperationalAccessForAuth, subscriptionPastDueResponse } from "@/lib/subscription-access";
+import { getOperationalAccessForAuth, subscriptionPastDueResponseForAccess } from "@/lib/subscription-access";
 import { isSchoolArchived } from "@/lib/schools";
 
 async function getAuthenticatedUser(request: NextRequest) {
@@ -259,7 +259,7 @@ export async function POST(request: NextRequest) {
     const db = client.db("supera_pontos");
     const access = await getOperationalAccessForAuth(db, user);
     if (!access.canPerformOperationalMutation) {
-      return NextResponse.json(subscriptionPastDueResponse, { status: 403 });
+      return NextResponse.json(subscriptionPastDueResponseForAccess(access), { status: 403 });
     }
 
     const school = await db.collection("schools").findOne({

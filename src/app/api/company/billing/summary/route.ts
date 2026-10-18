@@ -16,6 +16,7 @@ import {
   type AsaasPayment,
 } from "@/lib/asaas-subscriptions";
 import { getSubscriptionAccessState } from "@/lib/subscription-access";
+import { getCancellationAccessState } from "@/lib/subscription-cancellation";
 
 export const dynamic = "force-dynamic";
 
@@ -78,6 +79,7 @@ export async function GET(request: NextRequest) {
     const maxUnits = Number(subscription.maxUnits ?? 0);
     const pricing = getPricingQuote(maxUnits);
     const access = getSubscriptionAccessState(subscription);
+    const cancellation = getCancellationAccessState(subscription);
     const availableUnits = Math.max(0, maxUnits - activeUnits);
     const quantityChange = isPendingQuantityChange(subscription.quantityChange)
       ? {
@@ -162,10 +164,15 @@ export async function GET(request: NextRequest) {
         state: access.state,
         daysPastDue: access.daysPastDue,
         gracePeriodEndsAt: access.gracePeriodEndsAt,
+        cancellationEffectiveAt: access.cancellationEffectiveAt,
       },
       subscription: {
         status: subscription.status,
-        statusLabel: subscriptionStatusLabel(subscription.status),
+        statusLabel: cancellation.state === "cancelled"
+          ? "Cancelado"
+          : cancellation.state === "cancellation_scheduled"
+            ? "Cancelamento agendado"
+            : subscriptionStatusLabel(subscription.status),
         maxUnits,
         requestedMaxUnits: Number(subscription.requestedMaxUnits ?? maxUnits),
         activeUnits,
@@ -177,6 +184,13 @@ export async function GET(request: NextRequest) {
         pricePerUnitCents: pricing?.pricePerUnitCents ?? 0,
         totalMonthlyValueCents: pricing?.totalMonthlyCents ?? 0,
         billingInterval: pricing?.billingInterval ?? "monthly",
+      },
+      cancellation: {
+        state: cancellation.state,
+        cancelAtPeriodEnd: subscription.cancelAtPeriodEnd === true,
+        effectiveAt: cancellation.effectiveAt,
+        canRevert: cancellation.state === "cancellation_scheduled",
+        reactivationAvailable: cancellation.state === "cancelled",
       },
       quantityChange,
       pricingOptions,

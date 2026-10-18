@@ -14,6 +14,7 @@ export interface AsaasSubscription {
   value: number;
   status?: string;
   nextDueDate: string;
+  endDate?: string | null;
   cycle: "MONTHLY";
   externalReference?: string;
 }
@@ -23,6 +24,7 @@ export interface CreateAsaasSubscriptionInput {
   billingType: "PIX" | "BOLETO";
   value: number;
   nextDueDate: string;
+  endDate?: string | null;
   cycle: "MONTHLY";
   description: string;
   externalReference: string;
@@ -155,6 +157,9 @@ function parseSubscription(value: unknown): AsaasSubscription | null {
     value: item.value,
     status: typeof item.status === "string" ? item.status : undefined,
     nextDueDate: item.nextDueDate,
+    endDate: typeof item.endDate === "string" || item.endDate === null
+      ? item.endDate
+      : undefined,
     cycle: item.cycle,
     externalReference: typeof item.externalReference === "string"
       ? item.externalReference
@@ -202,6 +207,24 @@ export async function updateAsaasSubscriptionValue(
     {
       method: "PUT",
       body: JSON.stringify({ value, updatePendingPayments: true }),
+    },
+  );
+  const subscription = parseSubscription(response);
+  if (!subscription) {
+    throw new AsaasCustomerRequestError("ASAAS_INVALID_RESPONSE", 200, true);
+  }
+  return subscription;
+}
+
+export async function updateAsaasSubscriptionEndDate(
+  subscriptionId: string,
+  endDate: string | null,
+): Promise<AsaasSubscription> {
+  const response = await requestAsaas(
+    `/subscriptions/${encodeURIComponent(subscriptionId)}`,
+    {
+      method: "PUT",
+      body: JSON.stringify({ endDate }),
     },
   );
   const subscription = parseSubscription(response);

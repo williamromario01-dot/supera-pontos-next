@@ -4,7 +4,7 @@ import { authenticateRequest } from "@/lib/auth";
 import clientPromise from "@/lib/mongodb";
 import { DB_NAME } from "@/lib/saas";
 import { activeSchoolFilter, isSchoolArchived } from "@/lib/schools";
-import { getOperationalAccessForAuth, subscriptionPastDueResponse } from "@/lib/subscription-access";
+import { getOperationalAccessForAuth, subscriptionPastDueResponseForAccess } from "@/lib/subscription-access";
 
 export const dynamic = "force-dynamic";
 
@@ -33,7 +33,7 @@ export async function POST(
     const db = client.db(DB_NAME);
     const access = await getOperationalAccessForAuth(db, auth);
     if (!access.canPerformOperationalMutation) {
-      return NextResponse.json(subscriptionPastDueResponse, { status: 403 });
+      return NextResponse.json(subscriptionPastDueResponseForAccess(access), { status: 403 });
     }
     const schoolId = new ObjectId(context.params.id);
     const school = await db.collection("schools").findOne({

@@ -5,7 +5,7 @@ import { authenticateRequest } from "@/lib/auth";
 import { getUpgradeQuote } from "@/lib/plans";
 import { assertCompanySchoolIndexes, DB_NAME, isValidEmail, normalizeEmail } from "@/lib/saas";
 import { activeSchoolFilter } from "@/lib/schools";
-import { getOperationalAccessForAuth, subscriptionPastDueResponse } from "@/lib/subscription-access";
+import { getOperationalAccessForAuth, subscriptionPastDueResponseForAccess } from "@/lib/subscription-access";
 
 export const dynamic = "force-dynamic";
 
@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
     const client = await clientPromise;
     const db = client.db(DB_NAME);
     const access = await getOperationalAccessForAuth(db, auth);
-    if (!access.canPerformOperationalMutation) return NextResponse.json(subscriptionPastDueResponse, { status: 403 });
+    if (!access.canPerformOperationalMutation) return NextResponse.json(subscriptionPastDueResponseForAccess(access), { status: 403 });
     await assertCompanySchoolIndexes(db);
     const [company, subscription, usedUnits] = await Promise.all([
       db.collection("companies").findOne({ _id: auth.companyId }),
