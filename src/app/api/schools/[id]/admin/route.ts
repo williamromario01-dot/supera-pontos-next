@@ -292,6 +292,7 @@ export async function POST(
       passwordHash,
       role: "admin",
       schoolId,
+      active: true,
       points: 0,
       companyId: school.companyId,
       createdAt: now,
