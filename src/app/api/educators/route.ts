@@ -323,6 +323,7 @@ export async function POST(request: NextRequest) {
         passwordHash,
         role: "educator",
         schoolId,
+        companyId: school.companyId,
         points: 0,
         active: true,
         createdAt: now,

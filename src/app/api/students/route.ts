@@ -294,6 +294,7 @@ export async function POST(request: NextRequest) {
       passwordHash,
       role: "student",
       schoolId,
+      companyId: school.companyId,
       points: 0,
       active: true,
       createdAt: new Date(),
