@@ -13,6 +13,7 @@ import {
   normalizeEmail,
 } from "@/lib/saas";
 import { enforceRateLimits, getRateLimitClientId, rateLimitRules } from "@/lib/rate-limit";
+import { PRIVACY_VERSION, TERMS_VERSION } from "@/lib/legal";
 
 const RESPONSIBLE_ROLES = ["owner", "director", "manager", "authorized_representative", "other"] as const;
 
@@ -32,6 +33,8 @@ export async function POST(request: NextRequest) {
     const responsibleRole = String(body.responsible?.role ?? "");
     const password = String(body.password ?? "");
     const pricing = getPricingQuote(body.requestedUnits);
+    const acceptsTerms = body.acceptsTerms === true;
+    const acceptsPrivacy = body.acceptsPrivacy === true;
     const limited = await enforceRateLimits(rateLimitRules("company-register", getRateLimitClientId(request), responsibleEmail), "closed");
     if (limited) return limited;
 
@@ -43,6 +46,7 @@ export async function POST(request: NextRequest) {
     if (!RESPONSIBLE_ROLES.includes(responsibleRole as typeof RESPONSIBLE_ROLES[number])) return NextResponse.json({ error: "Função do responsável inválida." }, { status: 400 });
     if (password.length < 8 || password.length > 100) return NextResponse.json({ error: "A senha deve ter entre 8 e 100 caracteres." }, { status: 400 });
     if (!pricing) return NextResponse.json({ error: "Informe uma quantidade inteira de unidades dentro do limite permitido." }, { status: 400 });
+    if (!acceptsTerms || !acceptsPrivacy) return NextResponse.json({ error: "Aceite os Termos de Uso e o Aviso de Privacidade." }, { status: 400 });
     if (phone.length < 10 || phone.length > 13 || responsiblePhone.length < 10 || responsiblePhone.length > 13) return NextResponse.json({ error: "Informe telefones válidos com DDD." }, { status: 400 });
     if (address.length > 300) return NextResponse.json({ error: "O endereço deve ter até 300 caracteres." }, { status: 400 });
 
@@ -67,6 +71,7 @@ export async function POST(request: NextRequest) {
           cnpj, legalName, tradeName, email, phone, address,
           responsible: { name: responsibleName, cpf: responsibleCpf, email: responsibleEmail, phone: responsiblePhone, role: responsibleRole },
           status: "pending_verification",
+          legalAcceptance: { termsVersion: TERMS_VERSION, privacyVersion: PRIVACY_VERSION, acceptedAt: now },
           createdAt: now,
           updatedAt: now,
         }, { session });

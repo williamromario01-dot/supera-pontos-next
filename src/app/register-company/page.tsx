@@ -8,8 +8,10 @@ import { formatCurrencyCents, getPricingQuote, MAX_CONTRACTED_UNITS } from "@/li
 const initial = {
   cnpj: "", legalName: "", tradeName: "", email: "", phone: "", address: "",
   responsibleName: "", responsibleCpf: "", responsibleEmail: "", responsiblePhone: "",
-  responsibleRole: "owner", password: "", requestedUnits: "1",
+  responsibleRole: "owner", password: "", requestedUnits: "1", acceptsTerms: false, acceptsPrivacy: false,
 };
+
+type TextField = Exclude<keyof typeof initial, "acceptsTerms" | "acceptsPrivacy">;
 
 export default function RegisterCompanyPage() {
   const [form, setForm] = useState(initial);
@@ -20,7 +22,7 @@ export default function RegisterCompanyPage() {
   const parsedUnits = Number(form.requestedUnits);
   const pricing = getPricingQuote(parsedUnits);
 
-  function field(name: keyof typeof initial, label: string, type = "text", required = true) {
+  function field(name: TextField, label: string, type = "text", required = true) {
     return <label className="block text-sm font-semibold text-slate-700">{label}
       <input type={type} required={required} value={form[name]} onChange={(event) => setForm({ ...form, [name]: event.target.value })}
         className="mt-2 w-full rounded-xl border border-slate-300 px-4 py-3 font-normal outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100" />
@@ -42,6 +44,8 @@ export default function RegisterCompanyPage() {
             email: form.responsibleEmail, phone: form.responsiblePhone,
             role: form.responsibleRole,
           },
+          acceptsTerms: form.acceptsTerms,
+          acceptsPrivacy: form.acceptsPrivacy,
         }),
       });
       const data = await response.json();
@@ -99,7 +103,11 @@ export default function RegisterCompanyPage() {
             </div> : <p className="mt-3 text-sm font-semibold text-red-700">Informe uma quantidade inteira entre 1 e {MAX_CONTRACTED_UNITS.toLocaleString("pt-BR")}.</p>}
             <p className="mt-3 text-xs text-slate-500">O acesso às unidades será liberado somente após verificação e confirmação do pagamento pelo futuro provedor.</p>
           </section>
-          <button disabled={saving || !pricing} className="flex w-full items-center justify-center gap-2 rounded-xl bg-orange-500 px-5 py-4 font-bold text-white disabled:opacity-60">
+          <section className="space-y-3 rounded-2xl border border-slate-200 bg-slate-50 p-5 text-sm text-slate-700">
+            <label className="flex items-start gap-3"><input type="checkbox" checked={form.acceptsTerms} onChange={(event) => setForm({ ...form, acceptsTerms: event.target.checked })} className="mt-1" required /><span>Li e aceito os <Link className="font-bold text-orange-700 underline" href="/terms" target="_blank">Termos de Uso</Link>.</span></label>
+            <label className="flex items-start gap-3"><input type="checkbox" checked={form.acceptsPrivacy} onChange={(event) => setForm({ ...form, acceptsPrivacy: event.target.checked })} className="mt-1" required /><span>Li o <Link className="font-bold text-orange-700 underline" href="/privacy" target="_blank">Aviso de Privacidade</Link>, inclusive as orientações sobre dados de alunos menores.</span></label>
+          </section>
+          <button disabled={saving || !pricing || !form.acceptsTerms || !form.acceptsPrivacy} className="flex w-full items-center justify-center gap-2 rounded-xl bg-orange-500 px-5 py-4 font-bold text-white disabled:opacity-60">
             {saving && <Loader2 className="animate-spin" size={18} />}{saving ? "Cadastrando..." : "Cadastrar instituição"}
           </button>
         </form>

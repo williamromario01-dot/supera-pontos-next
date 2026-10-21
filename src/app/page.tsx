@@ -112,7 +112,7 @@ export default function LoginPage() {
         return;
       }
 
-      router.push(userRole === "company_admin" ? "/company/onboarding" : "/dashboard");
+      router.push(userRole === "company_admin" ? "/company/onboarding" : userRole === "super_admin" ? "/admin" : "/dashboard");
       router.refresh();
     } catch (error) {
       console.error(

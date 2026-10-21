@@ -1,0 +1,5 @@
+export const TERMS_VERSION = "2026-10-21-draft";
+export const PRIVACY_VERSION = "2026-10-21-draft";
+
+export const LEGAL_DRAFT_NOTICE =
+  "MINUTA — REVISÃO JURÍDICA NECESSÁRIA ANTES DO LANÇAMENTO";

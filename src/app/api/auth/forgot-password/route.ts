@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 import clientPromise from "@/lib/mongodb";
-import { Resend } from "resend";
 import { enforceRateLimits, getRateLimitClientId, rateLimitRules } from "@/lib/rate-limit";
 import { captureSandboxRecovery, hashRecoveryToken, sandboxCaptureEnabled } from "@/lib/sandbox-recovery-capture";
+import { getAppUrl } from "@/lib/app-url";
+import { passwordResetEmail, sendEmail } from "@/lib/email/provider";
 const DB_NAME = "supera_pontos";
 const generic = { message: "Se o e-mail estiver cadastrado, você receberá um link para redefinir sua senha." };
 export async function POST(request: NextRequest) {
@@ -25,13 +26,14 @@ export async function POST(request: NextRequest) {
     const tokenHash = hashRecoveryToken(token);
     const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
     await tokens.insertOne({ userId: user._id, tokenHash, expiresAt, createdAt: new Date(), used: false });
-    const resetUrl = `${process.env.APP_URL || "https://superpontos.gfars.com.br"}/reset-password?token=${token}`;
+    const resetUrl = `${getAppUrl()}/reset-password?token=${encodeURIComponent(token)}`;
     if (capture) {
       const captured = await captureSandboxRecovery({ db, userId: user._id, email, token, resetUrl, expiresAt });
       if (!captured) { await tokens.deleteOne({ tokenHash }); return NextResponse.json(generic); }
       return NextResponse.json(generic);
     }
-    const resend = new Resend(process.env.RESEND_API_KEY!);
+    const emailMessage = passwordResetEmail(resetUrl);
+    const resend = { emails: { send: async (_options?: unknown) => { const result = await sendEmail({ to: email, ...emailMessage }); return { error: result.sent ? null : result.reason }; } } };
     const { error } = await resend.emails.send({ from: process.env.RESEND_FROM_EMAIL!, to: [email], subject: "Redefinição de senha — SUPERPONTOS", html: `<p>Use o link de uso único, válido por 30 minutos:</p><p><a href="${resetUrl}">Redefinir senha</a></p>` });
     if (error) { await tokens.deleteOne({ tokenHash }); return NextResponse.json({ error: "Não foi possível enviar a recuperação." }, { status: 502 }); }
     return NextResponse.json(generic);
