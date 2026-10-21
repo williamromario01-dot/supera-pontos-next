@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 
 export async function POST(
   request: NextRequest,
-  context: { params: { id: string } },
+  context: { params: Promise<{ id: string }> },
 ) {
   try {
     const result = await authenticateRequest(request);
@@ -25,7 +25,7 @@ export async function POST(
       );
     }
     const companyId = auth.companyId;
-    if (!ObjectId.isValid(context.params.id)) {
+    if (!ObjectId.isValid((await context.params).id)) {
       return NextResponse.json({ error: "Unidade inválida." }, { status: 400 });
     }
 
@@ -35,7 +35,7 @@ export async function POST(
     if (!access.canPerformOperationalMutation) {
       return NextResponse.json(subscriptionPastDueResponseForAccess(access), { status: 403 });
     }
-    const schoolId = new ObjectId(context.params.id);
+    const schoolId = new ObjectId((await context.params).id);
     const school = await db.collection("schools").findOne({
       _id: schoolId,
       companyId,

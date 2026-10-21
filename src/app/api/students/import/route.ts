@@ -1,12 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
 import bcrypt from "bcryptjs";
-import * as XLSX from "xlsx";
 import clientPromise from "@/lib/mongodb";
 import { isSchoolArchived } from "@/lib/schools";
 import { getOperationalAccessForAuth, subscriptionPastDueResponseForAccess } from "@/lib/subscription-access";
+import { MAX_STUDENT_IMPORT_FILE_SIZE, StudentImportFileError, parseStudentImportFile } from "@/lib/student-import-file";
 
-const MAX_IMPORT_FILE_SIZE = 1024 * 1024;
 const MAX_IMPORT_ROWS = 500;
 
 async function getAuthenticatedUser(request: NextRequest) {
@@ -81,7 +80,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (file.size <= 0 || file.size > MAX_IMPORT_FILE_SIZE) {
+    if (file.size <= 0 || file.size > MAX_STUDENT_IMPORT_FILE_SIZE) {
       return NextResponse.json(
         { error: "A planilha deve ter entre 1 byte e 1 MB." },
         { status: 400 }
@@ -152,40 +151,15 @@ export async function POST(request: NextRequest) {
     const bytes = await file.arrayBuffer();
     const buffer = Buffer.from(bytes);
 
-    let workbook: XLSX.WorkBook;
-
+    let rows: Record<string, unknown>[];
     try {
-      workbook = XLSX.read(buffer, {
-        type: "buffer",
-        sheetRows: MAX_IMPORT_ROWS + 2,
-      });
-    } catch {
-      return NextResponse.json(
-        {
-          error:
-            "Não foi possível ler a planilha. Envie um arquivo Excel válido.",
-        },
-        { status: 400 }
-      );
-    }
-
-    const firstSheetName = workbook.SheetNames[0];
-
-    if (!firstSheetName) {
-      return NextResponse.json(
-        { error: "A planilha não possui nenhuma aba." },
-        { status: 400 }
-      );
-    }
-
-    const worksheet = workbook.Sheets[firstSheetName];
-
-    const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(
-      worksheet,
-      {
-        defval: "",
+      rows = await parseStudentImportFile(buffer, file.name);
+    } catch (error) {
+      if (error instanceof StudentImportFileError) {
+        return NextResponse.json({ error: error.message }, { status: 400 });
       }
-    );
+      throw error;
+    }
 
     if (rows.length > MAX_IMPORT_ROWS) {
       return NextResponse.json(

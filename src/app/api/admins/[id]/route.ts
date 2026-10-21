@@ -46,10 +46,8 @@ function isValidObjectId(id: string) {
    PATCH /api/admins/[id]
    ========================================================= */
 
-export async function PATCH(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function PATCH(request: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   try {
     const authenticatedUser =
       await getAuthenticatedUser(request);
@@ -301,10 +299,8 @@ export async function PATCH(
    DELETE /api/admins/[id]
    ========================================================= */
 
-export async function DELETE(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function DELETE(request: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   try {
     const authenticatedUser =
       await getAuthenticatedUser(request);

@@ -15,7 +15,7 @@ const DB_NAME = "supera_pontos";
 const ALLOWED_ROLES = ["super_admin", "admin", "educator"] as const;
 
 type RouteContext = {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 };
 
 function handleError(error: unknown) {
@@ -163,10 +163,8 @@ async function getAuthorizedClass(
  * Retorna os alunos da turma e os alunos disponíveis da mesma escola.
  * Um aluno já alocado em outra turma da escola não aparece como disponível.
  */
-export async function GET(
-  request: NextRequest,
-  { params }: RouteContext
-) {
+export async function GET(request: NextRequest, props: RouteContext) {
+  const params = await props.params;
   try {
     const result = await getAuthorizedClass(request, params.id);
 
@@ -260,10 +258,8 @@ export async function GET(
  * Aloca até 15 alunos por operação.
  * A turma não possui limite total de alunos.
  */
-export async function POST(
-  request: NextRequest,
-  { params }: RouteContext
-) {
+export async function POST(request: NextRequest, props: RouteContext) {
+  const params = await props.params;
   try {
     const result = await getAuthorizedClass(request, params.id);
 
@@ -459,10 +455,8 @@ export async function POST(
  * Remove um ou mais alunos da turma.
  * A remoção não possui limite de 15 alunos.
  */
-export async function DELETE(
-  request: NextRequest,
-  { params }: RouteContext
-) {
+export async function DELETE(request: NextRequest, props: RouteContext) {
+  const params = await props.params;
   try {
     const result = await getAuthorizedClass(request, params.id);
 

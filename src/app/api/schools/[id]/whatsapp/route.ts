@@ -56,10 +56,8 @@ function isValidWhatsApp(value: string) {
  * - super_admin pode consultar qualquer escola
  * - admin/educator/student somente a própria escola
  */
-export async function GET(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function GET(request: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   try {
     const user = await getAuthenticatedUser(request);
 
@@ -152,10 +150,8 @@ export async function GET(
  *
  * podem alterar.
  */
-export async function PATCH(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function PATCH(request: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   try {
     const user = await getAuthenticatedUser(request);
 

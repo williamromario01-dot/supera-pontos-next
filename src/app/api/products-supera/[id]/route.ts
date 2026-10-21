@@ -191,9 +191,9 @@ function canAccessProduct(
 export async function GET(
   request: NextRequest,
   context: {
-    params: {
+    params: Promise<{
       id: string;
-    };
+    }>;
   }
 ) {
   try {
@@ -212,7 +212,7 @@ export async function GET(
     }
 
     const productId =
-      getProductId(context.params);
+      getProductId((await context.params));
 
     if (!productId) {
       return NextResponse.json(
@@ -326,9 +326,9 @@ export async function GET(
 export async function PATCH(
   request: NextRequest,
   context: {
-    params: {
+    params: Promise<{
       id: string;
-    };
+    }>;
   }
 ) {
   try {
@@ -364,7 +364,7 @@ export async function PATCH(
     }
 
     const productId =
-      getProductId(context.params);
+      getProductId((await context.params));
 
     if (!productId) {
       return NextResponse.json(
@@ -807,9 +807,9 @@ export async function PATCH(
 export async function DELETE(
   request: NextRequest,
   context: {
-    params: {
+    params: Promise<{
       id: string;
-    };
+    }>;
   }
 ) {
   try {
@@ -845,7 +845,7 @@ export async function DELETE(
     }
 
     const productId =
-      getProductId(context.params);
+      getProductId((await context.params));
 
     if (!productId) {
       return NextResponse.json(

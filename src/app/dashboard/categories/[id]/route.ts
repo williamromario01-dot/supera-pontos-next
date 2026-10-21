@@ -49,7 +49,7 @@ function getCategoryId(id: string) {
 
 export async function PATCH(
   request: NextRequest,
-  context: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
   try {
     const user = await getAuthenticatedUser(request);
@@ -68,7 +68,7 @@ export async function PATCH(
       );
     }
 
-    const categoryId = getCategoryId(context.params.id);
+    const categoryId = getCategoryId((await context.params).id);
 
     if (!categoryId) {
       return NextResponse.json(
@@ -198,7 +198,7 @@ export async function PATCH(
 
 export async function DELETE(
   request: NextRequest,
-  context: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
   try {
     const user = await getAuthenticatedUser(request);
@@ -217,7 +217,7 @@ export async function DELETE(
       );
     }
 
-    const categoryId = getCategoryId(context.params.id);
+    const categoryId = getCategoryId((await context.params).id);
 
     if (!categoryId) {
       return NextResponse.json(

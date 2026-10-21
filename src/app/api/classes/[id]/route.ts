@@ -154,13 +154,13 @@ async function getClassAndCheckPermission(
 export async function GET(
   request: NextRequest,
   context: {
-    params: {
+    params: Promise<{
       id: string;
-    };
+    }>;
   }
 ) {
   try {
-    const classId = context.params.id;
+    const classId = (await context.params).id;
 
     const result = await getClassAndCheckPermission(
       request,
@@ -290,13 +290,13 @@ export async function GET(
 export async function PATCH(
   request: NextRequest,
   context: {
-    params: {
+    params: Promise<{
       id: string;
-    };
+    }>;
   }
 ) {
   try {
-    const classId = context.params.id;
+    const classId = (await context.params).id;
 
     const result = await getClassAndCheckPermission(
       request,
@@ -551,13 +551,13 @@ export async function PATCH(
 export async function DELETE(
   request: NextRequest,
   context: {
-    params: {
+    params: Promise<{
       id: string;
-    };
+    }>;
   }
 ) {
   try {
-    const classId = context.params.id;
+    const classId = (await context.params).id;
 
     const result = await getClassAndCheckPermission(
       request,

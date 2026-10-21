@@ -143,7 +143,7 @@ function isValidPositiveNumber(value: number, max = 100000) {
 
 export async function PATCH(
   request: NextRequest,
-  context: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
   try {
     const authResult = await authenticateRequest(request);
@@ -167,7 +167,7 @@ export async function PATCH(
       );
     }
 
-    const categoryId = getObjectId(context.params.id);
+    const categoryId = getObjectId((await context.params).id);
 
     if (!categoryId) {
       return NextResponse.json(
@@ -535,7 +535,7 @@ export async function PATCH(
 
 export async function DELETE(
   request: NextRequest,
-  context: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
   try {
     const authResult = await authenticateRequest(request);
@@ -559,7 +559,7 @@ export async function DELETE(
       );
     }
 
-    const categoryId = getObjectId(context.params.id);
+    const categoryId = getObjectId((await context.params).id);
 
     if (!categoryId) {
       return NextResponse.json(

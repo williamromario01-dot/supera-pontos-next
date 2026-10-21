@@ -10,10 +10,8 @@ import { AsaasCustomerRequestError } from "@/lib/asaas";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(
-  request: NextRequest,
-  { params }: { params: { id: string } },
-) {
+export async function GET(request: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const authResult = await authenticateRequest(request);
   if (!authResult.authenticated) {
     return NextResponse.json({ error: "Não autenticado." }, { status: 401 });

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import clientPromise from "@/lib/mongodb";
+import { enforceRateLimits, getRateLimitClientId, rateLimitRules } from "@/lib/rate-limit";
 
 export async function POST(request: NextRequest) {
   try {
@@ -19,6 +20,8 @@ export async function POST(request: NextRequest) {
     const name = String(body.name || "").trim();
     const email = String(body.email || "").trim().toLowerCase();
     const password = String(body.password || "").trim();
+    const limited = await enforceRateLimits(rateLimitRules("legacy-register", getRateLimitClientId(request), email), "closed");
+    if (limited) return limited;
 
     if (!name || !email || !password) {
       return NextResponse.json(

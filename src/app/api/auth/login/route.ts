@@ -4,6 +4,7 @@ import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import clientPromise from "@/lib/mongodb";
 import type { UserRole } from "@/lib/types";
+import { enforceRateLimits, getRateLimitClientId, rateLimitRules } from "@/lib/rate-limit";
 
 const DB_NAME = "supera_pontos";
 
@@ -28,6 +29,9 @@ export async function POST(request: NextRequest) {
 
     const email = String(body.email || "").trim().toLowerCase();
     const password = String(body.password || "");
+
+    const limited = await enforceRateLimits(rateLimitRules("login", getRateLimitClientId(request), email), "open");
+    if (limited) return limited;
 
     if (!email || !password) {
       return NextResponse.json(

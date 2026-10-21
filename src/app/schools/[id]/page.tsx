@@ -685,7 +685,6 @@ export default function SchoolPage() {
 
     const validExtensions = [
       ".xlsx",
-      ".xls",
       ".csv",
     ];
 
@@ -697,7 +696,7 @@ export default function SchoolPage() {
 
     if (!valid) {
       alert(
-        "Selecione um arquivo .xlsx, .xls ou .csv."
+        "Selecione um arquivo .xlsx ou .csv."
       );
 
       event.target.value = "";
@@ -2638,7 +2637,7 @@ export default function SchoolPage() {
                     </div>
 
                     <p className="text-xs text-blue-700 mt-3">
-                      Formatos aceitos: .xlsx, .xls e .csv
+                      Formatos aceitos: .xlsx e .csv
                     </p>
                   </div>
                 </div>
@@ -2708,7 +2707,7 @@ export default function SchoolPage() {
                 <input
                   ref={fileInputRef}
                   type="file"
-                  accept=".xlsx,.xls,.csv"
+                  accept=".xlsx,.csv"
                   onChange={handleFileChange}
                   className="block w-full text-sm text-slate-600 file:mr-4 file:py-2.5 file:px-4 file:rounded-lg file:border-0 file:bg-orange-50 file:text-orange-700 file:font-semibold hover:file:bg-orange-100"
                 />

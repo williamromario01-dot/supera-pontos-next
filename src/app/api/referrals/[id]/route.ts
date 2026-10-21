@@ -55,10 +55,8 @@ async function getAuthenticatedUser(request: NextRequest) {
  * A operação é protegida para evitar que os 100 pontos sejam
  * concedidos duas vezes.
  */
-export async function PATCH(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function PATCH(request: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   try {
     const user = await getAuthenticatedUser(request);
 

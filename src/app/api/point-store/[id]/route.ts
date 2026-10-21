@@ -166,10 +166,10 @@ async function getProductAccess(
 
 export async function PATCH(
   request: NextRequest,
-  context: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id } = context.params;
+    const { id } = (await context.params);
 
     const access = await getProductAccess(
       request,
@@ -418,10 +418,10 @@ export async function PATCH(
 
 export async function DELETE(
   request: NextRequest,
-  context: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id } = context.params;
+    const { id } = (await context.params);
 
     const access = await getProductAccess(
       request,

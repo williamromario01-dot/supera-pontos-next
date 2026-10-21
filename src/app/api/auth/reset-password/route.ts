@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import clientPromise from "@/lib/mongodb";
 import { hashRecoveryToken } from "@/lib/sandbox-recovery-capture";
+import { enforceRateLimits, getRateLimitClientId, rateLimitRules } from "@/lib/rate-limit";
 
 const DB_NAME = "supera_pontos";
 
@@ -16,6 +17,9 @@ export async function POST(request: NextRequest) {
 
     const token = String(body.token || "").trim();
     const password = String(body.password || "");
+    const tokenFingerprint = token ? hashRecoveryToken(token) : "missing";
+    const limited = await enforceRateLimits(rateLimitRules("reset", getRateLimitClientId(request), tokenFingerprint), "closed");
+    if (limited) return limited;
     if (!token) return NextResponse.json({ error: "Token de recuperacao invalido." }, { status: 400 });
     if (password.length < 8 || password.length > 100) {
       return NextResponse.json({ error: "A nova senha deve ter entre 8 e 100 caracteres." }, { status: 400 });

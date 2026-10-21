@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { timingSafeEqual } from "node:crypto";
 import clientPromise from "@/lib/mongodb";
+import { enforceRateLimits, getRateLimitClientId, rateLimitRules } from "@/lib/rate-limit";
 
 const ADMIN_EMAIL = "william.romario01@gmail.com";
 
@@ -20,6 +21,9 @@ export async function POST(request: NextRequest) {
         { status: 404 }
       );
     }
+
+    const limited = await enforceRateLimits(rateLimitRules("setup-admin", getRateLimitClientId(request)), "closed");
+    if (limited) return limited;
 
     const body = await request.json();
 

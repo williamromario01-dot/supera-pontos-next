@@ -12,6 +12,7 @@ import {
   normalizeDigits,
   normalizeEmail,
 } from "@/lib/saas";
+import { enforceRateLimits, getRateLimitClientId, rateLimitRules } from "@/lib/rate-limit";
 
 const RESPONSIBLE_ROLES = ["owner", "director", "manager", "authorized_representative", "other"] as const;
 
@@ -31,6 +32,8 @@ export async function POST(request: NextRequest) {
     const responsibleRole = String(body.responsible?.role ?? "");
     const password = String(body.password ?? "");
     const pricing = getPricingQuote(body.requestedUnits);
+    const limited = await enforceRateLimits(rateLimitRules("company-register", getRateLimitClientId(request), responsibleEmail), "closed");
+    if (limited) return limited;
 
     if (!isValidCnpj(cnpj)) return NextResponse.json({ error: "CNPJ inválido." }, { status: 400 });
     if (!isValidCpf(responsibleCpf)) return NextResponse.json({ error: "CPF do responsável inválido." }, { status: 400 });
