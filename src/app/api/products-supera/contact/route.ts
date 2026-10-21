@@ -195,10 +195,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(
       {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Erro interno ao gerar contato.",
+        error: "Erro interno ao gerar contato.",
       },
       { status: 500 }
     );

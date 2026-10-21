@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { put } from "@vercel/blob";
+import { ObjectId } from "mongodb";
 import clientPromise from "@/lib/mongodb";
 import { getOperationalAccessForAuth, subscriptionPastDueResponse } from "@/lib/subscription-access";
 
@@ -167,6 +168,18 @@ export async function POST(request: NextRequest) {
       schoolId = String(formSchoolId);
     }
 
+    if (!ObjectId.isValid(schoolId)) {
+      return NextResponse.json({ error: "Escola invalida." }, { status: 400 });
+    }
+
+    const schoolExists = await db.collection("schools").findOne(
+      { _id: new ObjectId(schoolId) },
+      { projection: { _id: 1 } },
+    );
+    if (!schoolExists) {
+      return NextResponse.json({ error: "Escola nao encontrada." }, { status: 404 });
+    }
+
     /*
      * =========================================================
      * 5. VALIDAR TIPO DA IMAGEM
@@ -332,10 +345,7 @@ export async function POST(request: NextRequest) {
   
     return NextResponse.json(
       {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Erro interno ao enviar a imagem.",
+        error: "Erro interno ao enviar a imagem.",
       },
       {
         status: 500,

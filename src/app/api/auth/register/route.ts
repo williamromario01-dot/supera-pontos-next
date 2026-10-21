@@ -4,6 +4,16 @@ import clientPromise from "@/lib/mongodb";
 
 export async function POST(request: NextRequest) {
   try {
+    if (
+      process.env.NODE_ENV === "production" ||
+      process.env.ENABLE_LEGACY_STUDENT_REGISTRATION !== "true"
+    ) {
+      return NextResponse.json(
+        { error: "Cadastro legado indisponivel." },
+        { status: 404 }
+      );
+    }
+
     const body = await request.json();
 
     const name = String(body.name || "").trim();

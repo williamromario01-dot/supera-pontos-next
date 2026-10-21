@@ -6,6 +6,9 @@ import clientPromise from "@/lib/mongodb";
 import { isSchoolArchived } from "@/lib/schools";
 import { getOperationalAccessForAuth, subscriptionPastDueResponseForAccess } from "@/lib/subscription-access";
 
+const MAX_IMPORT_FILE_SIZE = 1024 * 1024;
+const MAX_IMPORT_ROWS = 500;
+
 async function getAuthenticatedUser(request: NextRequest) {
   const token = request.cookies.get("supera_session")?.value;
 
@@ -74,6 +77,13 @@ export async function POST(request: NextRequest) {
     if (!(file instanceof File)) {
       return NextResponse.json(
         { error: "Selecione uma planilha." },
+        { status: 400 }
+      );
+    }
+
+    if (file.size <= 0 || file.size > MAX_IMPORT_FILE_SIZE) {
+      return NextResponse.json(
+        { error: "A planilha deve ter entre 1 byte e 1 MB." },
         { status: 400 }
       );
     }
@@ -147,6 +157,7 @@ export async function POST(request: NextRequest) {
     try {
       workbook = XLSX.read(buffer, {
         type: "buffer",
+        sheetRows: MAX_IMPORT_ROWS + 2,
       });
     } catch {
       return NextResponse.json(
@@ -175,6 +186,13 @@ export async function POST(request: NextRequest) {
         defval: "",
       }
     );
+
+    if (rows.length > MAX_IMPORT_ROWS) {
+      return NextResponse.json(
+        { error: `A planilha pode conter no maximo ${MAX_IMPORT_ROWS} alunos.` },
+        { status: 400 }
+      );
+    }
 
     if (rows.length === 0) {
       return NextResponse.json(
@@ -309,12 +327,22 @@ export async function POST(request: NextRequest) {
       )
     );
 
+    if (!school.companyId || !ObjectId.isValid(String(school.companyId))) {
+      return NextResponse.json(
+        { error: "A empresa da escola e invalida." },
+        { status: 409 }
+      );
+    }
+
+    const companyId = new ObjectId(String(school.companyId));
+
     const studentsToInsert: {
       name: string;
       email: string;
       passwordHash: string;
       role: "student";
       schoolId: ObjectId;
+      companyId: ObjectId;
       points: number;
       active: boolean;
       createdAt: Date;
@@ -338,6 +366,7 @@ export async function POST(request: NextRequest) {
         passwordHash,
         role: "student",
         schoolId: new ObjectId(schoolId),
+        companyId,
         points: 0,
         active: true,
         createdAt: new Date(),

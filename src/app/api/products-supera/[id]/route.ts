@@ -298,10 +298,7 @@ export async function GET(
 
     return NextResponse.json(
       {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Erro interno ao carregar o produto.",
+        error: "Erro interno ao carregar o produto.",
       },
       {
         status: 500,
@@ -782,10 +779,7 @@ export async function PATCH(
 
     return NextResponse.json(
       {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Erro interno ao atualizar o produto.",
+        error: "Erro interno ao atualizar o produto.",
       },
       {
         status: 500,
@@ -951,10 +945,7 @@ export async function DELETE(
 
     return NextResponse.json(
       {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Erro interno ao remover o produto.",
+        error: "Erro interno ao remover o produto.",
       },
       {
         status: 500,

@@ -523,10 +523,7 @@ export async function POST(
 
     return NextResponse.json(
       {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Erro interno ao cadastrar o produto.",
+        error: "Erro interno ao cadastrar o produto.",
       },
       {
         status: 500,

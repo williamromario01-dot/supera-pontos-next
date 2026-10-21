@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
 import clientPromise from "@/lib/mongodb";
+import { getCategoryScopeFilter } from "@/lib/category-scope";
 
 const DB_NAME = "supera_pontos";
 
@@ -377,15 +378,6 @@ export async function GET(request: NextRequest) {
       currentWeekStart
     );
 
-    const rankingCategories = await categories
-      .find({
-        participatesInRanking: true,
-      })
-      .sort({
-        name: 1,
-      })
-      .toArray();
-
     if (scope === "unit") {
       if (user.role === "student") {
         return NextResponse.json(
@@ -467,6 +459,16 @@ export async function GET(request: NextRequest) {
       const unitStudentIds = unitStudentDocs.map(
         (student) => student._id
       );
+
+      const rankingCategories = await categories
+        .find({
+          $and: [
+            getCategoryScopeFilter(unitSchoolId),
+            { participatesInRanking: true },
+          ],
+        })
+        .sort({ name: 1 })
+        .toArray();
 
       const results = await buildWeeklyCategories(
         pointEvents,
@@ -605,6 +607,24 @@ export async function GET(request: NextRequest) {
         );
       }
     }
+
+    const studentSchoolId = getSessionSchoolId({ schoolId: student.schoolId });
+    if (!studentSchoolId) {
+      return NextResponse.json(
+        { error: "O aluno nao esta vinculado a uma unidade valida." },
+        { status: 400 }
+      );
+    }
+
+    const rankingCategories = await categories
+      .find({
+        $and: [
+          getCategoryScopeFilter(studentSchoolId),
+          { participatesInRanking: true },
+        ],
+      })
+      .sort({ name: 1 })
+      .toArray();
 
     const results = await buildWeeklyCategories(
       pointEvents,

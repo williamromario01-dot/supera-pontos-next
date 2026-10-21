@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
+import { timingSafeEqual } from "node:crypto";
 import clientPromise from "@/lib/mongodb";
 
 const ADMIN_EMAIL = "william.romario01@gmail.com";
@@ -8,10 +9,15 @@ export async function POST(request: NextRequest) {
   try {
     const setupSecret = process.env.ADMIN_SETUP_SECRET;
 
-    if (!setupSecret) {
+    if (
+      process.env.NODE_ENV === "production" ||
+      process.env.ENABLE_ADMIN_SETUP !== "true" ||
+      !setupSecret ||
+      setupSecret.length < 32
+    ) {
       return NextResponse.json(
-        { error: "ADMIN_SETUP_SECRET não configurada." },
-        { status: 500 }
+        { error: "Endpoint indisponivel." },
+        { status: 404 }
       );
     }
 
@@ -20,7 +26,13 @@ export async function POST(request: NextRequest) {
     const secret = String(body.secret || "");
     const password = String(body.password || "");
 
-    if (secret !== setupSecret) {
+    const expected = Buffer.from(setupSecret, "utf8");
+    const provided = Buffer.from(secret, "utf8");
+
+    if (
+      expected.length !== provided.length ||
+      !timingSafeEqual(expected, provided)
+    ) {
       return NextResponse.json(
         { error: "Não autorizado." },
         { status: 401 }
