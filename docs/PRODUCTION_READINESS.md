@@ -49,3 +49,54 @@ Atualizado em 2026-10-21. Este checklist não autoriza ativação financeira. `A
 - Exclusão LGPD é solicitação administrativa, nunca uma deleção automática. Prazos legais de retenção aguardam revisão jurídica.
 - `BACKUP_CONFIGURATION_VERIFIED = NO`: não há evidência acessível no repositório sobre configuração do Atlas.
 - `EMAIL_PROVIDER_CONFIGURATION_REQUIRED = YES`: a abstração Resend falha de forma segura sem credenciais.
+
+## GO-LIVE
+
+### AUTOMATED VERIFIED
+
+- [x] TypeScript, 179+ testes e production build
+- [x] Runtime audit sem vulnerabilidades
+- [x] Healthcheck leve e sanitizado
+- [x] Rate limit, CSRF/origin, cookies e security headers
+- [x] Asaas restrito a Sandbox e production billing desabilitado
+- [x] Build sem seed, migration destrutiva, e-mail ou escrita financeira
+
+### MANUAL VERIFIED
+
+- [ ] Domínio oficial e HTTPS verificados externamente
+- [ ] Redirect do domínio antigo validado após configuração na Vercel/DNS
+- [ ] Envs de Production confirmadas sem expor valores
+
+### PENDING HUMAN ACTION
+
+- [ ] Domínio/sender Resend verificados e teste controlado concluído
+- [ ] Revisão jurídica e política de retenção concluídas
+- [ ] Backup e restore isolado verificados
+- [ ] Monitoramento e alertas configurados/testados
+- [ ] Canal e processo de suporte aprovados
+
+### FINANCIAL PRODUCTION PENDING
+
+- [ ] Executar exclusivamente a Etapa 9 autorizada
+- [ ] Homologar customer, subscription, primeira cobrança, webhook e reconciliação em produção
+
+## Matriz de produção
+
+| Item | Status | Automático | Ação humana | Bloqueador |
+|---|---|---:|---|---:|
+| APP_URL | Implementado/validado no código | Sim | Confirmar env Vercel | Sim |
+| MongoDB | Pool/timeouts e escopo implementados | Sim | Confirmar acesso, índices, backup | Sim |
+| Resend | Integração/timeout implementados | Sim | Verificar domínio, sender e envs | Sim |
+| Asaas | Sandbox guard ativo | Sim | Etapa 9 separada | Sim |
+| Vercel/deploy | Push main esperado | Não | Confirmar deploy e envs | Sim |
+| Domínio/DNS/HTTPS | UNKNOWN | Não | Verificar externamente | Sim |
+| Cookies/headers/CSRF | Implementados | Sim | Validar em deploy | Sim |
+| CSP | Report-Only | Sim | Observar violações antes de enforcement | Não |
+| Rate limit | MongoDB distribuído | Sim | Monitorar 429 | Não |
+| Backup/restore | UNKNOWN | Não | Verificar e testar isoladamente | Sim |
+| Logging | Sanitização existente | Parcial | Configurar retenção/alertas | Não |
+| Monitoring | Não verificado | Não | Configurar/testar alertas | Sim |
+| Healthcheck | Implementado | Sim | Adicionar uptime monitor | Não |
+| Terms/Privacy/LGPD | Minutas e infraestrutura prontas | Parcial | Revisão jurídica | Sim |
+| Support/rollback | Runbooks criados | Parcial | Definir responsáveis | Sim |
+| Environment separation | Guard implementado | Sim | Conferir envs externas | Sim |

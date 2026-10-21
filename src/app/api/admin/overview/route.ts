@@ -3,6 +3,7 @@ import clientPromise from "@/lib/mongodb";
 import { authenticateRequest } from "@/lib/auth";
 import { DB_NAME } from "@/lib/saas";
 import type { Collection, Document } from "mongodb";
+import { getProductionConfigurationStatus } from "@/lib/env";
 
 export const dynamic = "force-dynamic";
 
@@ -27,7 +28,7 @@ export async function GET(request: NextRequest) {
       db.collection("privacyRequests").countDocuments({ status: { $in: ["requested", "in_review"] } }),
     ]);
     const map = (items: Array<{ _id: string | null; count: number }>) => Object.fromEntries(items.map((item) => [item._id ?? "unknown", item.count]));
-    return NextResponse.json({ totals: { companies, schoolsActive, schoolsArchived, admins, educators, students, categories, classes, scoreEntries: scores }, byStatus: { companies: map(companyStatuses), subscriptions: map(subscriptions) }, attention: { incompleteOnboarding, pastDue, scheduledCancellation, companiesWithoutSchool: noSchool[0]?.count ?? 0, pendingPrivacy } });
+    return NextResponse.json({ totals: { companies, schoolsActive, schoolsArchived, admins, educators, students, categories, classes, scoreEntries: scores }, byStatus: { companies: map(companyStatuses), subscriptions: map(subscriptions) }, attention: { incompleteOnboarding, pastDue, scheduledCancellation, companiesWithoutSchool: noSchool[0]?.count ?? 0, pendingPrivacy }, platformHealth: getProductionConfigurationStatus() });
   } catch {
     return NextResponse.json({ error: "Não foi possível carregar os indicadores." }, { status: 500 });
   }

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import clientPromise from "@/lib/mongodb";
 import { authenticateRequest } from "@/lib/auth";
 import { DB_NAME } from "@/lib/saas";
+import { enforceRateLimits, getRateLimitClientId, rateLimitRules } from "@/lib/rate-limit";
 
 const TYPES = new Set(["access", "correction", "export", "deletion"]);
 
@@ -18,6 +19,8 @@ export async function POST(request: NextRequest) {
   const result = await authenticateRequest(request);
   if (!result.authenticated) return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
   if (result.auth.role !== "company_admin" || !result.auth.companyId) return NextResponse.json({ error: "Acesso restrito ao administrador empresarial." }, { status: 403 });
+  const limited = await enforceRateLimits(rateLimitRules("privacy-request", getRateLimitClientId(request), result.auth.userId.toString()), "closed");
+  if (limited) return limited;
   let body: Record<string, unknown>;
   try { body = await request.json(); } catch { return NextResponse.json({ error: "Dados inválidos." }, { status: 400 }); }
   const type = String(body.type ?? "");

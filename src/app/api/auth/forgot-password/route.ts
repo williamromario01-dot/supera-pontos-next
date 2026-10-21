@@ -32,10 +32,8 @@ export async function POST(request: NextRequest) {
       if (!captured) { await tokens.deleteOne({ tokenHash }); return NextResponse.json(generic); }
       return NextResponse.json(generic);
     }
-    const emailMessage = passwordResetEmail(resetUrl);
-    const resend = { emails: { send: async (_options?: unknown) => { const result = await sendEmail({ to: email, ...emailMessage }); return { error: result.sent ? null : result.reason }; } } };
-    const { error } = await resend.emails.send({ from: process.env.RESEND_FROM_EMAIL!, to: [email], subject: "Redefinição de senha — SUPERPONTOS", html: `<p>Use o link de uso único, válido por 30 minutos:</p><p><a href="${resetUrl}">Redefinir senha</a></p>` });
-    if (error) { await tokens.deleteOne({ tokenHash }); return NextResponse.json({ error: "Não foi possível enviar a recuperação." }, { status: 502 }); }
+    const emailResult = await sendEmail({ to: email, ...passwordResetEmail(resetUrl) });
+    if (!emailResult.sent) { await tokens.deleteOne({ tokenHash }); return NextResponse.json(generic); }
     return NextResponse.json(generic);
   } catch { return NextResponse.json({ error: "Não foi possível iniciar a recuperação." }, { status: 500 }); }
 }

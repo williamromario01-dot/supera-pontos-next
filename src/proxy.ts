@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 
 const UNSAFE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+const LEGACY_HOST = "superapontos.gfars.com.br";
+const OFFICIAL_HOST = "superpontos.gfars.com.br";
 const CSP_REPORT_ONLY = [
   "default-src 'self'",
   "base-uri 'self'",
@@ -35,6 +37,14 @@ function addSecurityHeaders(response: NextResponse) {
 }
 
 export function proxy(request: NextRequest) {
+  const forwardedHost = request.headers.get("x-forwarded-host")?.split(",")[0]?.trim().toLowerCase();
+  const host = (forwardedHost || request.headers.get("host") || "").split(":")[0].toLowerCase();
+  if (host === LEGACY_HOST) {
+    const destination = request.nextUrl.clone();
+    destination.protocol = "https:";
+    destination.host = OFFICIAL_HOST;
+    return addSecurityHeaders(NextResponse.redirect(destination, 308));
+  }
   if (
     request.nextUrl.pathname.startsWith("/api/") &&
     request.nextUrl.pathname !== "/api/webhooks/asaas" &&

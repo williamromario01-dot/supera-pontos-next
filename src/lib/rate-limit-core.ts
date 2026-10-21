@@ -59,7 +59,7 @@ export async function evaluateRateLimits(
 }
 
 export function rateLimitRules(
-  endpoint: "login" | "forgot" | "reset" | "company-register" | "setup-admin" | "legacy-register",
+  endpoint: "login" | "forgot" | "reset" | "company-register" | "setup-admin" | "legacy-register" | "privacy-request",
   clientId: string,
   identity?: string,
 ): RateLimitRule[] {
@@ -71,6 +71,7 @@ export function rateLimitRules(
     "company-register": { ipLimit: 5, identityLimit: 3, windowMs: 24 * 60 * 60_000 },
     "setup-admin": { ipLimit: 5, identityLimit: 0, windowMs: 60 * 60_000 },
     "legacy-register": { ipLimit: 10, identityLimit: 5, windowMs: 60 * 60_000 },
+    "privacy-request": { ipLimit: 20, identityLimit: 5, windowMs: 60 * 60_000 },
   } as const;
   const definition = definitions[endpoint];
   const rules: RateLimitRule[] = [{ namespace: `${endpoint}:ip`, identity: clientId, limit: definition.ipLimit, windowMs: definition.windowMs }];

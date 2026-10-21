@@ -6,7 +6,7 @@ if (!uri) {
   throw new Error("MONGODB_URI não está definida nas variáveis de ambiente.");
 }
 
-const options = {};
+const options = { serverSelectionTimeoutMS: 10_000, connectTimeoutMS: 10_000, maxPoolSize: 20 };
 
 let client: MongoClient;
 let clientPromise: Promise<MongoClient>;
