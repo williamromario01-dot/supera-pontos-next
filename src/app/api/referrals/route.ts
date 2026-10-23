@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
 import clientPromise from "@/lib/mongodb";
 import { getOperationalAccessForAuth, subscriptionPastDueResponse } from "@/lib/subscription-access";
+import { REFERRAL_REWARD_POLICY } from "@/lib/referral-reward";
 
 const DB_NAME = "supera_pontos";
 
@@ -104,6 +105,16 @@ export async function GET(request: NextRequest) {
           phone: referral.phone,
           observation: referral.observation || "",
           status: referral.status,
+          attendanceStatus: referral.attendanceStatus || null,
+          attendedAt: referral.attendedAt || null,
+          attendanceConfirmedAt: referral.attendanceConfirmedAt || null,
+          attendanceConfirmedByName: referral.attendanceConfirmedByName || null,
+          attendanceConfirmedByRole: referral.attendanceConfirmedByRole || null,
+          rewardGranted: referral.rewardGranted === true,
+          rewardGrantedAt: referral.rewardGrantedAt || null,
+          rewardPoints: referral.rewardPoints || referral.pointsAwarded || 0,
+          rewardEntryId: referral.rewardEntryId?.toString() || null,
+          legacyAttendance: !referral.attendanceStatus,
           pointsAwarded: referral.pointsAwarded || 0,
           approvedBy: referral.approvedBy
             ? referral.approvedBy.toString()
@@ -211,9 +222,29 @@ export async function POST(request: NextRequest) {
       phone,
       observation,
       status: "pending",
+      attendanceStatus: "pending",
+      attendedAt: null,
+      attendanceConfirmedAt: null,
+      attendanceConfirmedByUserId: null,
+      attendanceConfirmedByName: null,
+      attendanceConfirmedByRole: null,
+      rewardPolicy: REFERRAL_REWARD_POLICY,
+      rewardGranted: false,
+      rewardGrantedAt: null,
+      rewardPoints: 0,
+      rewardEntryId: null,
       pointsAwarded: 0,
       approvedBy: null,
       approvedAt: null,
+      history: [
+        {
+          type: "created",
+          at: new Date(),
+          userId: user._id,
+          userName: user.name || "Aluno",
+          userRole: user.role,
+        },
+      ],
       createdAt: new Date(),
       updatedAt: new Date(),
     };
@@ -229,6 +260,9 @@ export async function POST(request: NextRequest) {
           phone,
           observation,
           status: "pending",
+          attendanceStatus: "pending",
+          rewardGranted: false,
+          rewardPoints: 0,
           pointsAwarded: 0,
         },
       },

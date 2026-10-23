@@ -34,7 +34,17 @@ interface Referral {
   name: string;
   phone: string;
   observation: string;
-  status: "pending" | "approved" | "rejected";
+  status: "pending" | "contacted" | "approved" | "scheduled" | "rejected";
+  attendanceStatus: "pending" | "attended" | "no_show" | "cancelled" | null;
+  attendedAt: string | null;
+  attendanceConfirmedAt: string | null;
+  attendanceConfirmedByName: string | null;
+  attendanceConfirmedByRole: string | null;
+  rewardGranted: boolean;
+  rewardGrantedAt: string | null;
+  rewardPoints: number;
+  rewardEntryId: string | null;
+  legacyAttendance: boolean;
   pointsAwarded: number;
   approvedBy: string | null;
   approvedAt: string | null;
@@ -170,7 +180,8 @@ export default function ReferralsPage() {
 
   async function handleProcess(
     referralId: string,
-    action: "approve" | "reject"
+    action: "contact" | "approve" | "schedule" | "reject" | "attendance",
+    attendanceStatus?: "pending" | "attended" | "no_show" | "cancelled"
   ) {
     setMessage("");
     setError("");
@@ -187,6 +198,7 @@ export default function ReferralsPage() {
           credentials: "include",
           body: JSON.stringify({
             action,
+            attendanceStatus,
           }),
         }
       );
@@ -201,13 +213,7 @@ export default function ReferralsPage() {
         return;
       }
 
-      if (action === "approve") {
-        setMessage(
-          "Indicação aprovada! 100 pontos foram concedidos ao aluno."
-        );
-      } else {
-        setMessage("Indicação recusada.");
-      }
+      setMessage(data.message || "Indicação atualizada.");
 
       await loadData();
     } catch (err) {
@@ -228,6 +234,22 @@ export default function ReferralsPage() {
         icon: <CheckCircle2 size={15} />,
         className:
           "bg-emerald-50 text-emerald-700 border-emerald-100",
+      };
+    }
+
+    if (status === "contacted") {
+      return {
+        label: "Contato realizado",
+        icon: <Phone size={15} />,
+        className: "bg-blue-50 text-blue-700 border-blue-100",
+      };
+    }
+
+    if (status === "scheduled") {
+      return {
+        label: "Aula agendada",
+        icon: <Clock3 size={15} />,
+        className: "bg-violet-50 text-violet-700 border-violet-100",
       };
     }
 
@@ -294,7 +316,7 @@ export default function ReferralsPage() {
   ).length;
 
   const approvedCount = referrals.filter(
-    (referral) => referral.status === "approved"
+    (referral) => referral.status === "approved" || referral.status === "scheduled"
   ).length;
 
   const totalPoints = referrals.reduce(
@@ -380,8 +402,8 @@ export default function ReferralsPage() {
 
             <p className="mt-3 text-orange-50 text-sm sm:text-base leading-relaxed">
               Indique alguém que possa se beneficiar
-              do Supera. Se sua indicação for aprovada
-              pelo educador, você ganha{" "}
+              do Supera. Os pontos são liberados somente
+              após um educador ou administrador confirmar o comparecimento, no valor de{" "}
               <strong>100 pontos</strong>.
             </p>
 
@@ -597,7 +619,7 @@ export default function ReferralsPage() {
                     </span>
 
                     <p className="text-xs text-orange-800">
-                      Se aprovada, você recebe 100 pontos.
+                      Após o comparecimento confirmado, você recebe 100 pontos.
                     </p>
                   </div>
 
@@ -607,6 +629,45 @@ export default function ReferralsPage() {
 
             </div>
 
+          </section>
+        )}
+
+        {user.role === "student" && (
+          <section className="mt-6 rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+            <div className="border-b border-slate-100 p-5 sm:p-6">
+              <h2 className="text-lg font-black text-slate-800">Minhas indicações</h2>
+              <p className="mt-1 text-sm text-slate-400">Acompanhe o comparecimento e a liberação dos pontos.</p>
+            </div>
+            {referrals.length === 0 ? (
+              <p className="p-6 text-sm text-slate-500">Você ainda não enviou indicações.</p>
+            ) : (
+              <div className="divide-y divide-slate-100">
+                {referrals.map((referral) => {
+                  const status = getStatus(referral.status);
+                  return <article key={referral.id} className="p-5 sm:p-6">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div><h3 className="font-black text-slate-800">{referral.name}</h3><p className="mt-1 text-xs text-slate-400">Indicada em {formatDate(referral.createdAt)}</p></div>
+                      <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-bold ${status.className}`}>{status.icon}{status.label}</span>
+                    </div>
+                    <div className="mt-4 rounded-xl bg-slate-50 p-4 text-sm">
+                      {referral.rewardGranted ? (
+                        <p className="font-bold text-emerald-700">🎉 Pontos da indicação recebidos: +{referral.rewardPoints || referral.pointsAwarded}</p>
+                      ) : referral.attendanceStatus === "no_show" ? (
+                        <><p className="font-bold text-rose-700">Não compareceu</p><p className="mt-1 text-slate-500">Nenhum ponto concedido.</p></>
+                      ) : referral.attendanceStatus === "cancelled" ? (
+                        <><p className="font-bold text-slate-600">Atendimento cancelado</p><p className="mt-1 text-slate-500">Nenhum ponto concedido.</p></>
+                      ) : referral.attendanceStatus === "attended" ? (
+                        <><p className="font-bold text-emerald-700">Compareceu</p><p className="mt-1 text-slate-500">Registro legado sem nova recompensa automática.</p></>
+                      ) : referral.legacyAttendance ? (
+                        <p className="text-slate-500">Registro histórico: comparecimento não informado.{referral.pointsAwarded > 0 ? ` Pontos históricos registrados: +${referral.pointsAwarded}.` : ""}</p>
+                      ) : (
+                        <><p className="font-bold text-amber-700">Aguardando comparecimento</p><p className="mt-1 text-slate-500">Pontos ainda não liberados.</p></>
+                      )}
+                    </div>
+                  </article>;
+                })}
+              </div>
+            )}
           </section>
         )}
 
@@ -763,67 +824,23 @@ export default function ReferralsPage() {
 
                           </div>
 
-                          {referral.status ===
-                            "pending" && (
-
-                            <div className="flex gap-2 flex-shrink-0">
-
-                              <button
-                                onClick={() =>
-                                  handleProcess(
-                                    referral.id,
-                                    "reject"
-                                  )
-                                }
-                                disabled={
-                                  processingId ===
-                                  referral.id
-                                }
-                                className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 text-xs font-black disabled:opacity-50 transition"
-                              >
-                                <XCircle size={16} />
-                                Recusar
-                              </button>
-
-                              <button
-                                onClick={() =>
-                                  handleProcess(
-                                    referral.id,
-                                    "approve"
-                                  )
-                                }
-                                disabled={
-                                  processingId ===
-                                  referral.id
-                                }
-                                className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-black disabled:opacity-50 transition shadow-sm"
-                              >
-                                {processingId ===
-                                referral.id ? (
-                                  <Loader2
-                                    size={16}
-                                    className="animate-spin"
-                                  />
-                                ) : (
-                                  <CheckCircle2 size={16} />
-                                )}
-
-                                Aprovar +100
-                              </button>
-
-                            </div>
-
-                          )}
-
-                          {referral.status ===
-                            "approved" && (
-
-                            <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-50 text-emerald-700 text-xs font-black">
-                              <Star size={16} />
-                              +100 pontos
-                            </div>
-
-                          )}
+                          <div className="flex flex-wrap gap-2 flex-shrink-0 lg:max-w-md lg:justify-end">
+                            {referral.status === "pending" && <>
+                              <button onClick={() => handleProcess(referral.id, "reject")} disabled={processingId === referral.id} className="inline-flex items-center gap-2 rounded-xl bg-rose-50 px-4 py-2.5 text-xs font-black text-rose-600 transition hover:bg-rose-100 disabled:opacity-50"><XCircle size={16}/>Recusar</button>
+                              <button onClick={() => handleProcess(referral.id, "contact")} disabled={processingId === referral.id} className="inline-flex items-center gap-2 rounded-xl bg-blue-500 px-4 py-2.5 text-xs font-black text-white transition hover:bg-blue-600 disabled:opacity-50"><Phone size={16}/>Registrar contato</button>
+                            </>}
+                            {referral.status === "contacted" && <>
+                              <button onClick={() => handleProcess(referral.id, "reject")} disabled={processingId === referral.id} className="inline-flex items-center gap-2 rounded-xl bg-rose-50 px-4 py-2.5 text-xs font-black text-rose-600 transition hover:bg-rose-100 disabled:opacity-50"><XCircle size={16}/>Recusar</button>
+                              <button onClick={() => handleProcess(referral.id, "approve")} disabled={processingId === referral.id} className="inline-flex items-center gap-2 rounded-xl bg-emerald-500 px-4 py-2.5 text-xs font-black text-white transition hover:bg-emerald-600 disabled:opacity-50"><CheckCircle2 size={16}/>Aceitar indicação</button>
+                            </>}
+                            {referral.status === "approved" && <button onClick={() => handleProcess(referral.id, "schedule")} disabled={processingId === referral.id} className="inline-flex items-center gap-2 rounded-xl bg-violet-500 px-4 py-2.5 text-xs font-black text-white transition hover:bg-violet-600 disabled:opacity-50"><Clock3 size={16}/>Marcar agendamento</button>}
+                            {(referral.status === "approved" || referral.status === "scheduled") && <>
+                              <button onClick={() => handleProcess(referral.id, "attendance", "no_show")} disabled={processingId === referral.id} className="rounded-xl bg-rose-50 px-4 py-2.5 text-xs font-black text-rose-700 transition hover:bg-rose-100 disabled:opacity-50">Não compareceu</button>
+                              <button onClick={() => handleProcess(referral.id, "attendance", "cancelled")} disabled={processingId === referral.id} className="rounded-xl bg-slate-100 px-4 py-2.5 text-xs font-black text-slate-700 transition hover:bg-slate-200 disabled:opacity-50">Cancelado</button>
+                              <button onClick={() => handleProcess(referral.id, "attendance", "attended")} disabled={processingId === referral.id} className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-xs font-black text-white transition hover:bg-emerald-700 disabled:opacity-50">{processingId === referral.id ? <Loader2 size={16} className="animate-spin"/> : <CheckCircle2 size={16}/>}Confirmar comparecimento</button>
+                            </>}
+                            {referral.rewardGranted && <span className="inline-flex items-center gap-2 rounded-xl bg-emerald-50 px-4 py-2.5 text-xs font-black text-emerald-700"><Star size={16}/>+{referral.rewardPoints || referral.pointsAwarded} pontos concedidos</span>}
+                          </div>
 
                         </div>
 
