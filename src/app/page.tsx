@@ -26,13 +26,6 @@ type Profile =
 
 const profiles = [
   {
-    id: "company_admin" as Profile,
-    title: "Empresa",
-    description: "Plano e unidades da empresa",
-    icon: Building2,
-  },
-
-  {
     id: "student" as Profile,
     title: "Aluno",
     description: "Veja seus pontos e conquistas",
@@ -48,6 +41,12 @@ const profiles = [
     id: "admin" as Profile,
     title: "Administrador",
     description: "Gestão da sua escola",
+    icon: Building2,
+  },
+  {
+    id: "company_admin" as Profile,
+    title: "Empresa",
+    description: "Plano e unidades da empresa",
     icon: Building2,
   },
   {
@@ -557,7 +556,11 @@ export default function LoginPage() {
         {/* RODAPÉ */}
         <div className="login-footer">
           <div style={{ marginBottom: "12px" }}>
-            <Link href="/register-company" style={{ color: "#c2410c", fontWeight: 800 }}>
+            <Link
+              href="/register-company"
+              className="flex h-[52px] w-full items-center justify-center gap-2 rounded-[14px] bg-[#1D4ED8] px-5 text-[15px] font-semibold text-white transition-colors duration-200 hover:bg-[#1E40AF]"
+            >
+              <Building2 size={18} />
               Cadastrar minha instituição
             </Link>
           </div>
