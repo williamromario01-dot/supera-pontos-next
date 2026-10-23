@@ -3,6 +3,7 @@ import { ObjectId } from "mongodb";
 import clientPromise from "@/lib/mongodb";
 import { authenticateRequest } from "@/lib/auth";
 import { parseCivilDate, resolveOperationalSchoolId, TIME_PATTERN } from "@/lib/planner";
+import { parseReminderMinutes } from "@/lib/planner-reminder-core";
 const DB_NAME = "supera_pontos";
 type Context = { params: Promise<{ id: string }> };
 const bad=(error:string,status=400)=>NextResponse.json({error},{status});
@@ -25,6 +26,7 @@ export async function PATCH(request:NextRequest,ctx:Context){try{const value=awa
   if(body.startDate!==undefined){const date=parseCivilDate(body.startDate);if(!date)return bad("Data inválida.");set.startDate=date;}
   if(body.startTime!==undefined){if(!TIME_PATTERN.test(String(body.startTime)))return bad("Horário inválido.");set.startTime=body.startTime;}
   if(body.endTime!==undefined){if(body.endTime!==null&&!TIME_PATTERN.test(String(body.endTime)))return bad("Horário final inválido.");set.endTime=body.endTime||null;}
+  if(body.reminderMinutes!==undefined){const reminderMinutes=parseReminderMinutes(body.reminderMinutes);if(reminderMinutes===undefined)return bad("Lembrete inválido.");set.reminderMinutes=reminderMinutes;}
   if(event.type==="institutional"){
     if(body.recurrence!==undefined){if(body.recurrence!=="once"&&body.recurrence!=="weekly")return bad("Recorrência inválida.");set.recurrence=body.recurrence;}
     if(body.recurrenceEnd!==undefined){const recurrenceEnd=body.recurrenceEnd?parseCivilDate(body.recurrenceEnd):null;if(body.recurrenceEnd&&!recurrenceEnd)return bad("Fim da recorrência inválido.");set.recurrenceEnd=recurrenceEnd;}

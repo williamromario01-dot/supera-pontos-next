@@ -50,6 +50,7 @@ export function expandPlannerEvent(event: Document, rangeStart: string, rangeEnd
     categoryName: event.categoryName ?? null, classId: event.classId?.toString() ?? null,
     className: event.className ?? null, date, startTime: event.startTime, endTime: event.endTime ?? null,
     recurrence: event.recurrence, recurrenceEnd: event.recurrenceEnd ?? null,
+    reminderMinutes: event.reminderMinutes ?? null,
     completed: event.completed === true, createdByName: event.createdByName ?? "",
     colorKey: institutionalColorKey ? resolvePlannerEventColorKey(event.type, event._id.toString(), event.colorKey, institutionalColorKey) : event.colorKey ?? null,
     editable: event.type === "personal",

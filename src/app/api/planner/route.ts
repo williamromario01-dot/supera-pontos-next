@@ -4,6 +4,7 @@ import clientPromise from "@/lib/mongodb";
 import { authenticateRequest, hasRequiredRole } from "@/lib/auth";
 import { expandPlannerEvent, getStudentClassIds, isRangeAllowed, parseCivilDate, resolveOperationalSchoolId, TIME_PATTERN } from "@/lib/planner";
 import { choosePersonalColorKey, getInstitutionalColorKey } from "@/lib/agenda-colors";
+import { parseReminderMinutes } from "@/lib/planner-reminder-core";
 
 const DB_NAME = "supera_pontos";
 const STAFF = ["super_admin", "admin", "educator"] as const;
@@ -65,6 +66,8 @@ export async function POST(request: NextRequest) {
     const recurrence = type === "institutional" && body.recurrence === "weekly" ? "weekly" : "once";
     const recurrenceEnd = recurrence === "weekly" && body.recurrenceEnd ? parseCivilDate(body.recurrenceEnd) : null;
     if (body.recurrenceEnd && !recurrenceEnd || recurrenceEnd && recurrenceEnd < startDate) return bad("Data final da recorrência inválida.");
+    const reminderMinutes = parseReminderMinutes(body.reminderMinutes);
+    if (reminderMinutes === undefined) return bad("Lembrete inválido.");
     const db = (await clientPromise).db(DB_NAME);
     const school = await db.collection("schools").findOne({ _id: schoolId }, { projection: { agendaInstitutionalColorKey: 1 } });
     if (!school) return bad("Escola não encontrada.", 404);
@@ -86,7 +89,7 @@ export async function POST(request: NextRequest) {
       type: "personal", schoolId: { $in: [schoolId, schoolId.toString()] }, studentId: auth.userId, startDate,
     }, { projection: { colorKey: 1 } }).toArray() : [];
     const colorKey = type === "personal" ? choosePersonalColorKey(eventId.toString(), institutionalColorKey, colorsAlreadyUsedThatDay.map((item) => item.colorKey)) : null;
-    const event = { _id: eventId, type, schoolId, studentId: type === "personal" ? auth.userId : null, audience, classId, className, title, description, categoryId: null, categoryName: null, colorKey, startDate, startTime, endTime, recurrence, recurrenceEnd, completed: false, createdBy: auth.userId, createdByName: String(auth.user.name || ""), createdAt: now, updatedAt: now };
+    const event = { _id: eventId, type, schoolId, studentId: type === "personal" ? auth.userId : null, audience, classId, className, title, description, categoryId: null, categoryName: null, colorKey, startDate, startTime, endTime, recurrence, recurrenceEnd, reminderMinutes, completed: false, createdBy: auth.userId, createdByName: String(auth.user.name || ""), createdAt: now, updatedAt: now };
     const inserted = await db.collection("plannerEvents").insertOne(event);
     return NextResponse.json({ event: { id: inserted.insertedId.toString(), ...event, _id: undefined, schoolId: schoolId.toString(), studentId: event.studentId?.toString() ?? null, classId: classId?.toString() ?? null } }, { status: 201 });
   } catch (error) { console.error("Erro ao criar evento:", error); return bad("Erro interno ao criar evento.", 500); }
