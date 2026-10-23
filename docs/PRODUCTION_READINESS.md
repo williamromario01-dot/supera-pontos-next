@@ -22,7 +22,7 @@ Atualizado em 2026-10-21. Este checklist não autoriza ativação financeira. `A
 - [ ] Confirmar plano, índices e conectividade do MongoDB Atlas em produção
 - [ ] Verificar e testar política de backup/restauração do MongoDB Atlas
 - [ ] Configurar e validar domínio/remetente Resend
-- [ ] Revisar juridicamente Termos, Privacidade, menores e retenção (`LEGAL_RETENTION_POLICY_REQUIRED`)
+- [ ] Obter revisão jurídica profissional da versão 1.0 antes da primeira contratação paga, especialmente sobre menores, controlador/operador, retenção e responsabilidade
 - [ ] Definir canal operacional para solicitações LGPD e seus SLAs
 - [ ] Configurar monitoramento externo e alertas; logging local seguro já existe
 - [ ] Validar CSP Report-Only com telemetria antes de considerar enforcement
@@ -46,7 +46,7 @@ Atualizado em 2026-10-21. Este checklist não autoriza ativação financeira. `A
 - React 18.3.1 permanece nesta etapa: o peer dependency local do Next.js 16.4.2 aceita `^18.2.0`, os testes e o build passam. O warning de depreciação exige migração planejada antes do Next.js 17, não uma atualização apressada nesta etapa.
 - O CSP permanece `REPORT_ONLY`; ativação bloqueante sem relatórios observados poderia quebrar fluxos legítimos.
 - Convites seguros têm templates e abstração disponíveis, mas a migração completa do modelo atual de credenciais depende de decisão de produto e não foi imposta retroativamente.
-- Exclusão LGPD é solicitação administrativa, nunca uma deleção automática. Prazos legais de retenção aguardam revisão jurídica.
+- Exclusão LGPD é solicitação administrativa, nunca deleção automática. O inventário técnico nasce bloqueado em DRY_RUN e os prazos específicos aguardam validação jurídica.
 - `BACKUP_CONFIGURATION_VERIFIED = NO`: não há evidência acessível no repositório sobre configuração do Atlas.
 - `EMAIL_PROVIDER_CONFIGURATION_REQUIRED = YES`: a abstração Resend falha de forma segura sem credenciais.
 
@@ -97,6 +97,6 @@ Atualizado em 2026-10-21. Este checklist não autoriza ativação financeira. `A
 | Logging | Sanitização existente | Parcial | Configurar retenção/alertas | Não |
 | Monitoring | Não verificado | Não | Configurar/testar alertas | Sim |
 | Healthcheck | Implementado | Sim | Adicionar uptime monitor | Não |
-| Terms/Privacy/LGPD | Minutas e infraestrutura prontas | Parcial | Revisão jurídica | Sim |
+| Terms/Privacy/LGPD | Versão 1.0 e infraestrutura implementadas | Parcial | Revisão jurídica profissional antes da primeira contratação paga | Sim |
 | Support/rollback | Runbooks criados | Parcial | Definir responsáveis | Sim |
 | Environment separation | Guard implementado | Sim | Conferir envs externas | Sim |

@@ -120,10 +120,11 @@ export async function DELETE(request: NextRequest, props: { params: Promise<{ id
       }
     }
 
-    await db.collection("users").deleteOne({
-      _id: new ObjectId(studentId),
-      role: "student",
-    });
+    const now = new Date();
+    await db.collection("users").updateOne(
+      { _id: new ObjectId(studentId), role: "student" },
+      { $set: { active: false, archivedAt: now, archivedBy: user._id, updatedAt: now } },
+    );
 
     // Encerra todas as sessões do aluno excluído.
     await db.collection("sessions").deleteMany({
@@ -131,7 +132,7 @@ export async function DELETE(request: NextRequest, props: { params: Promise<{ id
     });
 
     return NextResponse.json({
-      message: "Aluno excluído com sucesso.",
+      message: "Aluno arquivado com sucesso. O histórico relacionado foi preservado.",
     });
   } catch (error) {
     console.error("Erro ao excluir aluno:", error);

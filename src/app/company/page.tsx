@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
-import { Building2, CreditCard, GraduationCap, Plus, School, Users } from "lucide-react";
+import { Building2, CreditCard, GraduationCap, Plus, School, ShieldCheck, Users } from "lucide-react";
 
 type Dashboard = {
   company: { tradeName: string; legalName: string; cnpj: string; status: string };
@@ -67,7 +67,7 @@ export default function CompanyPage() {
     <header className="border-b bg-white"><div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-5">
       <div><Link href="/dashboard" className="text-sm font-semibold text-orange-600">← Home</Link>
       <h1 className="mt-2 text-2xl font-black">{data.company.tradeName}</h1><p className="text-sm text-slate-500">Painel empresarial consolidado</p></div>
-      <div className="flex gap-2"><Link href="/company/billing" className="flex items-center gap-2 rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 font-bold text-orange-700"><CreditCard size={18}/>Financeiro</Link><button onClick={() => setShowForm(!showForm)} className="flex items-center gap-2 rounded-xl bg-orange-500 px-4 py-3 font-bold text-white"><Plus size={18}/>Adicionar unidade</button></div>
+      <div className="flex flex-wrap gap-2"><Link href="/company/privacy" className="flex items-center gap-2 rounded-xl border bg-white px-4 py-3 font-bold text-slate-700"><ShieldCheck size={18}/>Privacidade</Link><Link href="/company/billing" className="flex items-center gap-2 rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 font-bold text-orange-700"><CreditCard size={18}/>Financeiro</Link><button onClick={() => setShowForm(!showForm)} className="flex items-center gap-2 rounded-xl bg-orange-500 px-4 py-3 font-bold text-white"><Plus size={18}/>Adicionar unidade</button></div>
     </div></header>
     <div className="mx-auto max-w-6xl space-y-6 px-4 py-8">
       {data.access?.state === "grace_period" && <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-900"><b>Pagamento em atraso</b><p className="mt-1 text-sm">Identificamos um pagamento em atraso. Regularize até {data.access.gracePeriodEndsAt ? new Date(data.access.gracePeriodEndsAt).toLocaleDateString("pt-BR") : "a data limite"} para evitar a suspensão temporária das operações.</p><Link href="/company/billing" className="mt-3 inline-block font-bold text-orange-700">Ir para Financeiro</Link></div>}

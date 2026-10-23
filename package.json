@@ -7,7 +7,7 @@
     "build": "next build",
     "test": "node --test tests/*.test.mjs",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "eslint ."
   },
   "dependencies": {
     "@vercel/blob": "2.8.2",
@@ -29,6 +29,8 @@
     "@types/react": "^18",
     "@types/react-dom": "^18",
     "autoprefixer": "^10.0.1",
+    "eslint": "^9.39.5",
+    "eslint-config-next": "^16.4.2",
     "fflate": "0.8.3",
     "postcss": "8.5.31",
     "tailwindcss": "^3.3.0",

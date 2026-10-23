@@ -1,5 +1,11 @@
-export const TERMS_VERSION = "2026-10-21-draft";
-export const PRIVACY_VERSION = "2026-10-21-draft";
+export const TERMS_VERSION = "1.0";
+export const PRIVACY_VERSION = "1.0";
 
-export const LEGAL_DRAFT_NOTICE =
-  "MINUTA — REVISÃO JURÍDICA NECESSÁRIA ANTES DO LANÇAMENTO";
+type LegalAcceptanceLike = {
+  termsVersion?: unknown;
+  privacyVersion?: unknown;
+} | null | undefined;
+
+export function requiresLegalReacceptance(acceptance: LegalAcceptanceLike): boolean {
+  return acceptance?.termsVersion !== TERMS_VERSION || acceptance?.privacyVersion !== PRIVACY_VERSION;
+}
