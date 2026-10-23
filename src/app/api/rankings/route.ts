@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
 import clientPromise from "@/lib/mongodb";
+import { getCategoryScopeFilter } from "@/lib/category-scope";
+import { schoolExists } from "@/lib/auth";
 
 const DB_NAME = "supera_pontos";
 
@@ -100,15 +102,20 @@ export async function GET(request: NextRequest) {
     let schoolFilter: ObjectId | null = null;
 
     if (user.role === "super_admin") {
-      if (requestedSchoolId) {
-        schoolFilter = validObjectId(requestedSchoolId);
+      if (!requestedSchoolId) {
+        return NextResponse.json(
+          { error: "Selecione uma escola válida." },
+          { status: 400 }
+        );
+      }
 
-        if (!schoolFilter) {
-          return NextResponse.json(
-            { error: "schoolId inválido." },
-            { status: 400 }
-          );
-        }
+      schoolFilter = validObjectId(requestedSchoolId);
+
+      if (!schoolFilter) {
+        return NextResponse.json(
+          { error: "schoolId inválido." },
+          { status: 400 }
+        );
       }
     } else if (
       user.role === "admin" ||
@@ -136,6 +143,20 @@ export async function GET(request: NextRequest) {
       return NextResponse.json(
         { error: "Você não tem permissão para consultar o ranking." },
         { status: 403 }
+      );
+    }
+
+    if (!schoolFilter) {
+      return NextResponse.json(
+        { error: "Não foi possível determinar a escola do ranking." },
+        { status: 403 }
+      );
+    }
+
+    if (!(await schoolExists(schoolFilter))) {
+      return NextResponse.json(
+        { error: "A escola informada não foi encontrada." },
+        { status: 404 }
       );
     }
 
@@ -184,7 +205,10 @@ export async function GET(request: NextRequest) {
       }
 
       const category = await categories.findOne({
-        _id: categoryObjectId,
+        $and: [
+          { _id: categoryObjectId },
+          getCategoryScopeFilter(schoolFilter),
+        ],
       });
 
       if (!category) {
@@ -341,7 +365,10 @@ export async function GET(request: NextRequest) {
      */
     const rankingCategories = await categories
       .find({
-        participatesInRanking: true,
+        $and: [
+          getCategoryScopeFilter(schoolFilter),
+          { participatesInRanking: true },
+        ],
       })
       .sort({
         name: 1,
