@@ -31,6 +31,7 @@ import {
   ShoppingCart,
   GraduationCap,
   UserCheck,
+  CalendarDays,
 } from "lucide-react";
 
 interface User {
@@ -117,6 +118,8 @@ export default function DashboardPage() {
   const [user, setUser] = useState<User | null>(null);
   const [rankings, setRankings] = useState<RankingCategory[]>([]);
   const [weekly, setWeekly] = useState<WeeklyData | null>(null);
+  const [agendaSummary, setAgendaSummary] = useState<{ total: number; next: { title: string; date: string; startTime: string } | null }>({ total: 0, next: null });
+  const [weeklyGoals, setWeeklyGoals] = useState<Array<{ categoryId: string; categoryName: string; description: string }>>([]);
 
   const [loading, setLoading] = useState(true);
   const [loggingOut, setLoggingOut] = useState(false);
@@ -270,6 +273,20 @@ export default function DashboardPage() {
 
       if (weeklyResponse.ok) {
         setWeekly(weeklyData);
+      }
+      if (meData.user.role !== "super_admin") {
+        const today = new Date();
+        const todayIso = today.toISOString().slice(0, 10);
+        const weekStart = new Date(today);
+        weekStart.setUTCDate(today.getUTCDate() - today.getUTCDay());
+        const weekEnd = new Date(weekStart);
+        weekEnd.setUTCDate(weekStart.getUTCDate() + 6);
+        const [plannerResponse, goalsResponse] = await Promise.all([
+          fetch(`/api/planner?start=${todayIso}&end=${weekEnd.toISOString().slice(0, 10)}`, { credentials: "include" }),
+          fetch(`/api/weekly-goals?weekStart=${weekStart.toISOString().slice(0, 10)}`, { credentials: "include" }),
+        ]);
+        if (plannerResponse.ok) { const plannerData = await plannerResponse.json(); const visibleEvents = plannerData.events || []; setAgendaSummary({ total: visibleEvents.length, next: visibleEvents[0] || null }); }
+        if (goalsResponse.ok) { const goalsData = await goalsResponse.json(); setWeeklyGoals(goalsData.goal?.items || []); }
       }
     } catch (err) {
       console.error(err);
@@ -1116,111 +1133,11 @@ export default function DashboardPage() {
             RESUMO
         ========================================= */}
 
-        <section className="grid grid-cols-2 lg:grid-cols-4 gap-4 mt-6">
-
-          <div className="group bg-white rounded-2xl border border-slate-200 p-5 shadow-sm hover:shadow-md transition">
-
-            <div className="flex items-center justify-between">
-
-              <div className="w-11 h-11 rounded-xl bg-orange-50 flex items-center justify-center">
-                <Star className="w-5 h-5 text-orange-500" />
-              </div>
-
-              <span className="text-[10px] font-black tracking-wider text-slate-400">
-                TOTAL
-              </span>
-
-            </div>
-
-            <p className="mt-4 text-2xl sm:text-3xl font-black text-slate-800">
-              {(user.points || 0).toLocaleString(
-                "pt-BR"
-              )}
-            </p>
-
-            <p className="text-xs text-slate-500 mt-1">
-              pontos acumulados
-            </p>
-
-          </div>
-
-          <div className="group bg-white rounded-2xl border border-slate-200 p-5 shadow-sm hover:shadow-md transition">
-
-            <div className="flex items-center justify-between">
-
-              <div className="w-11 h-11 rounded-xl bg-blue-50 flex items-center justify-center">
-                <Trophy className="w-5 h-5 text-blue-600" />
-              </div>
-
-              <span className="text-[10px] font-black tracking-wider text-slate-400">
-                SEMANA
-              </span>
-
-            </div>
-
-            <p className="mt-4 text-2xl sm:text-3xl font-black text-slate-800">
-              {currentPoints.toLocaleString(
-                "pt-BR"
-              )}
-            </p>
-
-            <p className="text-xs text-slate-500 mt-1">
-              {isUnitWeekly
-                ? "pontos da unidade nesta semana"
-                : "pontos nesta semana"}
-            </p>
-
-          </div>
-
-          <div className="group bg-white rounded-2xl border border-slate-200 p-5 shadow-sm hover:shadow-md transition">
-
-            <div className="flex items-center justify-between">
-
-              <div className="w-11 h-11 rounded-xl bg-emerald-50 flex items-center justify-center">
-                <TrendingUp className="w-5 h-5 text-emerald-600" />
-              </div>
-
-              <span className="text-[10px] font-black tracking-wider text-slate-400">
-                EVOLUÇÃO
-              </span>
-
-            </div>
-
-            <p className="mt-4 text-2xl sm:text-3xl font-black text-slate-800">
-              {evolution > 0 ? "+" : ""}
-              {evolution.toFixed(0)}%
-            </p>
-
-            <p className="text-xs text-slate-500 mt-1">
-              comparado à semana anterior
-            </p>
-
-          </div>
-
-          <div className="group bg-white rounded-2xl border border-slate-200 p-5 shadow-sm hover:shadow-md transition">
-
-            <div className="flex items-center justify-between">
-
-              <div className="w-11 h-11 rounded-xl bg-purple-50 flex items-center justify-center">
-                <Award className="w-5 h-5 text-purple-600" />
-              </div>
-
-              <span className="text-[10px] font-black tracking-wider text-slate-400">
-                RECOMPENSA
-              </span>
-
-            </div>
-
-            <p className="mt-4 text-2xl sm:text-3xl font-black text-slate-800">
-              {weekly?.summary.rewardPoints || 0}
-            </p>
-
-            <p className="text-xs text-slate-500 mt-1">
-              pontos de recompensa
-            </p>
-
-          </div>
-
+        <section data-testid="student-summary-grid" className="mt-6 grid grid-cols-2 gap-3 sm:gap-4">
+          <div className="min-h-40 overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5"><div className="flex items-center justify-between"><div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50"><Trophy className="h-5 w-5 text-blue-600" /></div><span className="text-[10px] font-black tracking-wider text-slate-400">SEMANA</span></div><p className="mt-4 text-2xl font-black text-slate-800 sm:text-3xl">{currentPoints.toLocaleString("pt-BR")}</p><p className="mt-1 text-xs text-slate-500">{isUnitWeekly ? "pontos da unidade nesta semana" : "pontos nesta semana"}</p></div>
+          <div className="min-h-40 overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5"><div className="flex items-center justify-between"><div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-50"><TrendingUp className="h-5 w-5 text-emerald-600" /></div><span className="text-[10px] font-black tracking-wider text-slate-400">EVOLUÇÃO</span></div><p className="mt-4 text-2xl font-black text-slate-800 sm:text-3xl">{evolution > 0 ? "+" : ""}{evolution.toFixed(0)}%</p><p className="mt-1 text-xs text-slate-500">comparado à semana anterior</p></div>
+          <button onClick={() => router.push("/planner")} className="min-h-40 overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:border-orange-300 hover:shadow-md sm:p-5"><div className="flex items-center justify-between"><div className="flex h-10 w-10 items-center justify-center rounded-xl bg-orange-50"><CalendarDays className="h-5 w-5 text-orange-600" /></div><span className="text-[10px] font-black tracking-wider text-slate-400">AGENDA</span></div><p className="mt-4 text-lg font-black text-slate-800">{agendaSummary.total} {agendaSummary.total === 1 ? "compromisso" : "compromissos"}</p><p className="mt-1 truncate text-xs text-slate-500">{agendaSummary.next ? `Próxima: ${agendaSummary.next.title} • ${agendaSummary.next.startTime}` : "Nenhum compromisso próximo"}</p></button>
+          <button onClick={() => user.role === "student" ? router.push("/planner") : router.push("/weekly-goals")} className="min-h-40 overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:border-orange-300 hover:shadow-md sm:p-5"><div className="flex items-center justify-between"><div className="flex h-10 w-10 items-center justify-center rounded-xl bg-purple-50"><Target className="h-5 w-5 text-purple-600" /></div><span className="text-[10px] font-black tracking-wider text-slate-400">META DA SEMANA</span></div>{weeklyGoals.length ? <div className="mt-3 grid grid-cols-2 gap-2">{weeklyGoals.slice(0, 4).map((item) => <div key={item.categoryId} className="min-w-0"><p className="truncate text-[11px] font-black text-slate-700">{item.categoryName}</p><p className="line-clamp-2 text-[10px] leading-tight text-slate-500">{item.description}</p></div>)}</div> : <p className="mt-4 text-xs text-slate-500">Meta da semana ainda não definida.</p>}</button>
         </section>
 
         {/* =========================================
