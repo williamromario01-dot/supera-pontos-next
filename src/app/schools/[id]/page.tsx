@@ -22,6 +22,7 @@ import {
   UserCheck,
   MessageCircle,
   Save,
+  BarChart3,
 } from "lucide-react";
 
 interface School {
@@ -1347,24 +1348,35 @@ export default function SchoolPage() {
           </div>
 
           {school && (
-            <div
-              className={`inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium ${
-                school.active === false
-                  ? "bg-red-100 text-red-700"
-                  : "bg-green-100 text-green-700"
-              }`}
-            >
-              <span
-                className={`h-2 w-2 rounded-full ${
+            <div className="flex flex-wrap items-center gap-3">
+              {(currentUser?.role === "super_admin" || currentUser?.role === "admin") && (
+                <button
+                  onClick={() => router.push(`/management-reports?schoolId=${encodeURIComponent(schoolId)}`)}
+                  className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-sm font-bold text-white transition hover:bg-slate-800"
+                >
+                  <BarChart3 size={17} />
+                  Gestão &amp; Relatórios
+                </button>
+              )}
+              <div
+                className={`inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium ${
                   school.active === false
-                    ? "bg-red-500"
-                    : "bg-green-500"
+                    ? "bg-red-100 text-red-700"
+                    : "bg-green-100 text-green-700"
                 }`}
-              />
+              >
+                <span
+                  className={`h-2 w-2 rounded-full ${
+                    school.active === false
+                      ? "bg-red-500"
+                      : "bg-green-500"
+                  }`}
+                />
 
-              {school.active === false
-                ? "Desativada"
-                : "Ativa"}
+                {school.active === false
+                  ? "Desativada"
+                  : "Ativa"}
+              </div>
             </div>
           )}
         </div>

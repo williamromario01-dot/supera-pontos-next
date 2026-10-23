@@ -476,6 +476,9 @@ export default function DashboardPage() {
     user?.role === "admin" ||
     user?.role === "educator";
 
+  const canAccessManagementReports =
+    user?.role === "admin";
+
   const canManageCategories =
     user?.role === "super_admin" ||
     user?.role === "admin" ||
@@ -680,6 +683,16 @@ export default function DashboardPage() {
                   >
                     <TrendingUp size={17} />
                     Evolução da unidade
+                  </button>
+                )}
+
+                {canAccessManagementReports && (
+                  <button
+                    onClick={() => router.push("/management-reports")}
+                    className="flex-shrink-0 flex items-center gap-2 px-4 py-2.5 rounded-xl text-slate-500 hover:bg-slate-100 text-sm font-bold transition"
+                  >
+                    <BarChart3 size={17} />
+                    Gestão &amp; Relatórios
                   </button>
                 )}
 
@@ -945,6 +958,19 @@ export default function DashboardPage() {
                   >
                     <TrendingUp size={18} />
                     Evolução da unidade
+                  </button>
+                )}
+
+                {canAccessManagementReports && (
+                  <button
+                    onClick={() => {
+                      setMenuOpen(false);
+                      router.push("/management-reports");
+                    }}
+                    className="flex items-center gap-3 px-4 py-3 rounded-xl text-slate-600 hover:bg-slate-100 font-bold text-sm"
+                  >
+                    <BarChart3 size={18} />
+                    Gestão &amp; Relatórios
                   </button>
                 )}
 
