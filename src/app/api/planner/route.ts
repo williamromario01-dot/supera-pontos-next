@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
 import clientPromise from "@/lib/mongodb";
-import { authenticateRequest, hasRequiredRole, schoolExists } from "@/lib/auth";
-import { categoryBelongsToSchool } from "@/lib/category-scope";
+import { authenticateRequest, hasRequiredRole } from "@/lib/auth";
 import { expandPlannerEvent, getStudentClassIds, isRangeAllowed, parseCivilDate, resolveOperationalSchoolId, TIME_PATTERN } from "@/lib/planner";
+import { choosePersonalColorKey, getInstitutionalColorKey } from "@/lib/agenda-colors";
 
 const DB_NAME = "supera_pontos";
 const STAFF = ["super_admin", "admin", "educator"] as const;
@@ -21,8 +21,10 @@ export async function GET(request: NextRequest) {
     if (!start || !end || !isRangeAllowed(start, end)) return bad("Intervalo de datas inválido ou maior que 42 dias.");
     const schoolId = auth.role === "student" ? auth.schoolId : resolveOperationalSchoolId(auth, request.nextUrl.searchParams.get("schoolId"));
     if (!schoolId) return bad(auth.role === "super_admin" ? "Selecione uma escola válida." : "Usuário sem escola.", 403);
-    if (!(await schoolExists(schoolId))) return bad("Escola não encontrada.", 404);
     const db = (await clientPromise).db(DB_NAME);
+    const school = await db.collection("schools").findOne({ _id: schoolId }, { projection: { agendaInstitutionalColorKey: 1 } });
+    if (!school) return bad("Escola não encontrada.", 404);
+    const institutionalColorKey = getInstitutionalColorKey(school.agendaInstitutionalColorKey);
     let visibility: Record<string, unknown> = { schoolId: { $in: [schoolId, schoolId.toString()] } };
     if (auth.role !== "student") visibility = { $and: [visibility, { type: "institutional" }] };
     if (auth.role === "student") {
@@ -38,8 +40,8 @@ export async function GET(request: NextRequest) {
       { startDate: { $lte: end } },
       { $or: [{ recurrence: "once", startDate: { $gte: start } }, { recurrence: "weekly", $or: [{ recurrenceEnd: null }, { recurrenceEnd: { $gte: start } }] }] },
     ] }).sort({ startDate: 1, startTime: 1 }).toArray();
-    const occurrences = events.flatMap((event) => expandPlannerEvent(event, start, end)).map((event) => ({ ...event, editable: auth.role === "student" ? event.type === "personal" : event.type === "institutional" })).sort((a, b) => `${a.date}${a.startTime}`.localeCompare(`${b.date}${b.startTime}`));
-    return NextResponse.json({ events: occurrences, total: occurrences.length });
+    const occurrences = events.flatMap((event) => expandPlannerEvent(event, start, end, institutionalColorKey)).map((event) => ({ ...event, editable: auth.role === "student" ? event.type === "personal" : event.type === "institutional" })).sort((a, b) => `${a.date}${a.startTime}`.localeCompare(`${b.date}${b.startTime}`));
+    return NextResponse.json({ events: occurrences, total: occurrences.length, institutionalColorKey });
   } catch (error) { console.error("Erro ao consultar agenda:", error); return bad("Erro interno ao consultar agenda.", 500); }
 }
 
@@ -54,7 +56,6 @@ export async function POST(request: NextRequest) {
     if (body.type && body.type !== type) return bad("Este perfil não pode criar esse tipo de evento.", 403);
     const schoolId = auth.role === "student" ? auth.schoolId : resolveOperationalSchoolId(auth, body.schoolId);
     if (!schoolId) return bad(auth.role === "super_admin" ? "Selecione uma escola válida." : "Usuário sem escola.", 403);
-    if (!(await schoolExists(schoolId))) return bad("Escola não encontrada.", 404);
     const title = typeof body.title === "string" ? body.title.trim() : "";
     const description = typeof body.description === "string" ? body.description.trim() : "";
     const startDate = parseCivilDate(body.startDate);
@@ -65,14 +66,9 @@ export async function POST(request: NextRequest) {
     const recurrenceEnd = recurrence === "weekly" && body.recurrenceEnd ? parseCivilDate(body.recurrenceEnd) : null;
     if (body.recurrenceEnd && !recurrenceEnd || recurrenceEnd && recurrenceEnd < startDate) return bad("Data final da recorrência inválida.");
     const db = (await clientPromise).db(DB_NAME);
-    let categoryId: ObjectId | null = null; let categoryName: string | null = null;
-    if (body.categoryId) {
-      if (!ObjectId.isValid(String(body.categoryId))) return bad("Categoria inválida.");
-      categoryId = new ObjectId(String(body.categoryId));
-      const category = await db.collection("categories").findOne({ _id: categoryId });
-      if (!category || !categoryBelongsToSchool(category, schoolId)) return bad("Categoria não pertence à escola.", 403);
-      categoryName = String(category.name || "");
-    }
+    const school = await db.collection("schools").findOne({ _id: schoolId }, { projection: { agendaInstitutionalColorKey: 1 } });
+    if (!school) return bad("Escola não encontrada.", 404);
+    const institutionalColorKey = getInstitutionalColorKey(school.agendaInstitutionalColorKey);
     let audience: "school" | "class" | null = null; let classId: ObjectId | null = null; let className: string | null = null;
     if (type === "institutional") {
       audience = body.audience === "class" ? "class" : "school";
@@ -85,8 +81,13 @@ export async function POST(request: NextRequest) {
       }
     }
     const now = new Date();
-    const event = { type, schoolId, studentId: type === "personal" ? auth.userId : null, audience, classId, className, title, description, categoryId, categoryName, startDate, startTime, endTime, recurrence, recurrenceEnd, completed: false, createdBy: auth.userId, createdByName: String(auth.user.name || ""), createdAt: now, updatedAt: now };
+    const eventId = new ObjectId();
+    const colorsAlreadyUsedThatDay = type === "personal" ? await db.collection("plannerEvents").find({
+      type: "personal", schoolId: { $in: [schoolId, schoolId.toString()] }, studentId: auth.userId, startDate,
+    }, { projection: { colorKey: 1 } }).toArray() : [];
+    const colorKey = type === "personal" ? choosePersonalColorKey(eventId.toString(), institutionalColorKey, colorsAlreadyUsedThatDay.map((item) => item.colorKey)) : null;
+    const event = { _id: eventId, type, schoolId, studentId: type === "personal" ? auth.userId : null, audience, classId, className, title, description, categoryId: null, categoryName: null, colorKey, startDate, startTime, endTime, recurrence, recurrenceEnd, completed: false, createdBy: auth.userId, createdByName: String(auth.user.name || ""), createdAt: now, updatedAt: now };
     const inserted = await db.collection("plannerEvents").insertOne(event);
-    return NextResponse.json({ event: { id: inserted.insertedId.toString(), ...event, schoolId: schoolId.toString(), studentId: event.studentId?.toString() ?? null, classId: classId?.toString() ?? null, categoryId: categoryId?.toString() ?? null } }, { status: 201 });
+    return NextResponse.json({ event: { id: inserted.insertedId.toString(), ...event, _id: undefined, schoolId: schoolId.toString(), studentId: event.studentId?.toString() ?? null, classId: classId?.toString() ?? null } }, { status: 201 });
   } catch (error) { console.error("Erro ao criar evento:", error); return bad("Erro interno ao criar evento.", 500); }
 }

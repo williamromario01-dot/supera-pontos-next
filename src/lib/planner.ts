@@ -1,6 +1,7 @@
 import { ObjectId, type Db, type Document } from "mongodb";
 import type { AuthenticatedUser } from "@/lib/auth";
 import { getSchoolObjectId } from "@/lib/auth";
+import { resolvePlannerEventColorKey, type AgendaColorKey } from "@/lib/agenda-colors";
 
 export const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 export const TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -29,7 +30,7 @@ export function isRangeAllowed(start: string, end: string): boolean {
   return addCivilDays(start, MAX_PLANNER_RANGE_DAYS) >= end;
 }
 
-export function expandPlannerEvent(event: Document, rangeStart: string, rangeEnd: string) {
+export function expandPlannerEvent(event: Document, rangeStart: string, rangeEnd: string, institutionalColorKey?: AgendaColorKey) {
   const dates: string[] = [];
   const first = String(event.startDate);
   if (event.recurrence === "weekly") {
@@ -50,6 +51,7 @@ export function expandPlannerEvent(event: Document, rangeStart: string, rangeEnd
     className: event.className ?? null, date, startTime: event.startTime, endTime: event.endTime ?? null,
     recurrence: event.recurrence, recurrenceEnd: event.recurrenceEnd ?? null,
     completed: event.completed === true, createdByName: event.createdByName ?? "",
+    colorKey: institutionalColorKey ? resolvePlannerEventColorKey(event.type, event._id.toString(), event.colorKey, institutionalColorKey) : event.colorKey ?? null,
     editable: event.type === "personal",
   }));
 }

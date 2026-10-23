@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
 import clientPromise from "@/lib/mongodb";
 import { authenticateRequest } from "@/lib/auth";
-import { categoryBelongsToSchool } from "@/lib/category-scope";
 import { parseCivilDate, resolveOperationalSchoolId, TIME_PATTERN } from "@/lib/planner";
 const DB_NAME = "supera_pontos";
 type Context = { params: Promise<{ id: string }> };
@@ -26,7 +25,6 @@ export async function PATCH(request:NextRequest,ctx:Context){try{const value=awa
   if(body.startDate!==undefined){const date=parseCivilDate(body.startDate);if(!date)return bad("Data inválida.");set.startDate=date;}
   if(body.startTime!==undefined){if(!TIME_PATTERN.test(String(body.startTime)))return bad("Horário inválido.");set.startTime=body.startTime;}
   if(body.endTime!==undefined){if(body.endTime!==null&&!TIME_PATTERN.test(String(body.endTime)))return bad("Horário final inválido.");set.endTime=body.endTime||null;}
-  if(body.categoryId!==undefined){if(!body.categoryId){set.categoryId=null;set.categoryName=null;}else{if(!ObjectId.isValid(String(body.categoryId)))return bad("Categoria inválida.");const categoryId=new ObjectId(String(body.categoryId));const category=await db.collection("categories").findOne({_id:categoryId});if(!category||!categoryBelongsToSchool(category,schoolId))return bad("Categoria não pertence à escola.",403);set.categoryId=categoryId;set.categoryName=String(category.name||"");}}
   if(event.type==="institutional"){
     if(body.recurrence!==undefined){if(body.recurrence!=="once"&&body.recurrence!=="weekly")return bad("Recorrência inválida.");set.recurrence=body.recurrence;}
     if(body.recurrenceEnd!==undefined){const recurrenceEnd=body.recurrenceEnd?parseCivilDate(body.recurrenceEnd):null;if(body.recurrenceEnd&&!recurrenceEnd)return bad("Fim da recorrência inválido.");set.recurrenceEnd=recurrenceEnd;}
