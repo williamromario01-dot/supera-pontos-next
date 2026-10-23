@@ -95,12 +95,68 @@ export async function GET(request: NextRequest) {
       .sort({ createdAt: -1 })
       .toArray();
 
+    const studentIds = Array.from(
+      new Map(
+        data
+          .filter((referral) => referral.studentId instanceof ObjectId)
+          .map((referral) => [referral.studentId.toString(), referral.studentId as ObjectId])
+      ).values()
+    );
+    const schoolIds = Array.from(
+      new Map(
+        data
+          .filter((referral) => referral.schoolId instanceof ObjectId)
+          .map((referral) => [referral.schoolId.toString(), referral.schoolId as ObjectId])
+      ).values()
+    );
+    const [students, classes] = await Promise.all([
+      studentIds.length
+        ? db.collection("users").find(
+            { _id: { $in: studentIds }, role: "student", schoolId: { $in: schoolIds } },
+            { projection: { name: 1, schoolId: 1 } }
+          ).toArray()
+        : [],
+      studentIds.length && schoolIds.length
+        ? db.collection("classes").find(
+            { schoolId: { $in: schoolIds }, studentIds: { $in: studentIds } },
+            { projection: { name: 1, schoolId: 1, studentIds: 1 } }
+          ).toArray()
+        : [],
+    ]);
+    const studentsByIdAndSchool = new Map(
+      students
+        .filter((student) => student.schoolId instanceof ObjectId)
+        .map((student) => [`${student._id.toString()}:${student.schoolId.toString()}`, student])
+    );
+    const classesByStudentAndSchool = new Map<string, (typeof classes)[number]>();
+    for (const classItem of classes) {
+      if (!(classItem.schoolId instanceof ObjectId) || !Array.isArray(classItem.studentIds)) continue;
+      for (const studentId of classItem.studentIds) {
+        if (studentId instanceof ObjectId) {
+          classesByStudentAndSchool.set(`${studentId.toString()}:${classItem.schoolId.toString()}`, classItem);
+        }
+      }
+    }
+
     return NextResponse.json(
       {
-        referrals: data.map((referral) => ({
+        referrals: data.map((referral) => {
+          const studentId = referral.studentId instanceof ObjectId ? referral.studentId : null;
+          const schoolId = referral.schoolId instanceof ObjectId ? referral.schoolId : null;
+          const student = studentId && schoolId
+            ? studentsByIdAndSchool.get(`${studentId.toString()}:${schoolId.toString()}`)
+            : null;
+          const classItem = studentId && schoolId
+            ? classesByStudentAndSchool.get(`${studentId.toString()}:${schoolId.toString()}`)
+            : null;
+
+          return {
           id: referral._id.toString(),
           studentId: referral.studentId?.toString(),
           schoolId: referral.schoolId?.toString(),
+          studentName: typeof student?.name === "string" ? student.name : null,
+          classId: classItem?._id.toString() || null,
+          className: typeof classItem?.name === "string" ? classItem.name : null,
           name: referral.name,
           phone: referral.phone,
           observation: referral.observation || "",
@@ -121,7 +177,8 @@ export async function GET(request: NextRequest) {
             : null,
           approvedAt: referral.approvedAt || null,
           createdAt: referral.createdAt,
-        })),
+          };
+        }),
       },
       { status: 200 }
     );

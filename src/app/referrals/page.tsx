@@ -16,6 +16,7 @@ import {
   Users,
   Loader2,
   Gift,
+  GraduationCap,
 } from "lucide-react";
 
 interface User {
@@ -31,6 +32,9 @@ interface Referral {
   id: string;
   studentId: string;
   schoolId: string;
+  studentName: string | null;
+  classId: string | null;
+  className: string | null;
   name: string;
   phone: string;
   observation: string;
@@ -807,6 +811,11 @@ export default function ReferralsPage() {
                                 )}
                               </span>
 
+                            </div>
+
+                            <div className="mt-3 space-y-2 rounded-xl border border-slate-100 bg-slate-50 p-3 text-xs text-slate-600">
+                              <p className="flex items-center gap-2"><UserPlus size={14} className="text-blue-600"/><span><b>Indicado por:</b> {referral.studentName || "Não registrado"}</span></p>
+                              <p className="flex items-center gap-2"><GraduationCap size={14} className="text-violet-600"/><span><b>Turma:</b> {referral.studentName ? (referral.className || "Não vinculada") : "Não registrada"}</span></p>
                             </div>
 
                             {referral.observation && (
