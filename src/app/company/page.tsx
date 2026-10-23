@@ -81,6 +81,10 @@ export default function CompanyPage() {
         <div className="rounded-2xl border bg-white p-5"><p className="text-xs font-bold uppercase text-slate-400">Empresa</p><p className="mt-2 font-bold">{data.company.legalName}</p><p className="text-sm text-slate-500">CNPJ {data.company.cnpj}</p><p className="mt-2 text-sm">Status: <b>{data.company.status}</b></p></div>
         <div className="rounded-2xl border bg-white p-5"><p className="text-xs font-bold uppercase text-slate-400">Assinatura</p><p className="mt-2 font-bold">{data.subscription?.planName ?? "Sem plano"}</p><p className="text-sm text-slate-500">Status: {data.subscription?.status ?? "não criada"}</p><p className="mt-2 text-sm">{data.usage.usedUnits} de {data.usage.maxUnits} unidades liberadas</p></div>
       </section>
+      <Link href="/company/privacy" className="flex items-center gap-4 rounded-2xl border bg-white p-5 transition-colors hover:border-blue-200 hover:bg-blue-50">
+        <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-blue-100 text-blue-700"><ShieldCheck size={24}/></span>
+        <span><span className="block font-bold text-slate-900">Privacidade e dados</span><span className="mt-1 block text-sm text-slate-500">Aceites legais, solicitações LGPD e exportação de dados.</span></span>
+      </Link>
       <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">{cards.map(([label, value, Icon]) =>
         <div key={label} className="rounded-2xl border bg-white p-5"><Icon className="text-orange-500"/><p className="mt-3 text-sm text-slate-500">{label}</p><p className="text-3xl font-black">{value}</p></div>)}</section>
       {showForm && <form onSubmit={createSchool} className="rounded-2xl border border-orange-200 bg-white p-6">
