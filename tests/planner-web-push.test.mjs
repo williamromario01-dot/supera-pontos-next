@@ -169,12 +169,12 @@ test("iPhone guidance combines feature checks with standalone detection", async 
   assert.match(component, /Tela de Início/);
 });
 
-test("PWA manifest and cron schedule use repository-native configuration", async () => {
+test("PWA manifest remains configured without a Vercel cron schedule", async () => {
   const manifest = await read("src/app/manifest.ts");
   const vercel = JSON.parse(await read("vercel.json"));
   assert.match(manifest, /name: "SUPERPONTOS"/);
   assert.match(manifest, /display: "standalone"/);
-  assert.deepEqual(vercel.crons, [{ path: "/api/cron/planner-reminders", schedule: "* * * * *" }]);
+  assert.equal(vercel.crons, undefined);
 });
 
 test("existing planner roles and unrelated reward rules remain untouched", async () => {

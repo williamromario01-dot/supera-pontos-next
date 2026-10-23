@@ -11,7 +11,7 @@ Defina na Vercel, separadamente por ambiente:
 
 Gere o par VAPID fora do repositório com uma ferramenta confiável, por exemplo `npx web-push generate-vapid-keys`, após autorização operacional. Não grave a chave privada em arquivos versionados, logs ou variáveis `NEXT_PUBLIC_*`. Para rotacionar, gere um novo par, atualize as variáveis em conjunto e peça aos usuários que ativem novamente as notificações; subscriptions criadas com a chave anterior não podem ser reutilizadas com o novo par.
 
-O `vercel.json` executa `/api/cron/planner-reminders` a cada minuto. O projeto da Vercel precisa aceitar essa frequência (planos Hobby não oferecem precisão por minuto) e ter `CRON_SECRET`; a Vercel o envia como `Authorization: Bearer ...`. O cron usa UTC, enquanto os horários da Agenda são convertidos explicitamente de `America/Sao_Paulo`.
+O processamento é feito por `GET /api/cron/planner-reminders`, protegido por `Authorization: Bearer <CRON_SECRET>`. Em projetos Vercel Hobby, o endpoint pode ser acionado por um scheduler HTTPS externo; `CRON_SECRET` continua obrigatório. O cron usa UTC, enquanto os horários da Agenda são convertidos explicitamente de `America/Sao_Paulo`.
 
 ## Dispositivos e teste
 
