@@ -222,7 +222,7 @@ export async function POST(request: NextRequest) {
 
     stage = "reconcile_subscription";
     let providerSubscription: AsaasSubscription | null = null;
-    const storedId = existingProviderId(subscription.providerSubscriptionId, "sub_");
+    const storedId = existingProviderId(billingSubscription.providerSubscriptionId, "sub_");
     if (storedId) {
       const candidates = await findAsaasSubscriptions(
         input.externalReference,

@@ -313,7 +313,7 @@ export async function listAsaasSubscriptionPayments(
   subscriptionId: string,
 ): Promise<AsaasPayment[]> {
   const response = await requestAsaas(
-    `/subscriptions/${encodeURIComponent(subscriptionId)}/payments?limit=100`,
+    `/subscriptions/${encodeURIComponent(subscriptionId)}/payments`,
     { method: "GET" },
   );
   const data = response && typeof response === "object"

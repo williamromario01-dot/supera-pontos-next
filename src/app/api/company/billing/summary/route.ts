@@ -11,8 +11,6 @@ import {
   subscriptionStatusLabel,
 } from "@/lib/billing-summary";
 import {
-  findAsaasSubscriptions,
-  listAsaasSubscriptionPayments,
   type AsaasPayment,
 } from "@/lib/asaas-subscriptions";
 import { getSubscriptionAccessState } from "@/lib/subscription-access";
@@ -20,6 +18,8 @@ import { getCancellationAccessState } from "@/lib/subscription-cancellation";
 import { isOpenReactivation } from "@/lib/subscription-reactivation";
 import { getAsaasEnvironment } from "@/lib/asaas";
 import { getBillingProviderLink } from "@/lib/billing-provider-links";
+import { billingCorrelationId } from "@/lib/billing-observability";
+import { reconcileExistingBillingCheckout } from "@/lib/billing-checkout-reconciliation";
 
 export const dynamic = "force-dynamic";
 
@@ -45,6 +45,7 @@ function publicPayment(payment: AsaasPayment, relatedToQuantityChange = false, r
 }
 
 export async function GET(request: NextRequest) {
+  const correlationId = billingCorrelationId(request);
   try {
     const authResult = await authenticateRequest(request);
     if (!authResult.authenticated) {
@@ -180,28 +181,20 @@ export async function GET(request: NextRequest) {
         !link || typeof link.providerSubscriptionId !== "string" ||
         typeof link.providerCustomerId !== "string"
       ) throw new Error("PROVIDER_LINK_INVALID");
-      const subscriptions = await findAsaasSubscriptions(
-        `subscription:${subscription._id.toString()}`,
-        link.providerCustomerId,
-      );
-      if (
-        subscriptions.length !== 1 ||
-        subscriptions[0].id !== link.providerSubscriptionId ||
-        subscriptions[0].customer !== link.providerCustomerId
-      ) throw new Error("PROVIDER_LINK_CONFLICT");
-      const providerSubscription = subscriptions[0];
-      const payments = await listAsaasSubscriptionPayments(
-        link.providerSubscriptionId,
-      );
-      if (payments.some((payment) =>
-        payment.subscription !== link.providerSubscriptionId ||
-        payment.customer !== link.providerCustomerId
-      )) throw new Error("PROVIDER_PAYMENT_CONFLICT");
-      const orderedPayments = [...payments].sort((left, right) =>
-        right.dueDate.localeCompare(left.dueDate)
-      );
+      if (!pricing) throw new Error("SUBSCRIPTION_DATA_INVALID");
+      const reconciliation = await reconcileExistingBillingCheckout({
+        db,
+        subscription,
+        link,
+        environment,
+        expectedValueCents: pricing.totalMonthlyCents,
+        correlationId,
+      });
+      const providerSubscription = reconciliation.subscription;
+      const orderedPayments = reconciliation.payments;
       const pending = orderedPayments.find((payment) =>
-        payment.status === "PENDING" || payment.status === "OVERDUE"
+        payment.id === reconciliation.pendingPayment?.id &&
+        (payment.status === "PENDING" || payment.status === "OVERDUE")
       ) ?? null;
       if (subscription.status !== "active") {
         checkout = pending
@@ -236,8 +229,16 @@ export async function GET(request: NextRequest) {
         ) : null,
         payments: orderedPayments.map((payment) => publicPayment(payment)),
       };
-    } catch {
+    } catch (error) {
       // O resumo local continua disponível; erros do provedor nunca são expostos.
+      console.error("Resumo financeiro usando estado local:", {
+        correlationId,
+        environment,
+        internalSubscriptionId: subscription._id.toString(),
+        stage: "provider_reconciliation",
+        reconciliationState: "provider_error",
+        code: error instanceof Error ? error.message : "RECONCILIATION_FAILED",
+      });
       if (!reconciliationRequired && subscription.status !== "active") {
         checkout = {
           state: "provider_error",
