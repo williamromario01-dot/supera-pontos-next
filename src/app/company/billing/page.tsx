@@ -45,6 +45,7 @@ type Data = {
     reactivationAvailable: boolean;
   };
   subscription: null | {
+    status: string;
     statusLabel: string;
     maxUnits: number;
     requestedMaxUnits: number;
@@ -67,6 +68,11 @@ type Data = {
     requestedUnits: number;
     pricePerUnitCents: number | null;
     targetMonthlyValueCents: number | null;
+  };
+  checkout?: {
+    state: "not_started" | "processing" | "reconciliation_required" | "provider_error" | "payment_pending" | "active";
+    canStart: boolean;
+    message: string;
   };
   remote: {
     available: boolean;
@@ -114,6 +120,7 @@ export default function Billing() {
     [pix, setPix] = useState<PixData | null>(null),
     [copied, setCopied] = useState(false),
     [cancellationProcessing, setCancellationProcessing] = useState(false),
+    [checkoutProcessing, setCheckoutProcessing] = useState(false),
     [reactivationModal, setReactivationModal] = useState(false),
     [reactivationUnits, setReactivationUnits] = useState(1),
     [reactivationProcessing, setReactivationProcessing] = useState(false);
@@ -134,8 +141,38 @@ export default function Billing() {
     }
   }
   useEffect(() => {
+    // Initial server synchronization; load performs its state updates asynchronously.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void load();
   }, []);
+  async function startCheckout() {
+    if (checkoutProcessing) return;
+    setCheckoutProcessing(true);
+    setFeedback(null);
+    try {
+      const response = await fetch("/api/company/billing/checkout", {
+        method: "POST",
+      });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error);
+      setFeedback({
+        tone: "success",
+        title: body.state === "payment_pending" ? "Pagamento gerado" : "Pagamento em preparação",
+        text: body.state === "payment_pending"
+          ? "A cobrança está pronta. Use a opção de pagamento pendente abaixo."
+          : "Atualize o status em instantes para localizar a cobrança.",
+      });
+      await load();
+    } catch (e) {
+      setFeedback({
+        tone: "error",
+        title: "Pagamento não gerado",
+        text: e instanceof Error ? e.message : "Tente novamente mais tarde.",
+      });
+    } finally {
+      setCheckoutProcessing(false);
+    }
+  }
   function openQuantity() {
     if (!data?.subscription) return;
     setSelected(data.subscription.maxUnits);
@@ -347,6 +384,8 @@ export default function Billing() {
     blocked = Boolean(plan && selected < plan.activeUnits),
     upgrade = Boolean(plan && selected > plan.maxUnits),
     pending = Boolean(data.quantityChange),
+    activePlan = plan?.status === "active",
+    displayedUnits = activePlan ? plan?.maxUnits : plan?.requestedMaxUnits,
     difference =
       (option?.totalMonthlyCents ?? 0) - (plan?.totalMonthlyValueCents ?? 0);
   return (
@@ -363,7 +402,7 @@ export default function Billing() {
                 Assinatura, capacidade e pagamentos em um só lugar.
               </p>
             </div>
-            {plan && (
+            {plan && activePlan && (
               <button
                 onClick={openQuantity}
                 disabled={pending || data.cancellation?.cancelAtPeriodEnd === true}
@@ -392,6 +431,30 @@ export default function Billing() {
             Consulta disponível, mas a empresa não está ativa.
           </Notice>
         )}
+        {plan && data.checkout && data.checkout.state !== "active" && data.checkout.state !== "payment_pending" && (
+          <Card orange>
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div>
+                <h2 className="text-xl font-black">
+                  {data.checkout.state === "not_started" ? "Gere seu primeiro pagamento" : "Checkout em andamento"}
+                </h2>
+                <p className="mt-1">{data.checkout.message}</p>
+                <p className="mt-2 text-sm">
+                  Plano solicitado: {plan.requestedMaxUnits} unidade · {money(plan.totalMonthlyValueCents)}/mês
+                </p>
+              </div>
+              {data.checkout.canStart && (
+                <button
+                  onClick={() => void startCheckout()}
+                  disabled={checkoutProcessing}
+                  className="rounded-xl bg-white px-5 py-3 font-black text-orange-700 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {checkoutProcessing ? "Processando..." : "Gerar pagamento"}
+                </button>
+              )}
+            </div>
+          </Card>
+        )}
         {!plan ? (
           <Card>
             <h2 className="font-black">Nenhuma assinatura encontrada</h2>
@@ -406,7 +469,7 @@ export default function Billing() {
                 {money(data.quantityChange.targetMonthlyValueCents)}/mês
               </Notice>
             )}
-            {!data.remote.available && (
+            {!data.remote.available && data.checkout?.state !== "not_started" && data.checkout?.state !== "processing" && (
               <Notice warning title="Dados do provedor indisponíveis">
                 {data.remote.warning ??
                   "Os dados locais continuam disponíveis."}
@@ -416,14 +479,14 @@ export default function Billing() {
               <Card orange>
                 <CreditCard />
                 <p className="mt-7 text-sm">
-                  Plano mensal · {plan.statusLabel}
+                  {activePlan ? "Plano mensal" : "Plano solicitado"} · {plan.statusLabel}
                 </p>
                 <p className="text-3xl font-black">
                   {money(plan.totalMonthlyValueCents)}
                 </p>
                 <p>
-                  {money(plan.pricePerUnitCents)} por unidade · {plan.maxUnits}{" "}
-                  contratadas
+                  {money(plan.pricePerUnitCents)} por unidade · {displayedUnits}{" "}
+                  {activePlan ? "contratadas" : "solicitadas"}
                 </p>
               </Card>
               <Card>

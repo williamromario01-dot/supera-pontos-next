@@ -76,12 +76,20 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({
         company: { status: company.status },
         subscription: null,
+        checkout: {
+          state: "not_started",
+          canStart: false,
+          message: "Assinatura não encontrada.",
+        },
         remote: { available: false, warning: null },
       });
     }
 
     const maxUnits = Number(subscription.maxUnits ?? 0);
-    const pricing = getPricingQuote(maxUnits);
+    const requestedMaxUnits = Number(subscription.requestedMaxUnits ?? maxUnits);
+    const activePricing = getPricingQuote(maxUnits);
+    const requestedPricing = getPricingQuote(requestedMaxUnits);
+    const pricing = maxUnits > 0 ? activePricing : requestedPricing;
     const access = getSubscriptionAccessState(subscription);
     const cancellation = getCancellationAccessState(subscription);
     const reactivationOpen = isOpenReactivation(subscription.reactivation);
@@ -116,16 +124,58 @@ export async function GET(request: NextRequest) {
       };
     });
 
+    const environment = getAsaasEnvironment();
+    const link = await getBillingProviderLink(db, subscription, environment);
+    const reconciliationRequired = Boolean(
+      subscription.providerCustomerCreateUncertainAt ||
+      subscription.providerSubscriptionCreateUncertainAt,
+    );
+    let checkout = reconciliationRequired
+      ? {
+          state: "reconciliation_required",
+          canStart: true,
+          message: "Há uma tentativa anterior a reconciliar com o provedor.",
+        }
+      : !link?.providerCustomerId
+        ? {
+            state: "not_started",
+            canStart: true,
+            message: "Gere o pagamento para iniciar sua assinatura.",
+          }
+        : !link.providerSubscriptionId
+          ? {
+              state: "processing",
+              canStart: true,
+              message: "O checkout foi iniciado e ainda está sendo preparado.",
+            }
+          : link.providerPaymentId
+            ? {
+                state: "payment_pending",
+                canStart: false,
+                message: "Pagamento gerado e aguardando confirmação.",
+              }
+            : {
+                state: "processing",
+                canStart: true,
+                message: "A cobrança ainda está sendo localizada no provedor.",
+              };
+    if (subscription.status === "active") {
+      checkout = {
+        state: "active",
+        canStart: false,
+        message: "Assinatura ativa.",
+      };
+    }
     let remote: Record<string, unknown> = {
       available: false,
-      warning: "Não foi possível atualizar algumas informações financeiras agora.",
+      warning: link?.providerSubscriptionId
+        ? "Não foi possível atualizar algumas informações financeiras agora."
+        : checkout.message,
       renewal: null,
       pendingPayment: null,
       payments: [],
     };
-    try {
-      const environment = getAsaasEnvironment();
-      const link = await getBillingProviderLink(db, subscription, environment);
+    if (link?.providerSubscriptionId && link.providerCustomerId) try {
       if (
         !link || typeof link.providerSubscriptionId !== "string" ||
         typeof link.providerCustomerId !== "string"
@@ -153,6 +203,19 @@ export async function GET(request: NextRequest) {
       const pending = orderedPayments.find((payment) =>
         payment.status === "PENDING" || payment.status === "OVERDUE"
       ) ?? null;
+      if (subscription.status !== "active") {
+        checkout = pending
+          ? {
+              state: "payment_pending",
+              canStart: false,
+              message: "Pagamento gerado e aguardando confirmação.",
+            }
+          : {
+              state: "processing",
+              canStart: true,
+              message: "A cobrança ainda está sendo localizada no provedor.",
+            };
+      }
       const renewalPaymentGenerated = orderedPayments.some(
         (payment) => payment.dueDate === providerSubscription.nextDueDate,
       );
@@ -175,6 +238,13 @@ export async function GET(request: NextRequest) {
       };
     } catch {
       // O resumo local continua disponível; erros do provedor nunca são expostos.
+      if (!reconciliationRequired && subscription.status !== "active") {
+        checkout = {
+          state: "provider_error",
+          canStart: true,
+          message: "Não foi possível consultar o provedor financeiro agora.",
+        };
+      }
     }
 
     return NextResponse.json({
@@ -195,7 +265,7 @@ export async function GET(request: NextRequest) {
             ? "Cancelamento agendado"
             : subscriptionStatusLabel(subscription.status),
         maxUnits,
-        requestedMaxUnits: Number(subscription.requestedMaxUnits ?? maxUnits),
+        requestedMaxUnits,
         activeUnits,
         archivedUnits,
         availableUnits,
@@ -216,6 +286,7 @@ export async function GET(request: NextRequest) {
       quantityChange,
       pricingOptions,
       reactivation,
+      checkout,
       remote,
     });
   } catch (error) {
