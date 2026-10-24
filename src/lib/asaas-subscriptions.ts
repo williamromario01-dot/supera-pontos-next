@@ -1,6 +1,7 @@
 import "server-only";
 
 import {
+  ASAAS_USER_AGENT,
   AsaasCustomerRequestError,
   getAsaasConfig,
 } from "@/lib/asaas";
@@ -62,7 +63,7 @@ async function requestAsaas(
       headers: {
         accept: "application/json",
         access_token: config.apiKey,
-        "User-Agent": "SUPERPONTOS/1.0",
+        "User-Agent": ASAAS_USER_AGENT,
         ...(init.body ? { "content-type": "application/json" } : {}),
       },
       signal: controller.signal,

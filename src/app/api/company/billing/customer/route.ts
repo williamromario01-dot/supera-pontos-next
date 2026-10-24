@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
-import type { Collection, Document, ObjectId } from "mongodb";
+import type { Collection, Db, Document, ObjectId } from "mongodb";
 import clientPromise from "@/lib/mongodb";
 import { authenticateRequest } from "@/lib/auth";
 import { isSandboxCustomerCreationAllowed } from "@/lib/sandbox-customer-creation-gate";
@@ -11,6 +11,9 @@ import {
   type AsaasCustomer,
   type CreateAsaasCustomerInput,
 } from "@/lib/asaas";
+import { getAsaasEnvironment, type AsaasEnvironment } from "@/lib/asaas";
+import { assertAsaasMutationAllowed } from "@/lib/asaas-production";
+import { getBillingProviderLink, upsertBillingProviderLink } from "@/lib/billing-provider-links";
 import {
   DB_NAME,
   isValidCnpj,
@@ -71,13 +74,13 @@ function existingCustomerId(subscription: Document): string | null {
     : null;
 }
 
-function assertProviderCompatibility(subscription: Document): void {
+function assertProviderCompatibility(subscription: Document, environment: AsaasEnvironment): void {
   if (subscription.provider && subscription.provider !== "asaas") {
     throw new BillingCustomerError("BILLING_PROVIDER_CONFLICT");
   }
   if (
-    subscription.providerEnvironment &&
-    subscription.providerEnvironment !== "sandbox"
+    environment === "sandbox" && subscription.providerEnvironment &&
+    subscription.providerEnvironment !== environment
   ) {
     throw new BillingCustomerError("BILLING_PROVIDER_CONFLICT");
   }
@@ -144,12 +147,26 @@ async function findCompatibleCustomer(
 }
 
 async function saveCustomerLink(
+  db: Db,
   subscriptions: Collection<Document>,
+  subscription: Document,
+  environment: AsaasEnvironment,
   subscriptionId: ObjectId,
   lockToken: string,
   customerId: string,
 ): Promise<void> {
   const linkedAt = new Date();
+  if (environment === "production") {
+    await upsertBillingProviderLink(db, subscription, environment, {
+      providerCustomerId: customerId,
+      providerCustomerLinkedAt: linkedAt,
+    });
+    await subscriptions.updateOne(
+      { _id: subscriptionId, "providerCustomerLinkLock.token": lockToken },
+      { $set: { updatedAt: linkedAt }, $unset: { providerCustomerLinkLock: "", providerCustomerCreateUncertainAt: "" } },
+    );
+    return;
+  }
   const result = await subscriptions.updateOne(
     {
       _id: subscriptionId,
@@ -209,6 +226,7 @@ export async function POST(request: NextRequest) {
     stage = 'load_company';
     const client = await clientPromise;
     const db = client.db(DB_NAME);
+    const environment = getAsaasEnvironment();
     const companies = db.collection("companies");
     const subscriptions = db.collection("subscriptions");
     const company = await companies.findOne({ _id: auth.companyId });
@@ -229,9 +247,15 @@ export async function POST(request: NextRequest) {
     }
 
     stage = 'validate_provider';
-    assertProviderCompatibility(subscription);
+    const providerLink = await getBillingProviderLink(db, subscription, environment);
+    const billingSubscription = providerLink
+      ? { ...subscription, provider: "asaas", providerEnvironment: environment, providerCustomerId: providerLink.providerCustomerId }
+      : environment === "production"
+        ? { ...subscription, provider: "asaas", providerEnvironment: environment, providerCustomerId: undefined, providerSubscriptionId: undefined, providerPaymentId: undefined }
+        : subscription;
+    assertProviderCompatibility(billingSubscription, environment);
     stage = 'existing_provider_customer';
-    if (existingCustomerId(subscription)) {
+    if (existingCustomerId(billingSubscription)) {
       return NextResponse.json({
         ok: true,
         provider: "asaas",
@@ -242,7 +266,7 @@ export async function POST(request: NextRequest) {
 
     stage = 'build_customer_payload';
     const input = buildCustomerInput(company);
-    const scopedCreationAllowed = isSandboxCustomerCreationAllowed({
+    const scopedCreationAllowed = environment === "sandbox" && isSandboxCustomerCreationAllowed({
       companyId: auth.companyId.toString(),
       externalReference: input.externalReference,
       subscriptionId: subscription._id.toString(),
@@ -252,16 +276,14 @@ export async function POST(request: NextRequest) {
     lockToken = randomUUID();
 
     stage = 'acquire_lock';
+    const missingCustomerFilter = environment === "sandbox" ? {
+      $or: [{ providerCustomerId: null }, { providerCustomerId: { $exists: false } }],
+    } : {};
     const lockResult = await subscriptions.updateOne(
       {
         _id: subscriptionId,
         $and: [
-          {
-            $or: [
-              { providerCustomerId: null },
-              { providerCustomerId: { $exists: false } },
-            ],
-          },
+          missingCustomerFilter,
           {
             $or: [
               { provider: null },
@@ -288,7 +310,6 @@ export async function POST(request: NextRequest) {
       {
         $set: {
           provider: "asaas",
-          providerEnvironment: "sandbox",
           providerCustomerLinkLock: {
             token: lockToken,
             acquiredAt: now,
@@ -303,7 +324,8 @@ export async function POST(request: NextRequest) {
         { _id: subscriptionId },
         { projection: { providerCustomerId: 1 } },
       );
-      if (existingCustomerId(current ?? {})) {
+      const currentLink = await getBillingProviderLink(db, subscription, environment);
+      if (existingCustomerId(currentLink ?? (environment === "sandbox" ? current : {}) ?? {})) {
         return NextResponse.json({
           ok: true,
           provider: "asaas",
@@ -319,7 +341,10 @@ export async function POST(request: NextRequest) {
     stage = 'validate_asaas_customer';
     if (existing) {
       await saveCustomerLink(
+        db,
         subscriptions,
+        subscription,
+        environment,
         subscriptionId,
         lockToken,
         existing.id,
@@ -365,7 +390,10 @@ export async function POST(request: NextRequest) {
     retainUncertainAttempt = true;
 
     stage = 'before_create_customer';
-    if (BLOCK_ASAAS_CUSTOMER_CREATION && !scopedCreationAllowed) {
+    const creationAllowed = environment === "sandbox"
+      ? !BLOCK_ASAAS_CUSTOMER_CREATION || scopedCreationAllowed
+      : (() => { try { assertAsaasMutationAllowed(environment, "customer_creation"); return true; } catch { return false; } })();
+    if (!creationAllowed) {
       retainUncertainAttempt = false;
       return NextResponse.json({
         ok: true,
@@ -393,7 +421,10 @@ export async function POST(request: NextRequest) {
         const recovered = await findCompatibleCustomer(input);
         if (recovered) {
           await saveCustomerLink(
+            db,
             subscriptions,
+            subscription,
+            environment,
             subscriptionId,
             lockToken!,
             recovered.id,
@@ -419,7 +450,10 @@ export async function POST(request: NextRequest) {
     }
 
     await saveCustomerLink(
+      db,
       subscriptions,
+      subscription,
+      environment,
       subscriptionId,
       lockToken,
       created.id,

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
-import type { Collection, Document, ObjectId } from "mongodb";
+import type { Collection, Db, Document, ObjectId } from "mongodb";
 import { authenticateRequest } from "@/lib/auth";
 import clientPromise from "@/lib/mongodb";
 import { DB_NAME } from "@/lib/saas";
@@ -15,11 +15,15 @@ import {
   type CreateAsaasSubscriptionInput,
 } from "@/lib/asaas-subscriptions";
 import { isSandboxSubscriptionCreationAllowed } from "@/lib/sandbox-subscription-creation-gate";
+import { getAsaasEnvironment, type AsaasEnvironment } from "@/lib/asaas";
+import { assertAsaasMutationAllowed } from "@/lib/asaas-production";
+import { getBillingProviderLink, upsertBillingProviderLink } from "@/lib/billing-provider-links";
 
 export const dynamic = "force-dynamic";
 
 const LINK_LOCK_MS = 2 * 60 * 1000;
 const BLOCK_ASAAS_SUBSCRIPTION_CREATION = true;
+const UNCERTAIN_RETRY_MS = 5 * 60 * 1000;
 
 type BillingSubscriptionErrorCode =
   | "SUBSCRIPTION_NOT_FOUND"
@@ -29,7 +33,8 @@ type BillingSubscriptionErrorCode =
   | "SUBSCRIPTION_REFERENCE_CONFLICT"
   | "SUBSCRIPTION_LINK_IN_PROGRESS"
   | "SUBSCRIPTION_LINK_RACE"
-  | "PAYMENT_REFERENCE_CONFLICT";
+  | "PAYMENT_REFERENCE_CONFLICT"
+  | "SUBSCRIPTION_CREATION_RECONCILIATION_PENDING";
 
 class BillingSubscriptionError extends Error {
   constructor(public readonly code: BillingSubscriptionErrorCode) {
@@ -100,7 +105,10 @@ function firstCompatiblePayment(
 }
 
 async function saveProviderLinks(
+  db: Db,
   subscriptions: Collection<Document>,
+  subscription: Document,
+  environment: AsaasEnvironment,
   subscriptionId: ObjectId,
   lockToken: string,
   providerSubscription: AsaasSubscription,
@@ -122,6 +130,18 @@ async function saveProviderLinks(
     set.providerPaymentBillingType = payment.billingType;
     set.providerPaymentReconciledAt = now;
   }
+  if (environment === "production") {
+    await upsertBillingProviderLink(db, subscription, environment, {
+      providerCustomerId: providerSubscription.customer,
+      providerSubscriptionId: providerSubscription.id,
+      ...(payment ? { providerPaymentId: payment.id, providerPaymentStatus: payment.status, providerPaymentDueDate: payment.dueDate } : {}),
+    });
+    await subscriptions.updateOne(
+      { _id: subscriptionId, "providerSubscriptionLinkLock.token": lockToken },
+      { $set: { updatedAt: now }, $unset: { providerSubscriptionLinkLock: "", providerSubscriptionCreateUncertainAt: "" } },
+    );
+    return;
+  }
   const result = await subscriptions.updateOne(
     { _id: subscriptionId, "providerSubscriptionLinkLock.token": lockToken },
     {
@@ -141,6 +161,7 @@ export async function POST(request: NextRequest) {
   let subscriptionId: ObjectId | null = null;
   let lockToken: string | null = null;
   let stage = "authenticate";
+  let retainUncertainAttempt = false;
   try {
     const authResult = await authenticateRequest(request);
     if (!authResult.authenticated) {
@@ -155,20 +176,28 @@ export async function POST(request: NextRequest) {
     }
 
     const client = await clientPromise;
-    const subscriptions = client.db(DB_NAME).collection("subscriptions");
+    const db = client.db(DB_NAME);
+    const environment = getAsaasEnvironment();
+    const subscriptions = db.collection("subscriptions");
     stage = "load_subscription";
     const subscription = await subscriptions.findOne(
       { companyId: auth.companyId },
       { sort: { createdAt: -1 } },
     );
     if (!subscription) throw new BillingSubscriptionError("SUBSCRIPTION_NOT_FOUND");
-    if (subscription.provider !== "asaas" || subscription.providerEnvironment !== "sandbox") {
+    const providerLink = await getBillingProviderLink(db, subscription, environment);
+    const billingSubscription = providerLink
+      ? { ...subscription, ...providerLink, provider: "asaas", providerEnvironment: environment }
+      : environment === "production"
+        ? { ...subscription, provider: "asaas", providerEnvironment: environment, providerCustomerId: undefined, providerSubscriptionId: undefined, providerPaymentId: undefined }
+        : subscription;
+    if (environment === "sandbox" && (billingSubscription.provider !== "asaas" || billingSubscription.providerEnvironment !== environment)) {
       throw new BillingSubscriptionError("BILLING_PROVIDER_CONFLICT");
     }
 
-    const input = buildInput(subscription);
+    const input = buildInput(billingSubscription);
     const pricing = getPricingQuote(subscription.requestedMaxUnits)!;
-    const scopedCreationAllowed = isSandboxSubscriptionCreationAllowed({ companyId: auth.companyId.toString(), subscriptionId: subscription._id.toString(), providerCustomerId: input.customer, externalReference: input.externalReference, requestedMaxUnits: pricing.requestedUnits, valueCents: pricing.totalMonthlyCents });
+    const scopedCreationAllowed = environment === "sandbox" && isSandboxSubscriptionCreationAllowed({ companyId: auth.companyId.toString(), subscriptionId: subscription._id.toString(), providerCustomerId: input.customer, externalReference: input.externalReference, requestedMaxUnits: pricing.requestedUnits, valueCents: pricing.totalMonthlyCents });
     subscriptionId = subscription._id;
     lockToken = randomUUID();
     const now = new Date();
@@ -213,7 +242,15 @@ export async function POST(request: NextRequest) {
 
     if (!providerSubscription) {
       stage = "before_create_subscription";
-      if (BLOCK_ASAAS_SUBSCRIPTION_CREATION && !scopedCreationAllowed) {
+      const uncertainAt = subscription.providerSubscriptionCreateUncertainAt instanceof Date ? subscription.providerSubscriptionCreateUncertainAt : null;
+      if (uncertainAt && now.getTime() - uncertainAt.getTime() < UNCERTAIN_RETRY_MS) {
+        retainUncertainAttempt = true;
+        throw new BillingSubscriptionError("SUBSCRIPTION_CREATION_RECONCILIATION_PENDING");
+      }
+      const creationAllowed = environment === "sandbox"
+        ? !BLOCK_ASAAS_SUBSCRIPTION_CREATION || scopedCreationAllowed
+        : (() => { try { assertAsaasMutationAllowed(environment, "subscription_creation"); return true; } catch { return false; } })();
+      if (!creationAllowed) {
         return NextResponse.json({
           ok: true,
           diagnostic: { stage, subscriptionCreationBlocked: true },
@@ -223,8 +260,17 @@ export async function POST(request: NextRequest) {
         { _id: subscriptionId, "providerSubscriptionLinkLock.token": lockToken },
         { $set: { providerSubscriptionCreateUncertainAt: new Date() } },
       );
+      retainUncertainAttempt = true;
       stage = "create_subscription";
-      providerSubscription = await createAsaasSubscription(input);
+      try {
+        providerSubscription = await createAsaasSubscription(input);
+      } catch (error) {
+        if (error instanceof AsaasCustomerRequestError && error.inconclusive) {
+          const recovered = compatibleSubscription(await findAsaasSubscriptions(input.externalReference, input.customer), input);
+          if (!recovered) throw new BillingSubscriptionError("SUBSCRIPTION_CREATION_RECONCILIATION_PENDING");
+          providerSubscription = recovered;
+        } else throw error;
+      }
     }
 
     stage = "list_subscription_payments";
@@ -236,13 +282,17 @@ export async function POST(request: NextRequest) {
       pricing.totalMonthlyCents,
     );
     await saveProviderLinks(
+      db,
       subscriptions,
+      subscription,
+      environment,
       subscriptionId,
       lockToken,
       providerSubscription,
       payment,
     );
     lockToken = null;
+    retainUncertainAttempt = false;
     return NextResponse.json({
       ok: true,
       provider: "asaas",
@@ -274,10 +324,9 @@ export async function POST(request: NextRequest) {
         const client = await clientPromise;
         await client.db(DB_NAME).collection("subscriptions").updateOne(
           { _id: subscriptionId, "providerSubscriptionLinkLock.token": lockToken },
-          { $unset: {
-            providerSubscriptionLinkLock: "",
-            providerSubscriptionCreateUncertainAt: "",
-          } },
+          { $unset: retainUncertainAttempt
+            ? { providerSubscriptionLinkLock: "" }
+            : { providerSubscriptionLinkLock: "", providerSubscriptionCreateUncertainAt: "" } },
         );
       } catch {
         console.error("Falha ao liberar lock da assinatura Asaas.");

@@ -21,6 +21,9 @@ import {
   parseReactivationRequest,
 } from "@/lib/subscription-reactivation";
 import { activeSchoolFilter } from "@/lib/schools";
+import { getAsaasEnvironment } from "@/lib/asaas";
+import { assertAsaasMutationAllowed } from "@/lib/asaas-production";
+import { getBillingProviderLink, upsertBillingProviderLink } from "@/lib/billing-provider-links";
 
 export const dynamic = "force-dynamic";
 const REACTIVATION_LOCK_MS = 2 * 60 * 1000;
@@ -145,6 +148,7 @@ export async function POST(request: NextRequest) {
     const quote = getPricingQuote(input.requestedUnits)!;
 
     const db = (await clientPromise).db(DB_NAME);
+    const environment = getAsaasEnvironment();
     subscriptions = db.collection("subscriptions");
     const [subscription, activeSchoolCount] = await Promise.all([
       subscriptions.findOne(
@@ -186,14 +190,13 @@ export async function POST(request: NextRequest) {
         (subscription.reactivation.status === "reconciliation_required" || expired);
       if (!recoverable) throw new ReactivationError("REACTIVATION_IN_PROGRESS", 409);
     }
-    if (subscription.provider !== "asaas" || subscription.providerEnvironment !== "sandbox") {
-      throw new ReactivationError("BILLING_PROVIDER_CONFLICT", 409);
-    }
-    const providerSubscriptionId = providerId(subscription.providerSubscriptionId, "sub_");
-    const providerCustomerId = providerId(subscription.providerCustomerId, "cus_");
+    const link = await getBillingProviderLink(db, subscription, environment);
+    const providerSubscriptionId = providerId(link?.providerSubscriptionId, "sub_");
+    const providerCustomerId = providerId(link?.providerCustomerId, "cus_");
     if (!providerSubscriptionId || !providerCustomerId) {
       throw new ReactivationError("PROVIDER_LINK_INVALID", 409);
     }
+    assertAsaasMutationAllowed(environment, "reactivation");
 
     subscriptionId = subscription._id;
     lockToken = randomUUID();
@@ -221,8 +224,7 @@ export async function POST(request: NextRequest) {
             requestedUnits: quote.requestedUnits,
             pricePerUnitCents: quote.pricePerUnitCents,
             targetMonthlyValueCents: quote.totalMonthlyCents,
-            providerSubscriptionId,
-            providerCustomerId,
+            ...(environment === "sandbox" ? { providerSubscriptionId, providerCustomerId } : {}),
             nextDueDate,
             lockToken,
             lockExpiresAt: new Date(now.getTime() + REACTIVATION_LOCK_MS),
@@ -277,6 +279,13 @@ export async function POST(request: NextRequest) {
     if (!payment) throw new ReactivationError("REACTIVATION_PAYMENT_UNAVAILABLE", 409);
 
     const pendingAt = new Date();
+    if (environment === "production") {
+      await upsertBillingProviderLink(db, subscription, environment, {
+        providerCustomerId,
+        providerSubscriptionId,
+        reactivationPaymentId: payment.id,
+      });
+    }
     const persisted = await subscriptions.updateOne(
       {
         _id: subscription._id,

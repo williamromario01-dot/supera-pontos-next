@@ -14,7 +14,7 @@ test("environment status classifies readiness without exposing values", () => {
 
 test("invalid production configuration fails closed in status", () => {
   const status = getProductionConfigurationStatus({ NODE_ENV: "production", APP_URL: "https://wrong.example", ASAAS_ENV: "production" });
-  assert.equal(status.databaseConfigured, false); assert.equal(status.appUrlOfficial, false); assert.equal(status.asaasMode, "invalid_or_unset");
+  assert.equal(status.databaseConfigured, false); assert.equal(status.appUrlOfficial, false); assert.equal(status.asaasMode, "production"); assert.equal(status.productionBillingEnabled, false);
 });
 
 test("email configuration status never returns credentials", () => {

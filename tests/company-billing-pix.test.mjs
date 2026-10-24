@@ -46,8 +46,8 @@ test("QR, copy-and-paste and optional expiration are handled in memory", () => {
 test("payment ownership and status are revalidated server-side", () => {
   assert.match(pixRoute, /auth\.role !== "company_admin"/);
   assert.match(pixRoute, /companyId: auth\.companyId/);
-  assert.match(pixRoute, /payment\.subscription !== subscription\.providerSubscriptionId/);
-  assert.match(pixRoute, /payment\.customer !== subscription\.providerCustomerId/);
+  assert.match(pixRoute, /payment\.subscription !== link\.providerSubscriptionId/);
+  assert.match(pixRoute, /payment\.customer !== link\.providerCustomerId/);
   assert.match(pixRoute, /\["PENDING", "OVERDUE"\]\.includes\(payment\.status\)/);
   assert.doesNotMatch(pixRoute, /request\.json\(/);
 });

@@ -57,15 +57,15 @@ test("initial webhook uses requested units while maxUnits is zero", async () => 
 
 test("webhook refuses missing or foreign provider ownership", async () => {
   const source = await read("src/lib/billing-events.ts");
-  assert.match(source, /event\.payment\.subscription !== subscription\.providerSubscriptionId/);
-  assert.match(source, /event\.payment\.customer !== subscription\.providerCustomerId/);
+  assert.match(source, /event\.payment\.subscription !== providerSubscriptionId/);
+  assert.match(source, /event\.payment\.customer !== providerCustomerId/);
   assert.match(source, /typeof event\.payment\.value !== "number"/);
 });
 
 test("initial pending charge reuses the protected Pix GET route", async () => {
   const source = await read("src/app/api/company/billing/payment/[id]/pix/route.ts");
   assert.match(source, /export async function GET/);
-  assert.match(source, /paymentId === subscription\.providerPaymentId/);
+  assert.match(source, /paymentId === link\.providerPaymentId/);
   assert.match(source, /\["PENDING", "OVERDUE"\]\.includes\(payment\.status\)/);
   assert.doesNotMatch(source, /export async function POST/);
 });

@@ -6,6 +6,8 @@ import { deriveCompanyOnboardingState, onboardingStepForState } from "@/lib/comp
 import { getPricingQuote } from "@/lib/plans";
 import { DB_NAME } from "@/lib/saas";
 import { activeSchoolFilter } from "@/lib/schools";
+import { getAsaasEnvironment } from "@/lib/asaas";
+import { getBillingProviderLink } from "@/lib/billing-provider-links";
 
 export const dynamic = "force-dynamic";
 
@@ -65,7 +67,14 @@ export async function GET(request: NextRequest) {
       categories,
       pointEvents,
     };
-    const state = deriveCompanyOnboardingState(company, subscription, counts);
+    const environment = getAsaasEnvironment();
+    const providerLink = subscription ? await getBillingProviderLink(db, subscription, environment) : null;
+    const billingSubscription = subscription && providerLink
+      ? { ...subscription, providerCustomerId: providerLink.providerCustomerId, providerSubscriptionId: providerLink.providerSubscriptionId, providerPaymentId: providerLink.providerPaymentId }
+      : environment === "production" && subscription
+        ? { ...subscription, providerCustomerId: undefined, providerSubscriptionId: undefined, providerPaymentId: undefined }
+        : subscription;
+    const state = deriveCompanyOnboardingState(company, billingSubscription, counts);
     const pricing = getPricingQuote(subscription?.requestedMaxUnits);
 
     return NextResponse.json({
@@ -88,7 +97,7 @@ export async function GET(request: NextRequest) {
         activeUnitsLimit: Number(subscription?.maxUnits ?? 0),
       } : null,
       payment: {
-        pending: typeof subscription?.providerPaymentId === "string" && subscription.status !== "active",
+        pending: typeof billingSubscription?.providerPaymentId === "string" && billingSubscription.status !== "active",
       },
       counts,
       schools: schools.map((school) => ({

@@ -8,6 +8,9 @@ export const ENVIRONMENT_VARIABLES: ReadonlyArray<{ name: string; classification
   { name: "ASAAS_ENV", classification: "SERVER_ONLY" },
   { name: "ASAAS_API_KEY", classification: "SERVER_ONLY" },
   { name: "ASAAS_WEBHOOK_TOKEN", classification: "SERVER_ONLY" },
+  { name: "ASAAS_SANDBOX_WEBHOOK_TOKEN", classification: "SERVER_ONLY" },
+  { name: "ASAAS_PRODUCTION_WEBHOOK_TOKEN", classification: "PRODUCTION_REQUIRED" },
+  { name: "ENABLE_ASAAS_PRODUCTION_MUTATIONS", classification: "SERVER_ONLY" },
   { name: "ENABLE_ADMIN_SETUP", classification: "SANDBOX_ONLY" },
   { name: "ENABLE_LEGACY_STUDENT_REGISTRATION", classification: "SANDBOX_ONLY" },
   { name: "ENABLE_SANDBOX_RECOVERY_CAPTURE", classification: "SANDBOX_ONLY" },
@@ -21,8 +24,8 @@ export type ConfigurationStatus = {
   appUrlOfficial: boolean;
   email: { configured: boolean; provider: "Resend"; senderConfigured: boolean };
   environment: "production" | "development" | "test";
-  asaasMode: "sandbox" | "invalid_or_unset";
-  productionBillingEnabled: false;
+  asaasMode: "sandbox" | "production" | "invalid_or_unset";
+  productionBillingEnabled: boolean;
   legalReview: "pending";
   backupVerification: "unknown";
 };
@@ -37,8 +40,10 @@ export function getProductionConfigurationStatus(env: NodeJS.ProcessEnv = proces
     appUrlOfficial,
     email: { configured: Boolean(env.RESEND_API_KEY?.trim()) && senderConfigured, provider: "Resend", senderConfigured },
     environment: env.NODE_ENV === "production" ? "production" : env.NODE_ENV === "test" ? "test" : "development",
-    asaasMode: env.ASAAS_ENV === "sandbox" ? "sandbox" : "invalid_or_unset",
-    productionBillingEnabled: false,
+    asaasMode: env.ASAAS_ENV === "sandbox" || env.ASAAS_ENV === "production"
+      ? env.ASAAS_ENV
+      : "invalid_or_unset",
+    productionBillingEnabled: env.ASAAS_ENV === "production" && env.ENABLE_ASAAS_PRODUCTION_MUTATIONS === "true",
     legalReview: "pending",
     backupVerification: "unknown",
   };

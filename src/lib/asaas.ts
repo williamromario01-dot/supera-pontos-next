@@ -1,8 +1,8 @@
 import "server-only";
 
-export type AsaasEnvironment = "sandbox";
-
-const ASAAS_SANDBOX_URL = "https://api-sandbox.asaas.com/v3";
+import { ASAAS_BASE_URLS, parseAsaasEnvironment, type AsaasEnvironment } from "@/lib/asaas-config-core";
+export type { AsaasEnvironment } from "@/lib/asaas-config-core";
+export const ASAAS_USER_AGENT = "SUPERPONTOS/1.0";
 const ASAAS_REQUEST_TIMEOUT_MS = 15_000;
 
 export interface AsaasConfig {
@@ -140,26 +140,21 @@ async function readAsaasErrorDetails(
     .filter((detail): detail is AsaasErrorDetail => detail !== null);
 }
 
-function getSandboxEnvironment(): AsaasEnvironment {
-  const environment = process.env.ASAAS_ENV?.trim();
-  if (environment !== "sandbox") {
-    throw new Error("ASAAS_ENV_INVALID_OR_PRODUCTION_NOT_ENABLED");
-  }
-  return environment;
+export function getAsaasEnvironment(env: NodeJS.ProcessEnv = process.env): AsaasEnvironment {
+  return parseAsaasEnvironment(env.ASAAS_ENV?.trim());
 }
 
 export function getAsaasBaseUrl(): string {
-  getSandboxEnvironment();
-  return ASAAS_SANDBOX_URL;
+  return ASAAS_BASE_URLS[getAsaasEnvironment()];
 }
 
 export function getAsaasConfig(): AsaasConfig {
-  const environment = getSandboxEnvironment();
+  const environment = getAsaasEnvironment();
   const apiKey = process.env.ASAAS_API_KEY?.trim();
   if (!apiKey) {
     throw new Error("ASAAS_API_KEY_NOT_CONFIGURED");
   }
-  return { environment, baseUrl: ASAAS_SANDBOX_URL, apiKey };
+  return { environment, baseUrl: ASAAS_BASE_URLS[environment], apiKey };
 }
 
 async function requestAsaasCustomer(
@@ -179,7 +174,7 @@ async function requestAsaasCustomer(
       headers: {
         accept: "application/json",
         access_token: config.apiKey,
-        "User-Agent": "SUPERPONTOS/1.0",
+        "User-Agent": ASAAS_USER_AGENT,
         ...(init.body ? { "content-type": "application/json" } : {}),
       },
       signal: controller.signal,

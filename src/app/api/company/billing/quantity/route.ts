@@ -19,6 +19,9 @@ import {
 } from "@/lib/quantity-change";
 import { activeSchoolFilter } from "@/lib/schools";
 import { isOpenReactivation } from "@/lib/subscription-reactivation";
+import { getAsaasEnvironment } from "@/lib/asaas";
+import { assertAsaasMutationAllowed } from "@/lib/asaas-production";
+import { getBillingProviderLink, upsertBillingProviderLink } from "@/lib/billing-provider-links";
 
 export const dynamic = "force-dynamic";
 
@@ -210,6 +213,7 @@ export async function POST(request: NextRequest) {
 
     const client = await clientPromise;
     const db = client.db(DB_NAME);
+    const environment = getAsaasEnvironment();
     subscriptions = db.collection("subscriptions");
     const [company, subscription, activeSchoolCount] = await Promise.all([
       db.collection("companies").findOne({ _id: auth.companyId }),
@@ -237,10 +241,6 @@ export async function POST(request: NextRequest) {
     if (isOpenReactivation(subscription.reactivation)) {
       throw new QuantityChangeError("REACTIVATION_IN_PROGRESS", 409);
     }
-    if (subscription.provider !== "asaas" || subscription.providerEnvironment !== "sandbox") {
-      throw new QuantityChangeError("BILLING_PROVIDER_CONFLICT", 409);
-    }
-
     const currentUnits = Number(subscription.maxUnits);
     const currentQuote = getPricingQuote(currentUnits);
     if (!currentQuote || !Number.isSafeInteger(subscription.unitCount)) {
@@ -291,11 +291,13 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const providerSubscriptionId = providerId(subscription.providerSubscriptionId, "sub_");
-    const providerCustomerId = providerId(subscription.providerCustomerId, "cus_");
+    const link = await getBillingProviderLink(db, subscription, environment);
+    const providerSubscriptionId = providerId(link?.providerSubscriptionId, "sub_");
+    const providerCustomerId = providerId(link?.providerCustomerId, "cus_");
     if (!providerSubscriptionId || !providerCustomerId) {
       throw new QuantityChangeError("PROVIDER_LINK_INVALID", 409);
     }
+    assertAsaasMutationAllowed(environment, "subscription_changes");
     const quote = getQuantityChangeQuote(
       currentUnits,
       requestedQuote.requestedUnits,
@@ -314,12 +316,8 @@ export async function POST(request: NextRequest) {
         companyId: auth.companyId,
         status: "active",
         cancelAtPeriodEnd: { $ne: true },
-        "cancellationOperation.status": {
-        "reactivation.status": {
-          $nin: ["preparing", "pending_payment", "reconciliation_required"],
-        },
-          $nin: ["preparing", "reconciliation_required"],
-        },
+        "cancellationOperation.status": { $nin: ["preparing", "reconciliation_required"] },
+        "reactivation.status": { $nin: ["preparing", "pending_payment", "reconciliation_required"] },
         maxUnits: currentUnits,
         $or: [
           { quantityChange: { $exists: false } },
@@ -340,8 +338,7 @@ export async function POST(request: NextRequest) {
             toUnits: quote.requestedUnits,
             previousMonthlyValueCents: currentQuote.totalMonthlyCents,
             targetMonthlyValueCents: quote.totalMonthlyCents,
-            providerSubscriptionId,
-            providerCustomerId,
+            ...(environment === "sandbox" ? { providerSubscriptionId, providerCustomerId } : {}),
             lockToken,
             lockExpiresAt: new Date(now.getTime() + QUANTITY_CHANGE_LOCK_MS),
             requestedAt: now,
@@ -428,6 +425,13 @@ export async function POST(request: NextRequest) {
     );
     if (persisted.modifiedCount !== 1) {
       throw new QuantityChangeError("QUANTITY_CHANGE_PERSISTENCE_CONFLICT", 409);
+    }
+    if (environment === "production") {
+      await upsertBillingProviderLink(db, subscription, environment, {
+        providerCustomerId,
+        providerSubscriptionId,
+        quantityChangePaymentId: snapshot.payment.id,
+      });
     }
 
     return NextResponse.json({

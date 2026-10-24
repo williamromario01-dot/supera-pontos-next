@@ -17,6 +17,9 @@ import {
   parseCancellationRequest,
 } from "@/lib/subscription-cancellation";
 import { isOpenQuantityChange, OPEN_QUANTITY_CHANGE_STATUSES } from "@/lib/quantity-change";
+import { getAsaasEnvironment } from "@/lib/asaas";
+import { assertAsaasMutationAllowed } from "@/lib/asaas-production";
+import { getBillingProviderLink } from "@/lib/billing-provider-links";
 
 export const dynamic = "force-dynamic";
 
@@ -152,6 +155,7 @@ export async function POST(request: NextRequest) {
 
     const client = await clientPromise;
     const db = client.db(DB_NAME);
+    const environment = getAsaasEnvironment();
     subscriptions = db.collection("subscriptions");
     const subscription = await subscriptions.findOne(
       { companyId: auth.companyId },
@@ -178,14 +182,13 @@ export async function POST(request: NextRequest) {
         cancellation: publicCancellation(subscription),
       });
     }
-    if (subscription.provider !== "asaas" || subscription.providerEnvironment !== "sandbox") {
-      throw new CancellationError("BILLING_PROVIDER_CONFLICT", 409);
-    }
-    const providerSubscriptionId = providerId(subscription.providerSubscriptionId, "sub_");
-    const providerCustomerId = providerId(subscription.providerCustomerId, "cus_");
+    const link = await getBillingProviderLink(db, subscription, environment);
+    const providerSubscriptionId = providerId(link?.providerSubscriptionId, "sub_");
+    const providerCustomerId = providerId(link?.providerCustomerId, "cus_");
     if (!providerSubscriptionId || !providerCustomerId) {
       throw new CancellationError("PROVIDER_LINK_INVALID", 409);
     }
+    assertAsaasMutationAllowed(environment, "cancellation");
 
     subscriptionId = subscription._id;
     lockToken = randomUUID();
@@ -332,7 +335,9 @@ export async function DELETE(request: NextRequest) {
       );
     }
     const client = await clientPromise;
-    subscriptions = client.db(DB_NAME).collection("subscriptions");
+    const db = client.db(DB_NAME);
+    const environment = getAsaasEnvironment();
+    subscriptions = db.collection("subscriptions");
     const subscription = await subscriptions.findOne(
       { companyId: auth.companyId },
       { sort: { createdAt: -1 } },
@@ -349,14 +354,13 @@ export async function DELETE(request: NextRequest) {
     if (cancellation.state === "cancelled") {
       throw new CancellationError("CANCELLATION_ALREADY_EFFECTIVE", 409);
     }
-    if (subscription.provider !== "asaas" || subscription.providerEnvironment !== "sandbox") {
-      throw new CancellationError("BILLING_PROVIDER_CONFLICT", 409);
-    }
-    const providerSubscriptionId = providerId(subscription.providerSubscriptionId, "sub_");
-    const providerCustomerId = providerId(subscription.providerCustomerId, "cus_");
+    const link = await getBillingProviderLink(db, subscription, environment);
+    const providerSubscriptionId = providerId(link?.providerSubscriptionId, "sub_");
+    const providerCustomerId = providerId(link?.providerCustomerId, "cus_");
     if (!providerSubscriptionId || !providerCustomerId) {
       throw new CancellationError("PROVIDER_LINK_INVALID", 409);
     }
+    assertAsaasMutationAllowed(environment, "cancellation");
 
     subscriptionId = subscription._id;
     lockToken = randomUUID();

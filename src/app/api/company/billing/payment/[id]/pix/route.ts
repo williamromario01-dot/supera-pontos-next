@@ -7,6 +7,8 @@ import {
   getAsaasPaymentPixQrCode,
 } from "@/lib/asaas-subscriptions";
 import { AsaasCustomerRequestError } from "@/lib/asaas";
+import { getAsaasEnvironment } from "@/lib/asaas";
+import { getBillingProviderLink } from "@/lib/billing-provider-links";
 
 export const dynamic = "force-dynamic";
 
@@ -26,11 +28,11 @@ export async function GET(request: NextRequest, props: { params: Promise<{ id: s
   }
 
   const client = await clientPromise;
-  const subscription = await client.db(DB_NAME).collection("subscriptions").findOne(
+  const db = client.db(DB_NAME);
+  const environment = getAsaasEnvironment();
+  const subscription = await db.collection("subscriptions").findOne(
     {
       companyId: auth.companyId,
-      provider: "asaas",
-      providerEnvironment: "sandbox",
     },
     {
       sort: { createdAt: -1 },
@@ -47,18 +49,21 @@ export async function GET(request: NextRequest, props: { params: Promise<{ id: s
   if (!subscription) {
     return NextResponse.json({ error: "Cobrança não encontrada." }, { status: 404 });
   }
+  const link = await getBillingProviderLink(db, subscription, environment);
+  if (!link) return NextResponse.json({ error: "Cobrança não encontrada." }, { status: 404 });
 
   try {
     const payment = await getAsaasPayment(paymentId);
-    const linkedLocally = paymentId === subscription.providerPaymentId ||
-      paymentId === subscription.quantityChange?.providerPaymentId ||
-      paymentId === subscription.reactivation?.providerPaymentId;
+    const linkedLocally = paymentId === link.providerPaymentId ||
+      paymentId === link.quantityChangePaymentId ||
+      paymentId === link.reactivationPaymentId ||
+      (environment === "sandbox" && (paymentId === subscription.quantityChange?.providerPaymentId || paymentId === subscription.reactivation?.providerPaymentId));
     if (!linkedLocally) {
       return NextResponse.json({ error: "Cobrança não disponível para Pix." }, { status: 404 });
     }
     if (
-      payment.subscription !== subscription.providerSubscriptionId ||
-      payment.customer !== subscription.providerCustomerId ||
+      payment.subscription !== link.providerSubscriptionId ||
+      payment.customer !== link.providerCustomerId ||
       !["PENDING", "OVERDUE"].includes(payment.status)
     ) {
       return NextResponse.json({ error: "Cobrança não disponível para Pix." }, { status: 404 });

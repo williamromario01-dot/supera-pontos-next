@@ -1,6 +1,6 @@
 import "server-only";
 
-import type { ClientSession, Db, Document, ObjectId } from "mongodb";
+import type { ClientSession, Db, ObjectId } from "mongodb";
 import { MongoServerError } from "mongodb";
 import { getPricingQuote } from "@/lib/plans";
 import {
@@ -11,6 +11,7 @@ import {
 import { matchesReactivationPayment } from "@/lib/subscription-reactivation";
 import { activeSchoolFilter } from "@/lib/schools";
 import { PAST_DUE_GRACE_PERIOD_MS } from "@/lib/subscription-access";
+import type { AsaasEnvironment } from "@/lib/asaas";
 
 export const ASAAS_PAYMENT_EVENT_TYPES = [
   "PAYMENT_CONFIRMED",
@@ -35,19 +36,18 @@ export interface AsaasPaymentWebhookEvent {
 }
 
 export async function assertBillingEventIndexes(db: Db): Promise<void> {
-  let indexes;
-  try {
-    indexes = await db.collection("billingEvents").listIndexes().toArray();
-  } catch {
-    throw new Error("BILLING_EVENT_INDEX_NOT_CONFIGURED");
+  await db.collection("billingEvents").updateMany(
+    { provider: "asaas", providerEnvironment: { $exists: false } },
+    { $set: { providerEnvironment: "sandbox" } },
+  );
+  await db.collection("billingEvents").createIndex(
+    { provider: 1, providerEnvironment: 1, providerEventId: 1 },
+    { unique: true, name: "uniq_provider_environment_event" },
+  );
+  const indexes = await db.collection("billingEvents").listIndexes().toArray();
+  if (indexes.some((index) => index.name === "uniq_provider_event")) {
+    await db.collection("billingEvents").dropIndex("uniq_provider_event");
   }
-  const index = indexes.find((item) => item.name === "uniq_provider_event");
-  const keys = index?.key ? Object.keys(index.key) : [];
-  if (
-    index?.unique !== true ||
-    keys.length !== 2 || keys[0] !== "provider" || keys[1] !== "providerEventId" ||
-    index.key?.provider !== 1 || index.key?.providerEventId !== 1
-  ) throw new Error("BILLING_EVENT_INDEX_NOT_CONFIGURED");
 }
 
 function isEventType(value: unknown): value is AsaasPaymentEventType {
@@ -94,26 +94,45 @@ async function processInTransaction(
   db: Db,
   session: ClientSession,
   event: AsaasPaymentWebhookEvent,
+  providerEnvironment: AsaasEnvironment,
+  correlationId?: string,
 ): Promise<"processed" | "duplicate"> {
   const subscriptions = db.collection("subscriptions");
-  const subscription = await subscriptions.findOne(
-    {
-      provider: "asaas",
-      $or: [
+  const link = await db.collection("billingProviderLinks").findOne({
+    provider: "asaas", environment: providerEnvironment,
+    $or: [{ providerPaymentId: event.payment.id }, { quantityChangePaymentId: event.payment.id }, { reactivationPaymentId: event.payment.id }],
+  }, { session });
+  const subscription = link
+    ? await subscriptions.findOne({ _id: link.internalSubscriptionId }, { session })
+    : providerEnvironment === "sandbox"
+      ? await subscriptions.findOne({ provider: "asaas", providerEnvironment: "sandbox", $or: [
         { providerPaymentId: event.payment.id },
         { "quantityChange.providerPaymentId": event.payment.id },
         { "reactivation.providerPaymentId": event.payment.id },
-      ],
-    },
-    { session },
-  );
+      ] }, { session })
+      : null;
   if (!subscription) throw new Error("PAYMENT_NOT_LINKED");
+  const providerCustomerId = link?.providerCustomerId ?? subscription.providerCustomerId;
+  const providerSubscriptionId = link?.providerSubscriptionId ?? subscription.providerSubscriptionId;
+  const quantityPaymentId = link?.quantityChangePaymentId ?? subscription.quantityChange?.providerPaymentId;
+  const reactivationPaymentId = link?.reactivationPaymentId ?? subscription.reactivation?.providerPaymentId;
+  if (link && subscription.quantityChange) subscription.quantityChange = {
+    ...subscription.quantityChange,
+    providerPaymentId: quantityPaymentId,
+    providerCustomerId,
+    providerSubscriptionId,
+  };
+  if (link && subscription.reactivation) subscription.reactivation = {
+    ...subscription.reactivation,
+    providerPaymentId: reactivationPaymentId,
+    providerCustomerId,
+    providerSubscriptionId,
+  };
   if (
-    subscription.providerEnvironment !== "sandbox" ||
-    event.payment.subscription !== subscription.providerSubscriptionId ||
-    event.payment.customer !== subscription.providerCustomerId
+    event.payment.subscription !== providerSubscriptionId ||
+    event.payment.customer !== providerCustomerId
   ) throw new Error("PAYMENT_LINK_CONFLICT");
-  const quantityPayment = subscription.quantityChange?.providerPaymentId === event.payment.id;
+  const quantityPayment = quantityPaymentId === event.payment.id;
   const quantityChangeMatches = quantityPayment && matchesQuantityChangePayment(
     subscription.quantityChange,
     event.payment,
@@ -121,7 +140,7 @@ async function processInTransaction(
   if (quantityPayment && !quantityChangeMatches) {
     throw new Error("PAYMENT_LINK_CONFLICT");
   }
-  const reactivationPayment = subscription.reactivation?.providerPaymentId === event.payment.id;
+  const reactivationPayment = reactivationPaymentId === event.payment.id;
   const reactivationMatches = reactivationPayment && matchesReactivationPayment(
     subscription.reactivation,
     event.payment,
@@ -168,6 +187,8 @@ async function processInTransaction(
   const now = new Date();
   await db.collection("billingEvents").insertOne({
     provider: "asaas",
+    providerEnvironment,
+    correlationId: correlationId ?? null,
     providerEventId: event.id,
     eventType: event.event,
     companyId: subscription.companyId,
@@ -178,6 +199,13 @@ async function processInTransaction(
   }, { session });
 
   const subscriptionSet: Record<string, unknown> = { updatedAt: now };
+  const priorEvent = quantityPayment
+    ? subscription.quantityChange?.providerPaymentLastEvent
+    : reactivationPayment
+      ? subscription.reactivation?.providerPaymentLastEvent
+      : subscription.providerPaymentLastEvent;
+  const staleOverdue = event.event === "PAYMENT_OVERDUE" &&
+    (priorEvent === "PAYMENT_CONFIRMED" || priorEvent === "PAYMENT_RECEIVED");
   if (quantityPayment) {
     subscriptionSet["quantityChange.providerPaymentStatus"] =
       event.payment.status ?? event.event;
@@ -191,6 +219,18 @@ async function processInTransaction(
     subscriptionSet.providerPaymentStatus = event.payment.status ?? event.event;
     subscriptionSet.providerPaymentLastEvent = event.event;
     subscriptionSet.providerPaymentUpdatedAt = now;
+  }
+  if (staleOverdue) {
+    if (quantityPayment) {
+      subscriptionSet["quantityChange.providerPaymentStatus"] = subscription.quantityChange?.providerPaymentStatus;
+      subscriptionSet["quantityChange.providerPaymentLastEvent"] = priorEvent;
+    } else if (reactivationPayment) {
+      subscriptionSet["reactivation.providerPaymentStatus"] = subscription.reactivation?.providerPaymentStatus;
+      subscriptionSet["reactivation.providerPaymentLastEvent"] = priorEvent;
+    } else {
+      subscriptionSet.providerPaymentStatus = subscription.providerPaymentStatus;
+      subscriptionSet.providerPaymentLastEvent = priorEvent;
+    }
   }
   if (confirmsPayment) {
     if (!quantityPayment) subscriptionSet.status = "active";
@@ -232,7 +272,7 @@ async function processInTransaction(
     } else if (!quantityPayment && !reactivationPayment) {
       subscriptionSet.maxUnits = pricing.requestedUnits;
     }
-  } else if (event.event === "PAYMENT_OVERDUE") {
+  } else if (event.event === "PAYMENT_OVERDUE" && !staleOverdue) {
     if (reactivationMatches) {
       subscriptionSet["reactivation.status"] = "overdue";
       subscriptionSet["reactivation.updatedAt"] = now;
@@ -310,6 +350,8 @@ async function processInTransaction(
 export async function processAsaasPaymentWebhook(
   db: Db,
   event: AsaasPaymentWebhookEvent,
+  providerEnvironment: AsaasEnvironment = "sandbox",
+  correlationId?: string,
 ): Promise<"processed" | "duplicate"> {
   await assertBillingEventIndexes(db);
   const client = db.client;
@@ -318,12 +360,13 @@ export async function processAsaasPaymentWebhook(
   try {
     const existing = await db.collection("billingEvents").findOne({
       provider: "asaas",
+      providerEnvironment,
       providerEventId: event.id,
     }, { projection: { _id: 1 } });
     if (existing) return "duplicate";
     try {
       await session.withTransaction(async () => {
-        result = await processInTransaction(db, session, event);
+        result = await processInTransaction(db, session, event, providerEnvironment, correlationId);
       });
       return result;
     } catch (error) {

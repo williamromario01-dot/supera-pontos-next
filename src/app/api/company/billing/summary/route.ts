@@ -18,6 +18,8 @@ import {
 import { getSubscriptionAccessState } from "@/lib/subscription-access";
 import { getCancellationAccessState } from "@/lib/subscription-cancellation";
 import { isOpenReactivation } from "@/lib/subscription-reactivation";
+import { getAsaasEnvironment } from "@/lib/asaas";
+import { getBillingProviderLink } from "@/lib/billing-provider-links";
 
 export const dynamic = "force-dynamic";
 
@@ -122,28 +124,28 @@ export async function GET(request: NextRequest) {
       payments: [],
     };
     try {
+      const environment = getAsaasEnvironment();
+      const link = await getBillingProviderLink(db, subscription, environment);
       if (
-        subscription.provider !== "asaas" ||
-        subscription.providerEnvironment !== "sandbox" ||
-        typeof subscription.providerSubscriptionId !== "string" ||
-        typeof subscription.providerCustomerId !== "string"
+        !link || typeof link.providerSubscriptionId !== "string" ||
+        typeof link.providerCustomerId !== "string"
       ) throw new Error("PROVIDER_LINK_INVALID");
       const subscriptions = await findAsaasSubscriptions(
         `subscription:${subscription._id.toString()}`,
-        subscription.providerCustomerId,
+        link.providerCustomerId,
       );
       if (
         subscriptions.length !== 1 ||
-        subscriptions[0].id !== subscription.providerSubscriptionId ||
-        subscriptions[0].customer !== subscription.providerCustomerId
+        subscriptions[0].id !== link.providerSubscriptionId ||
+        subscriptions[0].customer !== link.providerCustomerId
       ) throw new Error("PROVIDER_LINK_CONFLICT");
       const providerSubscription = subscriptions[0];
       const payments = await listAsaasSubscriptionPayments(
-        subscription.providerSubscriptionId,
+        link.providerSubscriptionId,
       );
       if (payments.some((payment) =>
-        payment.subscription !== subscription.providerSubscriptionId ||
-        payment.customer !== subscription.providerCustomerId
+        payment.subscription !== link.providerSubscriptionId ||
+        payment.customer !== link.providerCustomerId
       )) throw new Error("PROVIDER_PAYMENT_CONFLICT");
       const orderedPayments = [...payments].sort((left, right) =>
         right.dueDate.localeCompare(left.dueDate)
@@ -165,9 +167,9 @@ export async function GET(request: NextRequest) {
         pendingPayment: pending ? publicPayment(
           pending,
           subscription.quantityChange?.status === "pending_payment" &&
-            subscription.quantityChange?.providerPaymentId === pending.id,
+            (link.quantityChangePaymentId ?? subscription.quantityChange?.providerPaymentId) === pending.id,
           subscription.reactivation?.status === "pending_payment" &&
-            subscription.reactivation?.providerPaymentId === pending.id,
+            (link.reactivationPaymentId ?? subscription.reactivation?.providerPaymentId) === pending.id,
         ) : null,
         payments: orderedPayments.map((payment) => publicPayment(payment)),
       };
