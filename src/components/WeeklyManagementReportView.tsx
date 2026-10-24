@@ -1,15 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { AlertCircle, ArrowDown, ArrowLeft, ArrowRight, ArrowUp, BarChart3, BookOpenCheck, Box, CalendarDays, MinusCircle, Gift, GraduationCap, PackageOpen, Target, TrendingUp, UserCheck, Users } from "lucide-react";
-import type { ReactNode } from "react";
+import { AlertCircle, ArrowDown, ArrowLeft, ArrowRight, ArrowUp, BarChart3, BookOpenCheck, Box, CalendarDays, Download, MinusCircle, Gift, GraduationCap, Loader2, PackageOpen, Target, TrendingUp, UserCheck, Users } from "lucide-react";
+import { useState, type ReactNode } from "react";
 import type { ReportListItem, WeeklyReport } from "@/lib/weekly-management-report-types";
 import { calculateVariation, immediatelyPrecedes, isoWeekNumber } from "@/lib/weekly-management-report-view";
 
 const number = new Intl.NumberFormat("pt-BR");
 const decimal = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 1, minimumFractionDigits: 1 });
 const date = (value: string) => new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_Paulo" }).format(new Date(`${value}T12:00:00Z`));
-const dateTime = (value: string) => new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short", timeZone: "America/Sao_Paulo" }).format(new Date(value));
+const dateTime = (value: string | Date) => new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short", timeZone: "America/Sao_Paulo" }).format(new Date(value));
 const percent = (value: number | null | undefined) => typeof value === "number" ? `${decimal.format(value)}%` : "—";
 
 function Section({ title, description, children }: { title: string; description?: string; children: ReactNode }) {
@@ -36,6 +36,34 @@ function EmptyState() {
   return <div className="rounded-3xl border border-dashed border-slate-300 bg-white px-6 py-16 text-center"><CalendarDays className="mx-auto text-slate-300" size={42} /><h2 className="mt-4 text-xl font-black text-slate-800">Nenhum relatório semanal fechado ainda.</h2><p className="mx-auto mt-2 max-w-md text-sm text-slate-500">O primeiro relatório ficará disponível após o fechamento semanal.</p></div>;
 }
 
+function ExcelDownloadButton({ reportId, schoolId, compact = false }: { reportId: string; schoolId?: string; compact?: boolean }) {
+  const [downloading, setDownloading] = useState(false);
+  const [error, setError] = useState("");
+
+  async function download() {
+    if (downloading) return;
+    setDownloading(true); setError("");
+    try {
+      const query = schoolId ? `?schoolId=${encodeURIComponent(schoolId)}` : "";
+      const response = await fetch(`/api/management-reports/${encodeURIComponent(reportId)}/excel${query}`, { credentials: "include", cache: "no-store" });
+      if (!response.ok) {
+        const body = await response.json().catch(() => null) as { error?: string } | null;
+        throw new Error(body?.error || "Não foi possível gerar o arquivo Excel.");
+      }
+      const disposition = response.headers.get("content-disposition") || "";
+      const filename = disposition.match(/filename="([^"]+)"/)?.[1] || "SUPERPONTOS_Relatorio_Semanal.xlsx";
+      const url = URL.createObjectURL(await response.blob());
+      const anchor = document.createElement("a");
+      anchor.href = url; anchor.download = filename; document.body.appendChild(anchor); anchor.click(); anchor.remove();
+      URL.revokeObjectURL(url);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Não foi possível gerar o arquivo Excel.");
+    } finally { setDownloading(false); }
+  }
+
+  return <div className={compact ? "text-right" : "mt-5"}><button type="button" onClick={download} disabled={downloading} className={`${compact ? "px-3 py-2 text-xs" : "px-4 py-3 text-sm"} inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 font-black text-white transition hover:bg-emerald-700 disabled:cursor-wait disabled:opacity-70`}><span aria-hidden="true">{downloading ? <Loader2 className="animate-spin" size={17}/> : <Download size={17}/>}</span>{downloading ? "Gerando Excel..." : "Baixar Excel"}</button>{error && <p className="mt-2 max-w-xs text-xs font-semibold text-rose-600" role="alert">{error}</p>}</div>;
+}
+
 export function WeeklyManagementReportView({ report, previous, history, schoolId, detailMode = false }: { report: WeeklyReport | null; previous: WeeklyReport | null; history: ReportListItem[]; schoolId?: string; detailMode?: boolean }) {
   if (!report) return <EmptyState />;
   const comparablePrevious = previous && immediatelyPrecedes(previous.weekStart, report.weekStart) ? previous : null;
@@ -52,7 +80,7 @@ export function WeeklyManagementReportView({ report, previous, history, schoolId
   const referralLabels: Record<string, string> = { pending: "Novas", contacted: "Em contato", approved: "Aceitas", scheduled: "Agendadas", rejected: "Não convertidas" };
 
   return <div className="space-y-6">
-    <section className="overflow-hidden rounded-3xl bg-slate-900 p-6 text-white shadow-xl sm:p-8"><div className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between"><div><p className="text-xs font-black uppercase tracking-[0.2em] text-orange-400">Relatório semanal</p><h1 className="mt-2 text-3xl font-black sm:text-4xl">Semana {isoWeekNumber(report.weekStart)}</h1><p className="mt-2 text-sm text-slate-300">{date(report.weekStart)} a {date(report.weekEnd)}</p><p className="mt-4 text-sm text-slate-400">{report.schoolName}{report.companyName ? ` · ${report.companyName}` : ""}</p></div><dl className="grid grid-cols-2 gap-3 text-sm sm:min-w-72"><div className="rounded-2xl bg-white/10 p-4"><dt className="text-slate-400">Fechado em</dt><dd className="mt-1 font-bold">{dateTime(report.closedAt)}</dd></div><div className="rounded-2xl bg-white/10 p-4"><dt className="text-slate-400">Status</dt><dd className="mt-1 font-bold text-emerald-300">Fechado</dd></div><div className="col-span-2 text-right text-xs text-slate-500">Versão do relatório: {report.reportVersion}</div></dl></div></section>
+    <section className="overflow-hidden rounded-3xl bg-slate-900 p-6 text-white shadow-xl sm:p-8"><div className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between"><div><p className="text-xs font-black uppercase tracking-[0.2em] text-orange-400">Relatório semanal</p><h1 className="mt-2 text-3xl font-black sm:text-4xl">Semana {isoWeekNumber(report.weekStart)}</h1><p className="mt-2 text-sm text-slate-300">{date(report.weekStart)} a {date(report.weekEnd)}</p><p className="mt-4 text-sm text-slate-400">{report.schoolName}{report.companyName ? ` · ${report.companyName}` : ""}</p><ExcelDownloadButton reportId={report._id} schoolId={schoolId} /></div><dl className="grid grid-cols-2 gap-3 text-sm sm:min-w-72"><div className="rounded-2xl bg-white/10 p-4"><dt className="text-slate-400">Fechado em</dt><dd className="mt-1 font-bold">{dateTime(report.closedAt)}</dd></div><div className="rounded-2xl bg-white/10 p-4"><dt className="text-slate-400">Status</dt><dd className="mt-1 font-bold text-emerald-300">Fechado</dd></div><div className="col-span-2 text-right text-xs text-slate-500">Versão do relatório: {report.reportVersion}</div></dl></div></section>
 
     {!comparablePrevious && <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800">Primeira semana disponível para comparação.</div>}
 
@@ -83,7 +111,7 @@ export function WeeklyManagementReportView({ report, previous, history, schoolId
 
     <div className="grid gap-4 md:grid-cols-2"><Unavailable title="Frequência" text="Dados de presença e faltas ainda não estão disponíveis nesta versão." /><Unavailable title="Vendas" text="Ainda não disponível nesta versão." /></div>
 
-    {!detailMode && <Section title="Histórico" description="Relatórios fechados, do mais recente para o mais antigo."><div className="space-y-3">{history.map((item) => <Link key={item.reportId} href={`/management-reports/${encodeURIComponent(item.reportId)}${query}`} className="flex min-h-20 items-center justify-between gap-4 rounded-2xl border border-slate-200 p-4 transition hover:border-orange-300 hover:bg-orange-50 focus:outline-none focus:ring-2 focus:ring-orange-500"><div><p className="font-black">Semana {isoWeekNumber(item.weekStart)}</p><p className="text-sm text-slate-500">{date(item.weekStart)} a {date(item.weekEnd)} · fechado em {dateTime(item.closedAt)}</p></div><span className="inline-flex shrink-0 items-center gap-1 text-sm font-bold text-orange-600">Ver relatório <ArrowRight size={16}/></span></Link>)}</div></Section>}
+    {!detailMode && <Section title="Histórico" description="Relatórios fechados, do mais recente para o mais antigo."><div className="space-y-3">{history.map((item) => <div key={item.reportId} className="flex min-h-20 flex-col gap-3 rounded-2xl border border-slate-200 p-4 sm:flex-row sm:items-center sm:justify-between"><div><p className="font-black">Semana {isoWeekNumber(item.weekStart)}</p><p className="text-sm text-slate-500">{date(item.weekStart)} a {date(item.weekEnd)} · fechado em {dateTime(item.closedAt)}</p></div><div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-center"><Link href={`/management-reports/${encodeURIComponent(item.reportId)}${query}`} className="inline-flex items-center justify-center gap-1 rounded-xl px-3 py-2 text-sm font-bold text-orange-600 transition hover:bg-orange-50 focus:outline-none focus:ring-2 focus:ring-orange-500">Ver relatório <ArrowRight size={16}/></Link><ExcelDownloadButton reportId={item.reportId} schoolId={schoolId} compact /></div></div>)}</div></Section>}
   </div>;
 }
 
