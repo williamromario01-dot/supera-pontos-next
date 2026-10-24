@@ -30,6 +30,7 @@ export type ReconciliationLink = {
 export type ExistingCheckoutReconciliationInput = {
   link: ReconciliationLink;
   externalReference: string;
+  legacyLinkExternalReference?: string;
   expectedValueCents: number;
 };
 
@@ -128,7 +129,11 @@ export async function reconcileExistingCheckout(
       },
     );
   }
-  if (subscription.externalReference !== input.externalReference) {
+  const externalReferenceMatches =
+    subscription.externalReference === input.externalReference ||
+    (input.legacyLinkExternalReference !== undefined &&
+      subscription.externalReference === input.legacyLinkExternalReference);
+  if (!externalReferenceMatches) {
     throw new BillingReconciliationError(
       "PROVIDER_SUBSCRIPTION_CONFLICT",
       "externalReference",

@@ -66,11 +66,12 @@ function fixture(overrides = {}) {
   return { state, link, ports };
 }
 
-async function reconcile(link, ports) {
+async function reconcile(link, ports, overrides = {}) {
   return reconcileExistingCheckout({
     link,
     externalReference,
     expectedValueCents: 11990,
+    ...overrides,
   }, ports);
 }
 
@@ -285,4 +286,58 @@ test("provider identifiers are masked and unsafe external references are redacte
     assert.equal(error.safeDetails.expectedExternalReference, externalReference);
     return true;
   });
+});
+
+test("reconciles the exact Production incident only through the owning provider-link id", async () => {
+  const { state, link, ports } = fixture();
+  const historicalLinkReference = "subscription:6adcde3ca7306aec6a6098fc";
+  ports.getSubscription = async () => ({
+    ...remoteSubscription,
+    externalReference: historicalLinkReference,
+  });
+
+  await assert.rejects(reconcile(link, ports), (error) => {
+    assert.equal(error.conflictField, "externalReference");
+    return true;
+  });
+  const result = await reconcile(link, ports, {
+    legacyLinkExternalReference: historicalLinkReference,
+  });
+  assert.equal(result.pendingPayment?.id, paymentId);
+  assert.equal(link.providerPaymentId, paymentId);
+  assert.equal(state.customers.length, 1);
+  assert.equal(state.subscriptions.length, 1);
+  assert.equal(state.payments.length, 1);
+});
+
+test("never accepts another subscription or an unowned stale provider-link reference", async () => {
+  const { link, ports } = fixture();
+  ports.getSubscription = async () => ({
+    ...remoteSubscription,
+    externalReference: "subscription:aaaaaaaaaaaaaaaaaaaaaaaa",
+  });
+  await assert.rejects(
+    reconcile(link, ports, {
+      legacyLinkExternalReference: "subscription:bbbbbbbbbbbbbbbbbbbbbbbb",
+    }),
+    (error) => error.conflictField === "externalReference",
+  );
+});
+
+test("subscription reconciliation cannot overwrite the canonical local _id with provider-link _id", async () => {
+  const source = await readFile(
+    new URL("../src/app/api/company/billing/subscription/route.ts", import.meta.url),
+    "utf8",
+  );
+  const adapter = await readFile(
+    new URL("../src/lib/billing-checkout-reconciliation.ts", import.meta.url),
+    "utf8",
+  );
+  assert.doesNotMatch(source, /\.\.\.providerLink/);
+  assert.match(source, /providerCustomerId: providerLink\.providerCustomerId/);
+  assert.match(source, /providerSubscriptionId: providerLink\.providerSubscriptionId/);
+  assert.match(adapter, /linkBelongsToSubscription/);
+  assert.match(adapter, /internalSubscriptionId.*subscription\._id/);
+  assert.match(adapter, /companyId.*subscription\.companyId/);
+  assert.doesNotMatch(adapter, /startsWith\("subscription:"\)/);
 });

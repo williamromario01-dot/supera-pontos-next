@@ -19,9 +19,16 @@ export async function reconcileExistingBillingCheckout(input: {
 }) {
   let stage = "get_subscription";
   try {
+    const linkBelongsToSubscription =
+      input.link.internalSubscriptionId?.toString() === input.subscription._id.toString() &&
+      input.link.companyId?.toString() === input.subscription.companyId?.toString();
+    const legacyLinkExternalReference = linkBelongsToSubscription && input.link._id
+      ? `subscription:${input.link._id.toString()}`
+      : undefined;
     const result = await reconcileExistingCheckout({
       link: input.link,
       externalReference: `subscription:${input.subscription._id.toString()}`,
+      legacyLinkExternalReference,
       expectedValueCents: input.expectedValueCents,
     }, {
       getSubscription: async (id) => {

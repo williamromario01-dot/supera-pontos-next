@@ -187,7 +187,14 @@ export async function POST(request: NextRequest) {
     if (!subscription) throw new BillingSubscriptionError("SUBSCRIPTION_NOT_FOUND");
     const providerLink = await getBillingProviderLink(db, subscription, environment);
     const billingSubscription = providerLink
-      ? { ...subscription, ...providerLink, provider: "asaas", providerEnvironment: environment }
+      ? {
+          ...subscription,
+          provider: "asaas",
+          providerEnvironment: environment,
+          providerCustomerId: providerLink.providerCustomerId,
+          providerSubscriptionId: providerLink.providerSubscriptionId,
+          providerPaymentId: providerLink.providerPaymentId,
+        }
       : environment === "production"
         ? { ...subscription, provider: "asaas", providerEnvironment: environment, providerCustomerId: undefined, providerSubscriptionId: undefined, providerPaymentId: undefined }
         : subscription;
