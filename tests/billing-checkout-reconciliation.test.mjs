@@ -4,13 +4,14 @@ import test from "node:test";
 
 import {
   BillingReconciliationError,
+  maskProviderIdentifier,
   reconcileExistingCheckout,
 } from "../src/lib/billing-checkout-reconciliation-core.ts";
 
 const subscriptionId = "sub_existing_production";
 const customerId = "cus_existing_production";
 const paymentId = "pay_existing_production";
-const externalReference = "subscription:internal-subscription-1";
+const externalReference = "subscription:6ace5ca054b8a80fa371c4f7";
 
 const remoteSubscription = {
   id: subscriptionId,
@@ -201,6 +202,8 @@ test("integration uses read-only Asaas calls, Production-scoped links, safe logs
   assert.doesNotMatch(adapter, /createAsaas|updateAsaas|deleteAsaas/);
   assert.match(adapter, /environment: input\.environment/);
   assert.match(adapter, /correlationId/);
+  assert.match(adapter, /conflictField/);
+  assert.match(adapter, /safeDetails/);
   assert.doesNotMatch(adapter, /apiKey|access_token|Authorization|encodedImage|payload/);
   assert.match(provider, /`\/subscriptions\/\$\{encodeURIComponent\(subscriptionId\)\}\/payments`/);
   assert.doesNotMatch(provider, /\/payments\?limit=/);
@@ -211,4 +214,75 @@ test("integration uses read-only Asaas calls, Production-scoped links, safe logs
   assert.match(events, /subscriptionSet\.maxUnits = pricing\.requestedUnits/);
   assert.match(events, /providerEnvironment/);
   assert.match(events, /return "duplicate"/);
+});
+
+test("each subscription validation reports the exact safe conflict field and stays fail-closed", async () => {
+  const cases = [
+    {
+      field: "providerSubscriptionId",
+      remote: { id: "sub_different_production" },
+      expectedKey: "expectedProviderSubscriptionId",
+      actualKey: "actualProviderSubscriptionId",
+    },
+    {
+      field: "providerCustomerId",
+      remote: { customer: "cus_different_production" },
+      expectedKey: "expectedProviderCustomerId",
+      actualKey: "actualProviderCustomerId",
+    },
+    {
+      field: "externalReference",
+      remote: { externalReference: "subscription:ffffffffffffffffffffffff" },
+      expectedKey: "expectedExternalReference",
+      actualKey: "actualExternalReference",
+    },
+    {
+      field: "cycle",
+      remote: { cycle: "YEARLY" },
+      expectedKey: "expectedCycle",
+      actualKey: "actualCycle",
+    },
+    {
+      field: "value",
+      remote: { value: 120.9 },
+      expectedKey: "expectedValueCents",
+      actualKey: "actualValueCents",
+    },
+  ];
+
+  for (const entry of cases) {
+    const { state, link, ports } = fixture();
+    ports.getSubscription = async () => {
+      state.gets += 1;
+      return { ...remoteSubscription, ...entry.remote };
+    };
+    await assert.rejects(reconcile(link, ports), (error) => {
+      assert.ok(error instanceof BillingReconciliationError);
+      assert.equal(error.code, "PROVIDER_SUBSCRIPTION_CONFLICT");
+      assert.equal(error.conflictField, entry.field);
+      assert.ok(Object.hasOwn(error.safeDetails, entry.expectedKey));
+      assert.ok(Object.hasOwn(error.safeDetails, entry.actualKey));
+      return true;
+    });
+    assert.equal(state.gets, 1);
+    assert.equal(state.lists, 0);
+    assert.equal(state.saves, 0);
+  }
+});
+
+test("provider identifiers are masked and unsafe external references are redacted", async () => {
+  assert.equal(maskProviderIdentifier("cus_sensitive_123456789"), "cus_…6789");
+  assert.equal(maskProviderIdentifier("unsafe:value"), "<redacted>");
+
+  const { link, ports } = fixture();
+  ports.getSubscription = async () => ({
+    ...remoteSubscription,
+    externalReference: "contains-private-data@example.com",
+  });
+  await assert.rejects(reconcile(link, ports), (error) => {
+    assert.equal(error.conflictField, "externalReference");
+    assert.equal(error.safeDetails.actualExternalReference, "<redacted>");
+    assert.equal(error.safeDetails.expectedExternalReference, externalReference);
+    return true;
+  });
 });

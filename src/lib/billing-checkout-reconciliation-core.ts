@@ -39,15 +39,44 @@ export type ExistingCheckoutReconciliationPorts = {
   savePaymentLink(payment: ReconciliationPayment): Promise<void>;
 };
 
+export type SubscriptionConflictField =
+  | "providerSubscriptionId"
+  | "providerCustomerId"
+  | "externalReference"
+  | "cycle"
+  | "value";
+
+export type SafeConflictDetails = Record<string, string | number>;
+
+export function maskProviderIdentifier(value: string): string {
+  const normalized = value.trim();
+  if (!/^[A-Za-z0-9_-]{7,100}$/.test(normalized)) return "<redacted>";
+  return `${normalized.slice(0, 4)}…${normalized.slice(-4)}`;
+}
+
+function safeExternalReference(value: string | undefined): string {
+  return value && /^subscription:[a-f0-9]{24}$/.test(value)
+    ? value
+    : "<redacted>";
+}
+
 export class BillingReconciliationError extends Error {
   readonly code:
     | "PROVIDER_LINK_INVALID"
     | "PROVIDER_SUBSCRIPTION_CONFLICT"
     | "PROVIDER_PAYMENT_CONFLICT";
+  readonly conflictField?: SubscriptionConflictField;
+  readonly safeDetails?: SafeConflictDetails;
 
-  constructor(code: BillingReconciliationError["code"]) {
+  constructor(
+    code: BillingReconciliationError["code"],
+    conflictField?: SubscriptionConflictField,
+    safeDetails?: SafeConflictDetails,
+  ) {
     super(code);
     this.code = code;
+    this.conflictField = conflictField;
+    this.safeDetails = safeDetails;
     this.name = "BillingReconciliationError";
   }
 }
@@ -79,14 +108,52 @@ export async function reconcileExistingCheckout(
   }
 
   const subscription = await ports.getSubscription(subscriptionId);
-  if (
-    subscription.id !== subscriptionId ||
-    subscription.customer !== customerId ||
-    subscription.externalReference !== input.externalReference ||
-    subscription.cycle !== "MONTHLY" ||
-    !sameMoney(subscription.value, input.expectedValueCents)
-  ) {
-    throw new BillingReconciliationError("PROVIDER_SUBSCRIPTION_CONFLICT");
+  if (subscription.id !== subscriptionId) {
+    throw new BillingReconciliationError(
+      "PROVIDER_SUBSCRIPTION_CONFLICT",
+      "providerSubscriptionId",
+      {
+        expectedProviderSubscriptionId: maskProviderIdentifier(subscriptionId),
+        actualProviderSubscriptionId: maskProviderIdentifier(subscription.id),
+      },
+    );
+  }
+  if (subscription.customer !== customerId) {
+    throw new BillingReconciliationError(
+      "PROVIDER_SUBSCRIPTION_CONFLICT",
+      "providerCustomerId",
+      {
+        expectedProviderCustomerId: maskProviderIdentifier(customerId),
+        actualProviderCustomerId: maskProviderIdentifier(subscription.customer),
+      },
+    );
+  }
+  if (subscription.externalReference !== input.externalReference) {
+    throw new BillingReconciliationError(
+      "PROVIDER_SUBSCRIPTION_CONFLICT",
+      "externalReference",
+      {
+        expectedExternalReference: safeExternalReference(input.externalReference),
+        actualExternalReference: safeExternalReference(subscription.externalReference),
+      },
+    );
+  }
+  if (subscription.cycle !== "MONTHLY") {
+    throw new BillingReconciliationError(
+      "PROVIDER_SUBSCRIPTION_CONFLICT",
+      "cycle",
+      { expectedCycle: "MONTHLY", actualCycle: String(subscription.cycle) },
+    );
+  }
+  if (!sameMoney(subscription.value, input.expectedValueCents)) {
+    throw new BillingReconciliationError(
+      "PROVIDER_SUBSCRIPTION_CONFLICT",
+      "value",
+      {
+        expectedValueCents: input.expectedValueCents,
+        actualValueCents: Math.round(subscription.value * 100),
+      },
+    );
   }
 
   const payments = await ports.listPayments(subscriptionId);

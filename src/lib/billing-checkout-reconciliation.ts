@@ -4,7 +4,10 @@ import type { Db, Document } from "mongodb";
 import { getAsaasSubscription, listAsaasSubscriptionPayments } from "@/lib/asaas-subscriptions";
 import type { AsaasEnvironment } from "@/lib/asaas";
 import { upsertBillingProviderLink, type BillingProviderLink } from "@/lib/billing-provider-links";
-import { reconcileExistingCheckout } from "@/lib/billing-checkout-reconciliation-core";
+import {
+  BillingReconciliationError,
+  reconcileExistingCheckout,
+} from "@/lib/billing-checkout-reconciliation-core";
 
 export async function reconcileExistingBillingCheckout(input: {
   db: Db;
@@ -62,6 +65,10 @@ export async function reconcileExistingBillingCheckout(input: {
       stage,
       reconciliationState: "failed",
       code: error instanceof Error ? error.message : "RECONCILIATION_FAILED",
+      conflictField: error instanceof BillingReconciliationError
+        ? error.conflictField
+        : undefined,
+      ...(error instanceof BillingReconciliationError ? error.safeDetails : {}),
     });
     throw error;
   }
