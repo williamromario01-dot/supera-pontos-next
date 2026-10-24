@@ -19,7 +19,13 @@ self.addEventListener("push", (event) => {
   let payload = null;
   try { payload = event.data ? event.data.json() : null; } catch {}
   const data = safeNotificationData(payload);
-  event.waitUntil(self.registration.showNotification(data.title, { body: data.body, tag: data.tag, data: { url: data.url }, icon: undefined, badge: undefined }));
+  event.waitUntil(self.registration.showNotification(data.title, {
+    body: data.body,
+    tag: data.tag,
+    data: { url: data.url },
+    icon: "/icons/superpontos-icon-192.png",
+    badge: "/icons/superpontos-maskable-192.png",
+  }));
 });
 
 self.addEventListener("notificationclick", (event) => {

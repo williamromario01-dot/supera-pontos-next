@@ -19,6 +19,6 @@ Em Android/Chrome e navegadores desktop compatíveis, abra a Agenda e toque em *
 
 No iPhone/iPad (iOS/iPadOS 16.4 ou posterior), o site precisa ser adicionado à Tela de Início e aberto pelo ícone instalado antes de solicitar permissão. A interface orienta esse fluxo usando detecção de recursos e do modo standalone.
 
-O repositório não contém logo oficial utilizável como ícone PWA. O manifest funciona sem inventar ou substituir a marca, mas a instalação fica sem ícones dedicados até que sejam fornecidos assets oficiais nos tamanhos recomendados (incluindo 192×192 e 512×512).
+O manifest usa a identidade oficial do SUPERPONTOS em ícones `any` e `maskable` de 192×192 e 512×512, além do `apple-touch-icon` para iOS. O mesmo `/sw.js` registrado para a PWA continua atendendo às notificações da Agenda.
 
 Push é complementar: sem suporte, sem permissão, sem VAPID ou com cron indisponível, a Agenda continua funcionando normalmente. Teste push real somente em HTTPS com chaves configuradas.

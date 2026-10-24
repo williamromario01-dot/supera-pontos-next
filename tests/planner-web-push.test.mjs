@@ -5,6 +5,7 @@ import { getCivilDateInTimeZone, isWeeklyOccurrence, parseReminderMinutes, plann
 import { hashPushEndpoint, parsePushSubscription } from "../src/lib/push-subscriptions.ts";
 
 const read = (file) => readFile(new URL(`../${file}`, import.meta.url), "utf8");
+const readBinary = (file) => readFile(new URL(`../${file}`, import.meta.url));
 const validSubscription = { endpoint: "https://push.example.test/device/one", expirationTime: null, keys: { p256dh: "A".repeat(65), auth: "B".repeat(22) } };
 
 test("push subscription payload is strictly validated", () => {
@@ -175,6 +176,44 @@ test("PWA manifest remains configured without a Vercel cron schedule", async () 
   assert.match(manifest, /name: "SUPERPONTOS"/);
   assert.match(manifest, /display: "standalone"/);
   assert.equal(vercel.crons, undefined);
+});
+
+test("official PWA identity supports Android and iOS without a competing service worker", async () => {
+  const manifest = await read("src/app/manifest.ts");
+  const layout = await read("src/app/layout.tsx");
+  const registration = await read("src/components/PwaServiceWorkerRegistration.tsx");
+  const worker = await read("public/sw.js");
+  assert.match(manifest, /short_name: "SUPERPONTOS"/);
+  assert.match(manifest, /start_url: "\/"/);
+  assert.match(manifest, /scope: "\/"/);
+  assert.match(manifest, /purpose: "any"/);
+  assert.match(manifest, /purpose: "maskable"/);
+  assert.match(manifest, /superpontos-icon-192\.png/);
+  assert.match(manifest, /superpontos-icon-512\.png/);
+  assert.match(layout, /apple-touch-icon\.png/);
+  assert.match(layout, /appleWebApp: \{ capable: true, title: 'SUPERPONTOS'/);
+  assert.match(layout, /viewportFit: 'cover'/);
+  assert.match(registration, /serviceWorker\.register\("\/sw\.js", \{ scope: "\/" \}\)/);
+  assert.match(worker, /addEventListener\("push"/);
+  assert.match(worker, /superpontos-icon-192\.png/);
+  assert.doesNotMatch(manifest + layout, /Supera Pontos|Super Pontos/);
+});
+
+test("official PNG assets exist with their declared dimensions", async () => {
+  const expected = new Map([
+    ["public/icons/superpontos-icon-192.png", 192],
+    ["public/icons/superpontos-icon-512.png", 512],
+    ["public/icons/superpontos-maskable-192.png", 192],
+    ["public/icons/superpontos-maskable-512.png", 512],
+    ["public/icons/apple-touch-icon.png", 180],
+    ["public/icons/favicon-32x32.png", 32],
+  ]);
+  for (const [path, size] of expected) {
+    const png = await readBinary(path);
+    assert.deepEqual([...png.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
+    assert.equal(png.readUInt32BE(16), size, `${path} width`);
+    assert.equal(png.readUInt32BE(20), size, `${path} height`);
+  }
 });
 
 test("existing planner roles and unrelated reward rules remain untouched", async () => {
