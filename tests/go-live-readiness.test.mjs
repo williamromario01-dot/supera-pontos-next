@@ -39,7 +39,7 @@ test("legacy domain redirects permanently while preserving URL object", async ()
 });
 
 test("super admin platform health is sanitized and read-only", async () => {
-  const api = await read("src/app/api/admin/overview/route.ts"); const page = await read("src/app/admin/page.tsx"); assert.match(api, /getProductionConfigurationStatus/); assert.match(page, /Production billing/); assert.match(page, /DISABLED/); assert.doesNotMatch(page, /RESEND_API_KEY|ASAAS_API_KEY|MONGODB_URI/);
+  const api = await read("src/app/api/admin/overview/route.ts"); const page = await read("src/app/admin/page.tsx"); assert.match(api, /getProductionConfigurationStatus/); assert.match(page, /Production billing/); assert.match(page, /productionBillingEnabled/); assert.match(page, /enabled \? "ENABLED" : "DISABLED"/); assert.doesNotMatch(page, /RESEND_API_KEY|ASAAS_API_KEY|MONGODB_URI/);
 });
 
 test("Mongo client declares bounded selection, connection and pool options", async () => {
