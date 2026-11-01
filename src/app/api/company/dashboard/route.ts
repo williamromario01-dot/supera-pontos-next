@@ -6,6 +6,7 @@ import { getPricingQuote, quantityLabel } from "@/lib/plans";
 import { DB_NAME } from "@/lib/saas";
 import { isSchoolActive } from "@/lib/schools";
 import { getSubscriptionAccessState } from "@/lib/subscription-access";
+import { resolveEffectiveBranding } from "@/lib/tenant-branding";
 
 export const dynamic = "force-dynamic";
 
@@ -69,13 +70,14 @@ export async function GET(request: NextRequest) {
       company: {
         id: company._id.toString(), cnpj: company.cnpj, legalName: company.legalName,
         tradeName: company.tradeName, email: company.email, phone: company.phone,
-        status: company.status,
+        status: access.state === "exempt" ? "active" : company.status,
         responsible: company.responsible ? {
           name: company.responsible.name,
           email: company.responsible.email,
           phone: company.responsible.phone,
           role: company.responsible.role,
         } : null,
+        branding: resolveEffectiveBranding(company, null),
       },
       subscription: subscription ? {
         id: subscription._id.toString(), planCode: subscription.planCode,

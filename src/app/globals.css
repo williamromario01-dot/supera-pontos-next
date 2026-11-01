@@ -2,6 +2,27 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  --brand-primary: #f97316;
+  --brand-secondary: #0f172a;
+  --brand-accent: #2563eb;
+  --brand-on-primary: #ffffff;
+}
+
+.tenant-brand-bg {
+  background-color: var(--brand-primary);
+  color: var(--brand-on-primary);
+}
+
+.tenant-brand-text {
+  color: var(--brand-primary);
+}
+
+.tenant-brand-hero {
+  background: linear-gradient(135deg, var(--brand-primary), var(--brand-secondary));
+  color: var(--brand-on-primary);
+}
+
 /* =========================================
    RESET GLOBAL
 ========================================= */

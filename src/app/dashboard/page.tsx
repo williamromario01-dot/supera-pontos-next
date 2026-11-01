@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { useRouter } from "next/navigation";
+import { contrastText } from "@/lib/tenant-branding";
 import {
   Trophy,
   Star,
@@ -32,6 +33,7 @@ import {
   GraduationCap,
   UserCheck,
   CalendarDays,
+  Palette,
 } from "lucide-react";
 
 interface User {
@@ -112,6 +114,38 @@ interface WeeklyData {
   categories: WeeklyCategory[];
 }
 
+interface TenantBranding {
+  logoUrl: string | null;
+  primaryColor: string;
+  secondaryColor: string;
+  accentColor: string;
+}
+
+function getInitials(name: string) {
+  const parts = name.trim().split(" ");
+  if (parts.length === 1) return parts[0].charAt(0).toUpperCase();
+  return (parts[0].charAt(0) + parts[parts.length - 1].charAt(0)).toUpperCase();
+}
+
+function ProfileAvatar({
+  user,
+  size = "normal",
+}: {
+  user: User;
+  size?: "small" | "normal";
+}) {
+  const sizeClass = size === "small" ? "w-9 h-9 text-xs" : "w-10 h-10 text-sm";
+  return <div className={`${sizeClass} rounded-xl bg-slate-900 text-white flex items-center justify-center font-black overflow-hidden flex-shrink-0`}>
+    {user.avatar
+      ? <>
+        {/* Avatars may be Mongo-backed data URLs, so Next Image is not applicable. */}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={user.avatar} alt={`Foto de perfil de ${user.name}`} className="w-full h-full object-cover"/>
+      </>
+      : getInitials(user.name)}
+  </div>;
+}
+
 export default function DashboardPage() {
   const router = useRouter();
 
@@ -120,6 +154,8 @@ export default function DashboardPage() {
   const [weekly, setWeekly] = useState<WeeklyData | null>(null);
   const [agendaSummary, setAgendaSummary] = useState<{ total: number; next: { title: string; date: string; startTime: string } | null }>({ total: 0, next: null });
   const [weeklyGoals, setWeeklyGoals] = useState<Array<{ categoryId: string; categoryName: string; description: string }>>([]);
+  const [branding, setBranding] = useState<TenantBranding | null>(null);
+  const [canEditUnitBranding, setCanEditUnitBranding] = useState(false);
 
   const [loading, setLoading] = useState(true);
   const [loggingOut, setLoggingOut] = useState(false);
@@ -196,10 +232,6 @@ export default function DashboardPage() {
   }, [loading, user]);
 
   useEffect(() => {
-    loadDashboard();
-  }, []);
-
-  useEffect(() => {
     if (loading || !user) {
       return;
     }
@@ -246,6 +278,12 @@ export default function DashboardPage() {
       if (meData.user.role === "company_admin") {
         router.replace("/company/onboarding");
         return;
+      }
+      const brandingResponse = await fetch("/api/branding", { credentials: "include", cache: "no-store" });
+      if (brandingResponse.ok) {
+        const brandingData = await brandingResponse.json();
+        setBranding(brandingData.branding);
+        setCanEditUnitBranding(brandingData.permissions?.canEditUnit === true);
       }
 
       const weeklyUrl =
@@ -299,6 +337,13 @@ export default function DashboardPage() {
     }
   }
 
+  useEffect(() => {
+    // Initial server synchronization; loadDashboard performs state updates asynchronously.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void loadDashboard();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   async function handleLogout() {
     try {
       setLoggingOut(true);
@@ -343,19 +388,6 @@ export default function DashboardPage() {
 
   function getFirstName(name: string) {
     return name.trim().split(" ")[0];
-  }
-
-  function getInitials(name: string) {
-    const parts = name.trim().split(" ");
-
-    if (parts.length === 1) {
-      return parts[0].charAt(0).toUpperCase();
-    }
-
-    return (
-      parts[0].charAt(0) +
-      parts[parts.length - 1].charAt(0)
-    ).toUpperCase();
   }
 
   function getPositionIcon(position: number) {
@@ -408,33 +440,6 @@ export default function DashboardPage() {
     }
 
     return "Aluno";
-  }
-
-  function ProfileAvatar({
-    size = "normal",
-  }: {
-    size?: "small" | "normal";
-  }) {
-    const sizeClass =
-      size === "small"
-        ? "w-9 h-9 text-xs"
-        : "w-10 h-10 text-sm";
-
-    return (
-      <div
-        className={`${sizeClass} rounded-xl bg-slate-900 text-white flex items-center justify-center font-black overflow-hidden flex-shrink-0`}
-      >
-        {user?.avatar ? (
-          <img
-            src={user.avatar}
-            alt={`Foto de perfil de ${user.name}`}
-            className="w-full h-full object-cover"
-          />
-        ) : (
-          getInitials(user?.name || "")
-        )}
-      </div>
-    );
   }
 
   const canManageSchools =
@@ -542,7 +547,12 @@ export default function DashboardPage() {
     user.role === "educator";
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-screen bg-slate-50" style={branding ? {
+      "--brand-primary": branding.primaryColor,
+      "--brand-secondary": branding.secondaryColor,
+      "--brand-accent": branding.accentColor,
+      "--brand-on-primary": contrastText(branding.primaryColor),
+    } as CSSProperties : undefined}>
 
       {/* =========================================
           HEADER
@@ -562,14 +572,18 @@ export default function DashboardPage() {
               }
               className="flex items-center gap-3 flex-shrink-0"
             >
-              <div className="w-11 h-11 rounded-xl bg-orange-500 flex items-center justify-center shadow-md shadow-orange-200">
-                <BookOpen className="w-6 h-6 text-white" />
+              <div className="tenant-brand-bg w-11 h-11 overflow-hidden rounded-xl flex items-center justify-center shadow-md">
+                {branding?.logoUrl ? <>
+                  {/* Tenant Blob URLs are validated server-side and intentionally rendered without host allowlisting. */}
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={branding.logoUrl} alt="Logo da organização" className="h-full w-full bg-white object-contain p-1"/>
+                </> : <BookOpen className="w-6 h-6 text-white" />}
               </div>
 
               <div className="text-left">
                 <h1 className="text-lg font-black text-slate-800">
                   Supera
-                  <span className="text-orange-500">
+                  <span className="tenant-brand-text">
                     Pontos
                   </span>
                 </h1>
@@ -616,6 +630,16 @@ export default function DashboardPage() {
                   </button>
                 )}
 
+                {canEditUnitBranding && (
+                  <button
+                    onClick={() => router.push("/branding")}
+                    className="flex-shrink-0 flex items-center gap-2 px-4 py-2.5 rounded-xl text-slate-500 hover:bg-slate-100 text-sm font-bold transition"
+                  >
+                    <Palette size={17} />
+                    Identidade visual
+                  </button>
+                )}
+
                 {canAccessClasses && (
                   <button
                     onClick={() =>
@@ -645,7 +669,7 @@ export default function DashboardPage() {
                     onClick={() =>
                       router.push("/points")
                     }
-                    className="flex-shrink-0 flex items-center gap-2 px-4 py-2.5 rounded-xl bg-orange-500 text-white hover:bg-orange-600 text-sm font-bold transition shadow-sm"
+                    className="tenant-brand-bg flex-shrink-0 flex items-center gap-2 px-4 py-2.5 rounded-xl text-white text-sm font-bold transition shadow-sm"
                   >
                     <Award size={17} />
                     Pontuação
@@ -817,7 +841,7 @@ export default function DashboardPage() {
                   </p>
                 </div>
 
-                <ProfileAvatar />
+                <ProfileAvatar user={user} />
               </button>
 
               <button
@@ -882,6 +906,19 @@ export default function DashboardPage() {
                   >
                     <School size={18} />
                     Unidade
+                  </button>
+                )}
+
+                {canEditUnitBranding && (
+                  <button
+                    onClick={() => {
+                      setMenuOpen(false);
+                      router.push("/branding");
+                    }}
+                    className="flex items-center gap-3 px-4 py-3 rounded-xl text-slate-600 hover:bg-slate-100 font-bold text-sm"
+                  >
+                    <Palette size={18} />
+                    Identidade visual
                   </button>
                 )}
 
@@ -1050,7 +1087,7 @@ export default function DashboardPage() {
                     }}
                     className="flex items-center gap-3 text-left"
                   >
-                    <ProfileAvatar size="small" />
+                    <ProfileAvatar user={user} size="small" />
 
                     <div>
                       <p className="text-sm font-black text-slate-700">
@@ -1098,7 +1135,7 @@ export default function DashboardPage() {
             HERO
         ========================================= */}
 
-        <section className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-orange-500 via-orange-500 to-orange-600 p-6 sm:p-8 text-white shadow-xl shadow-orange-100">
+        <section className="tenant-brand-hero relative overflow-hidden rounded-3xl p-6 sm:p-8 text-white shadow-xl">
 
           <div className="absolute -right-16 -top-20 w-64 h-64 rounded-full bg-white/10" />
 

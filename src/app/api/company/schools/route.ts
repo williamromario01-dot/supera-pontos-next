@@ -37,8 +37,8 @@ export async function POST(request: NextRequest) {
       db.collection("subscriptions").findOne({ companyId: auth.companyId }, { sort: { createdAt: -1 } }),
       db.collection("schools").countDocuments(activeSchoolFilter(auth.companyId)),
     ]);
-    if (!company || company.status !== "active") return NextResponse.json({ error: "A empresa precisa estar ativa para adicionar unidades.", companyStatus: company?.status ?? null }, { status: 403 });
-    if (!subscription || !["active", "past_due"].includes(subscription.status)) return NextResponse.json({ error: "A assinatura precisa estar ativa para adicionar unidades.", subscriptionStatus: subscription?.status ?? null }, { status: 403 });
+    if (!company || (company.status !== "active" && access.state !== "exempt")) return NextResponse.json({ error: "A empresa precisa estar ativa para adicionar unidades.", companyStatus: company?.status ?? null }, { status: 403 });
+    if (!subscription || (!["active", "past_due"].includes(subscription.status) && access.state !== "exempt")) return NextResponse.json({ error: "A assinatura precisa estar ativa para adicionar unidades.", subscriptionStatus: subscription?.status ?? null }, { status: 403 });
 
     const maxUnits = Number(subscription.maxUnits ?? 0);
     if (usedUnits >= maxUnits) {
@@ -67,7 +67,7 @@ export async function POST(request: NextRequest) {
           {
             _id: subscription._id,
             companyId: auth.companyId,
-            status: { $in: ["active", "past_due"] },
+            ...(access.state === "exempt" ? {} : { status: { $in: ["active", "past_due"] } }),
             $expr: {
               $lt: [
                 { $max: [{ $ifNull: ["$unitCount", 0] }, usedUnits] },

@@ -2,15 +2,20 @@ import { ObjectId, type Db, type Document } from "mongodb";
 import type { UserRole } from "@/lib/types";
 import { getCancellationAccessState } from "./subscription-cancellation.ts";
 import { isOpenReactivation } from "./subscription-reactivation.ts";
+import {
+  isBillingExemptionActive,
+  isBillingExemptionExpired,
+} from "./billing-exemption.ts";
 
 export const PAST_DUE_GRACE_PERIOD_MS = 5 * 24 * 60 * 60 * 1000;
 export type SubscriptionAccessState = {
-  state: "active" | "grace_period" | "blocked" | "cancellation_scheduled" | "cancelled" | "reactivation_pending";
+  state: "active" | "exempt" | "exemption_expired" | "grace_period" | "blocked" | "cancellation_scheduled" | "cancelled" | "reactivation_pending";
   pastDueAt: Date | null;
   gracePeriodEndsAt: Date | null;
   daysPastDue: number;
   cancellationEffectiveAt: Date | null;
   canPerformOperationalMutation: boolean;
+  billingExemption: Document | null;
 };
 
 function validDate(value: unknown): Date | null {
@@ -21,6 +26,29 @@ export function getSubscriptionAccessState(
   subscription: Document | null,
   now = new Date(),
 ): SubscriptionAccessState {
+  const billingExemption = subscription?.billingExemption ?? null;
+  if (isBillingExemptionActive(billingExemption, now)) {
+    return {
+      state: "exempt",
+      pastDueAt: null,
+      gracePeriodEndsAt: null,
+      daysPastDue: 0,
+      cancellationEffectiveAt: null,
+      canPerformOperationalMutation: true,
+      billingExemption,
+    };
+  }
+  if (isBillingExemptionExpired(billingExemption, now)) {
+    return {
+      state: "exemption_expired",
+      pastDueAt: null,
+      gracePeriodEndsAt: null,
+      daysPastDue: 0,
+      cancellationEffectiveAt: null,
+      canPerformOperationalMutation: false,
+      billingExemption,
+    };
+  }
   const cancellation = getCancellationAccessState(subscription, now);
   if (subscription && isOpenReactivation(subscription.reactivation)) {
     return {
@@ -30,6 +58,7 @@ export function getSubscriptionAccessState(
       daysPastDue: 0,
       cancellationEffectiveAt: validDate(subscription.cancellationEffectiveAt),
       canPerformOperationalMutation: false,
+      billingExemption,
     };
   }
   if (cancellation.state === "cancelled") {
@@ -40,6 +69,7 @@ export function getSubscriptionAccessState(
       daysPastDue: 0,
       cancellationEffectiveAt: cancellation.effectiveAt,
       canPerformOperationalMutation: false,
+      billingExemption,
     };
   }
   if (!subscription || subscription.status !== "past_due") {
@@ -52,6 +82,7 @@ export function getSubscriptionAccessState(
       daysPastDue: 0,
       cancellationEffectiveAt: cancellation.effectiveAt,
       canPerformOperationalMutation: true,
+      billingExemption,
     };
   }
   const pastDueAt = validDate(subscription.pastDueAt) ??
@@ -69,6 +100,7 @@ export function getSubscriptionAccessState(
     daysPastDue: Math.max(0, Math.floor((now.getTime() - pastDueAt.getTime()) / (24 * 60 * 60 * 1000))),
     cancellationEffectiveAt: cancellation.effectiveAt,
     canPerformOperationalMutation: !blocked,
+    billingExemption,
   };
 }
 
@@ -128,9 +160,17 @@ export const subscriptionReactivationPendingResponse = {
   code: "SUBSCRIPTION_REACTIVATION_PENDING",
 };
 
+export const billingExemptionExpiredResponse = {
+  error: "A isenção de mensalidade terminou. A cobrança precisa ser retomada no Financeiro para continuar utilizando as funções operacionais.",
+  code: "BILLING_EXEMPTION_EXPIRED",
+};
+
 export function subscriptionPastDueResponseForAccess(access: SubscriptionAccessState) {
   if (access.state === "reactivation_pending") {
     return subscriptionReactivationPendingResponse;
+  }
+  if (access.state === "exemption_expired") {
+    return billingExemptionExpiredResponse;
   }
   return access.state === "cancelled"
     ? subscriptionCancelledResponse

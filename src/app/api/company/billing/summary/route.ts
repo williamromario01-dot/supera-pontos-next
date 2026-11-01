@@ -20,6 +20,7 @@ import { getAsaasEnvironment } from "@/lib/asaas";
 import { getBillingProviderLink } from "@/lib/billing-provider-links";
 import { billingCorrelationId } from "@/lib/billing-observability";
 import { reconcileExistingBillingCheckout } from "@/lib/billing-checkout-reconciliation";
+import { normalizeBillingExemption } from "@/lib/billing-exemption";
 
 export const dynamic = "force-dynamic";
 
@@ -92,6 +93,7 @@ export async function GET(request: NextRequest) {
     const requestedPricing = getPricingQuote(requestedMaxUnits);
     const pricing = maxUnits > 0 ? activePricing : requestedPricing;
     const access = getSubscriptionAccessState(subscription);
+    const billingExemption = normalizeBillingExemption(subscription.billingExemption);
     const cancellation = getCancellationAccessState(subscription);
     const reactivationOpen = isOpenReactivation(subscription.reactivation);
     const reactivation = {
@@ -167,6 +169,22 @@ export async function GET(request: NextRequest) {
         message: "Assinatura ativa.",
       };
     }
+    if (access.state === "exempt") {
+      checkout = {
+        state: "exempt",
+        canStart: false,
+        message: billingExemption?.endsAt
+          ? `Mensalidade isenta até ${billingExemption.endsAt.toLocaleDateString("pt-BR", { timeZone: "UTC" })}.`
+          : "Mensalidade isenta por tempo indeterminado.",
+      };
+    }
+    if (access.state === "exemption_expired") {
+      checkout = {
+        state: "not_started",
+        canStart: true,
+        message: "A isenção terminou. Gere a próxima cobrança para retomar a assinatura.",
+      };
+    }
     let remote: Record<string, unknown> = {
       available: false,
       warning: link?.providerSubscriptionId
@@ -176,7 +194,7 @@ export async function GET(request: NextRequest) {
       pendingPayment: null,
       payments: [],
     };
-    if (link?.providerSubscriptionId && link.providerCustomerId) try {
+    if (access.state !== "exempt" && link?.providerSubscriptionId && link.providerCustomerId) try {
       if (
         !link || typeof link.providerSubscriptionId !== "string" ||
         typeof link.providerCustomerId !== "string"
@@ -249,16 +267,28 @@ export async function GET(request: NextRequest) {
     }
 
     return NextResponse.json({
-      company: { status: company.status },
+      company: { status: access.state === "exempt" ? "active" : company.status },
       access: {
         state: access.state,
         daysPastDue: access.daysPastDue,
         gracePeriodEndsAt: access.gracePeriodEndsAt,
         cancellationEffectiveAt: access.cancellationEffectiveAt,
       },
+      billingExemption: billingExemption ? {
+        status: billingExemption.status,
+        type: billingExemption.type,
+        startsAt: billingExemption.startsAt,
+        endsAt: billingExemption.endsAt,
+        months: billingExemption.months,
+        reason: billingExemption.reason,
+      } : null,
       subscription: {
         status: subscription.status,
-        statusLabel: reactivationOpen
+        statusLabel: access.state === "exempt"
+          ? "Mensalidade isenta"
+          : access.state === "exemption_expired"
+            ? "Isenção encerrada — cobrança pendente"
+          : reactivationOpen
           ? "Reativação aguardando pagamento"
           : cancellation.state === "cancelled"
           ? "Cancelado"

@@ -50,6 +50,7 @@ export async function GET(request: NextRequest) {
           requestedMaxUnits: requestedUnits,
           pricePerUnitCents: Number(subscription.pricePerUnitCents ?? pricing?.pricePerUnitCents ?? 0),
           totalMonthlyCents: Number(subscription.totalMonthlyCents ?? pricing?.totalMonthlyCents ?? 0),
+          billingExemption: subscription.billingExemption ?? null,
         } : null,
       };
     }));

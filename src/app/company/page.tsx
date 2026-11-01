@@ -1,17 +1,18 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useEffect, useState } from "react";
-import { Building2, CreditCard, GraduationCap, Plus, School, ShieldCheck, Users } from "lucide-react";
+import { FormEvent, useEffect, useState, type CSSProperties } from "react";
+import { Building2, CreditCard, GraduationCap, Palette, Plus, School, ShieldCheck, Users } from "lucide-react";
+import { contrastText } from "@/lib/tenant-branding";
 
 type Dashboard = {
-  company: { tradeName: string; legalName: string; cnpj: string; status: string };
+  company: { tradeName: string; legalName: string; cnpj: string; status: string; branding: { logoUrl: string | null; primaryColor: string; secondaryColor: string; accentColor: string } };
   subscription: null | { planName: string; status: string; maxUnits: number; requestedMaxUnits: number };
   usage: { usedUnits: number; maxUnits: number };
   metrics: { students: number; educators: number; classes: number; pointsDistributed: number };
   schools: Array<{ id: string; name: string; address: string; active: boolean; metrics: Dashboard["metrics"] }>;
   access?: {
-    state: "active" | "grace_period" | "blocked" | "cancellation_scheduled" | "cancelled" | "reactivation_pending";
+    state: "active" | "exempt" | "exemption_expired" | "grace_period" | "blocked" | "cancellation_scheduled" | "cancelled" | "reactivation_pending";
     daysPastDue: number;
     gracePeriodEndsAt: string | null;
     cancellationEffectiveAt: string | null;
@@ -37,7 +38,11 @@ export default function CompanyPage() {
       setError(reason instanceof Error ? reason.message : "Erro ao carregar painel.");
     }
   }
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    // Initial server synchronization; load performs state updates asynchronously.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void load();
+  }, []);
 
   async function createSchool(event: FormEvent) {
     event.preventDefault(); setError(""); setMessage(""); setSaving(true);
@@ -63,13 +68,24 @@ export default function CompanyPage() {
     ["Turmas", data.metrics.classes, Building2],
   ] as const;
 
-  return <main className="min-h-screen bg-slate-50">
+  return <main className="min-h-screen bg-slate-50" style={{
+    "--brand-primary": data.company.branding.primaryColor,
+    "--brand-secondary": data.company.branding.secondaryColor,
+    "--brand-accent": data.company.branding.accentColor,
+    "--brand-on-primary": contrastText(data.company.branding.primaryColor),
+  } as CSSProperties}>
     <header className="border-b bg-white"><div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-5">
       <div><Link href="/dashboard" className="text-sm font-semibold text-orange-600">← Home</Link>
-      <h1 className="mt-2 text-2xl font-black">{data.company.tradeName}</h1><p className="text-sm text-slate-500">Painel empresarial consolidado</p></div>
-      <div className="flex flex-wrap gap-2"><Link href="/company/privacy" className="flex items-center gap-2 rounded-xl border bg-white px-4 py-3 font-bold text-slate-700"><ShieldCheck size={18}/>Privacidade</Link><Link href="/company/billing" className="flex items-center gap-2 rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 font-bold text-orange-700"><CreditCard size={18}/>Financeiro</Link><button onClick={() => setShowForm(!showForm)} className="flex items-center gap-2 rounded-xl bg-orange-500 px-4 py-3 font-bold text-white"><Plus size={18}/>Adicionar unidade</button></div>
+      <h1 className="mt-2 flex items-center gap-3 text-2xl font-black">{data.company.branding.logoUrl && <>
+        {/* Tenant Blob URLs are validated server-side and intentionally rendered without host allowlisting. */}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={data.company.branding.logoUrl} alt="Logo da empresa" className="h-10 w-10 rounded-lg object-contain"/>
+      </>}{data.company.tradeName}</h1><p className="text-sm text-slate-500">Painel empresarial consolidado · Tecnologia SUPERPONTOS</p></div>
+      <div className="flex flex-wrap gap-2"><Link href="/company/branding" className="flex items-center gap-2 rounded-xl border bg-white px-4 py-3 font-bold text-slate-700"><Palette size={18}/>Identidade visual</Link><Link href="/company/privacy" className="flex items-center gap-2 rounded-xl border bg-white px-4 py-3 font-bold text-slate-700"><ShieldCheck size={18}/>Privacidade</Link><Link href="/company/billing" className="flex items-center gap-2 rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 font-bold text-orange-700"><CreditCard size={18}/>Financeiro</Link><button onClick={() => setShowForm(!showForm)} className="tenant-brand-bg flex items-center gap-2 rounded-xl px-4 py-3 font-bold"><Plus size={18}/>Adicionar unidade</button></div>
     </div></header>
     <div className="mx-auto max-w-6xl space-y-6 px-4 py-8">
+      {data.access?.state === "exempt" && <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-900"><b>Mensalidade isenta</b><p className="mt-1 text-sm">A empresa permanece ativa durante a isenção concedida pelo SUPERPONTOS.</p><Link href="/company/billing" className="mt-3 inline-block font-bold text-emerald-800">Ver detalhes no Financeiro</Link></div>}
+      {data.access?.state === "exemption_expired" && <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-900"><b>Isenção encerrada</b><p className="mt-1 text-sm">Retome a cobrança no Financeiro para continuar utilizando as funções operacionais.</p><Link href="/company/billing" className="mt-3 inline-block font-bold text-orange-700">Ir para Financeiro</Link></div>}
       {data.access?.state === "grace_period" && <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-900"><b>Pagamento em atraso</b><p className="mt-1 text-sm">Identificamos um pagamento em atraso. Regularize até {data.access.gracePeriodEndsAt ? new Date(data.access.gracePeriodEndsAt).toLocaleDateString("pt-BR") : "a data limite"} para evitar a suspensão temporária das operações.</p><Link href="/company/billing" className="mt-3 inline-block font-bold text-orange-700">Ir para Financeiro</Link></div>}
       {data.access?.state === "blocked" && <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-red-900"><b>Operações temporariamente suspensas</b><p className="mt-1 text-sm">Regularize o pagamento para voltar a utilizar as funções operacionais. Seus dados permanecem preservados.</p><Link href="/company/billing" className="mt-3 inline-block font-bold text-orange-700">Ir para Financeiro</Link></div>}
       {data.access?.state === "cancellation_scheduled" && <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-900"><b>Cancelamento agendado</b><p className="mt-1 text-sm">Seu plano permanecerá disponível até {data.access.cancellationEffectiveAt ? new Date(data.access.cancellationEffectiveAt).toLocaleDateString("pt-BR", { timeZone: "UTC" }) : "a data informada no financeiro"}.</p><Link href="/company/billing" className="mt-3 inline-block font-bold text-orange-700">Ver assinatura</Link></div>}

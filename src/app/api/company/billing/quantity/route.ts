@@ -22,6 +22,7 @@ import { isOpenReactivation } from "@/lib/subscription-reactivation";
 import { getAsaasEnvironment } from "@/lib/asaas";
 import { assertAsaasMutationAllowed } from "@/lib/asaas-production";
 import { getBillingProviderLink, upsertBillingProviderLink } from "@/lib/billing-provider-links";
+import { isBillingExemptionActive } from "@/lib/billing-exemption";
 
 export const dynamic = "force-dynamic";
 
@@ -223,10 +224,13 @@ export async function POST(request: NextRequest) {
       ),
       db.collection("schools").countDocuments(activeSchoolFilter(auth.companyId)),
     ]);
-    if (!company || company.status !== "active") {
+    const billingExemptionActive = Boolean(
+      subscription && isBillingExemptionActive(subscription.billingExemption),
+    );
+    if (!company || (company.status !== "active" && !billingExemptionActive)) {
       throw new QuantityChangeError("COMPANY_NOT_ACTIVE", 403);
     }
-    if (!subscription || subscription.status !== "active") {
+    if (!subscription || (subscription.status !== "active" && !billingExemptionActive)) {
       throw new QuantityChangeError("SUBSCRIPTION_NOT_ACTIVE", 403);
     }
     if (subscription.cancelAtPeriodEnd === true) {
@@ -265,6 +269,51 @@ export async function POST(request: NextRequest) {
         status: "unchanged",
         effectiveAfterPayment: false,
         asaasUpdatePerformed: false,
+      });
+    }
+    if (billingExemptionActive) {
+      const changedAt = new Date();
+      const changed = await subscriptions.updateOne(
+        {
+          _id: subscription._id,
+          companyId: auth.companyId,
+          maxUnits: currentUnits,
+          "billingExemption.status": { $in: ["active", "scheduled"] },
+        },
+        {
+          $set: {
+            maxUnits: requestedQuote.requestedUnits,
+            requestedMaxUnits: requestedQuote.requestedUnits,
+            pricePerUnitCents: requestedQuote.pricePerUnitCents,
+            totalMonthlyCents: requestedQuote.totalMonthlyCents,
+            quantityChange: {
+              type: requestedQuote.requestedUnits > currentUnits ? "upgrade" : "downgrade",
+              status: "completed_during_exemption",
+              fromUnits: currentUnits,
+              toUnits: requestedQuote.requestedUnits,
+              previousMonthlyValueCents: currentQuote.totalMonthlyCents,
+              targetMonthlyValueCents: requestedQuote.totalMonthlyCents,
+              requestedAt: changedAt,
+              updatedAt: changedAt,
+              effectiveAfterPayment: false,
+            },
+            updatedAt: changedAt,
+          },
+        },
+      );
+      if (changed.modifiedCount !== 1) {
+        throw new QuantityChangeError("QUANTITY_CHANGE_IN_PROGRESS", 409);
+      }
+      return NextResponse.json({
+        currentUnits,
+        requestedUnits: requestedQuote.requestedUnits,
+        currentMonthlyValueCents: currentQuote.totalMonthlyCents,
+        targetMonthlyValueCents: requestedQuote.totalMonthlyCents,
+        pricePerUnitCents: requestedQuote.pricePerUnitCents,
+        status: "completed_during_exemption",
+        effectiveAfterPayment: false,
+        asaasUpdatePerformed: false,
+        billingExemptionActive: true,
       });
     }
     const changeType = requestedQuote.requestedUnits > currentUnits

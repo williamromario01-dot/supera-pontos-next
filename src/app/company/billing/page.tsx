@@ -36,7 +36,8 @@ type Option = {
 };
 type Data = {
   company: { status: string };
-  access?: { state: "active" | "grace_period" | "blocked" | "cancellation_scheduled" | "cancelled" | "reactivation_pending"; daysPastDue: number; gracePeriodEndsAt: string | null; cancellationEffectiveAt: string | null };
+  access?: { state: "active" | "exempt" | "exemption_expired" | "grace_period" | "blocked" | "cancellation_scheduled" | "cancelled" | "reactivation_pending"; daysPastDue: number; gracePeriodEndsAt: string | null; cancellationEffectiveAt: string | null };
+  billingExemption?: null | { status: string; type: string; startsAt: string; endsAt: string | null; months: number | null; reason: string };
   cancellation?: {
     state: "none" | "cancellation_scheduled" | "cancelled";
     cancelAtPeriodEnd: boolean;
@@ -70,7 +71,7 @@ type Data = {
     targetMonthlyValueCents: number | null;
   };
   checkout?: {
-    state: "not_started" | "processing" | "reconciliation_required" | "provider_error" | "payment_pending" | "active";
+    state: "not_started" | "processing" | "reconciliation_required" | "provider_error" | "payment_pending" | "active" | "exempt";
     canStart: boolean;
     message: string;
   };
@@ -384,7 +385,7 @@ export default function Billing() {
     blocked = Boolean(plan && selected < plan.activeUnits),
     upgrade = Boolean(plan && selected > plan.maxUnits),
     pending = Boolean(data.quantityChange),
-    activePlan = plan?.status === "active",
+    activePlan = plan?.status === "active" && data.access?.state !== "exemption_expired",
     displayedUnits = activePlan ? plan?.maxUnits : plan?.requestedMaxUnits,
     difference =
       (option?.totalMonthlyCents ?? 0) - (plan?.totalMonthlyValueCents ?? 0);
@@ -416,6 +417,8 @@ export default function Billing() {
         </div>
       </header>
       <div className="mx-auto max-w-6xl space-y-5 px-4 py-8">
+        {data.access?.state === "exempt" && <Notice title="Mensalidade isenta"><b>O SUPERPONTOS concedeu isenção desta mensalidade.</b><p className="mt-1">{data.billingExemption?.endsAt ? `Isenção concedida até ${new Date(data.billingExemption.endsAt).toLocaleDateString("pt-BR", { timeZone: "UTC" })}.` : "Isenção concedida por tempo indeterminado."}</p><p className="mt-1">Motivo: {data.billingExemption?.reason}</p></Notice>}
+        {data.access?.state === "exemption_expired" && <Notice warning title="Isenção encerrada">O período de isenção terminou. Retome a cobrança para continuar utilizando as funções operacionais.</Notice>}
         {data.access?.state === "grace_period" && <Notice warning title="Pagamento em atraso">Você está no período de tolerância. Regularize até {data.access.gracePeriodEndsAt ? new Date(data.access.gracePeriodEndsAt).toLocaleDateString("pt-BR") : "a data limite"} para evitar a suspensão temporária das operações.</Notice>}
         {data.access?.state === "blocked" && <Notice warning title="Pagamento em atraso">Algumas funções do SUPERPONTOS estão temporariamente suspensas até a regularização. Seus dados continuam preservados.</Notice>}
         {data.access?.state === "cancellation_scheduled" && <Notice warning title="Cancelamento agendado">A assinatura permanece disponível até {data.cancellation?.effectiveAt ? new Date(data.cancellation.effectiveAt).toLocaleDateString("pt-BR", { timeZone: "UTC" }) : "o fim do período contratado"}.</Notice>}
@@ -431,7 +434,7 @@ export default function Billing() {
             Consulta disponível, mas a empresa não está ativa.
           </Notice>
         )}
-        {plan && data.checkout && data.checkout.state !== "active" && data.checkout.state !== "payment_pending" && (
+        {plan && data.checkout && data.checkout.state !== "active" && data.checkout.state !== "payment_pending" && data.checkout.state !== "exempt" && (
           <Card orange>
             <div className="flex flex-wrap items-center justify-between gap-4">
               <div>
@@ -479,7 +482,7 @@ export default function Billing() {
               <Card orange>
                 <CreditCard />
                 <p className="mt-7 text-sm">
-                  {activePlan ? "Plano mensal" : "Plano solicitado"} · {plan.statusLabel}
+                    {data.access?.state === "exempt" ? "Plano mensal" : activePlan ? "Plano mensal" : "Plano solicitado"} · {plan.statusLabel}
                 </p>
                 <p className="text-3xl font-black">
                   {money(plan.totalMonthlyValueCents)}
@@ -510,18 +513,22 @@ export default function Billing() {
                 <CalendarDays className="text-emerald-600" />
                 <p className="mt-4 text-sm text-slate-500">Próxima renovação</p>
                 <p className="text-xl font-black">
-                  {data.remote.available
+                  {data.access?.state === "exempt"
+                    ? data.billingExemption?.endsAt ? date(data.billingExemption.endsAt.slice(0, 10)) : "Sem data final"
+                    : data.remote.available
                     ? date(data.remote.renewal?.nextDueDate)
                     : "Indisponível"}
                 </p>
                 <p className="mt-3 text-sm text-slate-500">
-                  {data.remote.renewal?.paymentGenerated
+                  {data.access?.state === "exempt"
+                    ? "Nenhuma confirmação de pagamento foi criada."
+                    : data.remote.renewal?.paymentGenerated
                     ? "Cobrança já gerada."
                     : "Renovação não significa cobrança pendente."}
                 </p>
               </Card>
             </section>
-            <section className="grid gap-4 lg:grid-cols-2">
+            {data.access?.state !== "exempt" && <section className="grid gap-4 lg:grid-cols-2">
               <Card>
                 <h2 className="font-black">Pagamento pendente</h2>
                 {data.remote.pendingPayment ? (
@@ -554,8 +561,8 @@ export default function Billing() {
                   )}
                 </div>
               </Card>
-            </section>
-            <Card>
+            </section>}
+            {data.access?.state !== "exempt" && <Card>
               <div className="flex flex-wrap items-center justify-between gap-4">
                 <div>
                   <h2 className="font-black">Gerenciar assinatura</h2>
@@ -577,7 +584,7 @@ export default function Billing() {
                   <button disabled={pending || cancellationProcessing || data.access?.state === "blocked"} onClick={() => void changeCancellation("POST")} className="rounded-xl border border-red-300 px-4 py-3 font-bold text-red-700 disabled:opacity-50">Cancelar assinatura</button>
                 ) : null}
               </div>
-            </Card>
+            </Card>}
             {plan.archivedUnits > 0 && (
               <Notice title="Unidades arquivadas não consomem capacidade">
                 <Archive className="mr-2 inline" />
@@ -606,6 +613,8 @@ export default function Billing() {
             {pixLoading && <div className="py-16 text-center"><RefreshCw className="mx-auto animate-spin text-orange-500" /><p className="mt-4 font-bold">Gerando dados para pagamento...</p></div>}
             {pixError && <p className="mt-6 rounded-xl bg-red-50 p-4 text-sm text-red-700">{pixError}</p>}
             {pix && <div className="mt-6 space-y-5">
+              {/* The provider returns this QR code as a data URI; Next Image is not applicable. */}
+              {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={"data:image/png;base64," + pix.encodedImage} alt="QR Code Pix" className="mx-auto h-56 w-56 rounded-xl border bg-white p-2" />
               <label className="block text-sm font-bold">Pix copia e cola<textarea readOnly value={pix.payload} rows={4} className="mt-2 w-full resize-none rounded-xl border bg-slate-50 p-3 font-mono text-xs" /></label>
               <button onClick={() => void copyPix()} className="flex w-full items-center justify-center gap-2 rounded-xl bg-orange-500 p-3 font-bold text-white"><Copy size={18} />{copied ? "Código Pix copiado!" : "Copiar código Pix"}</button>

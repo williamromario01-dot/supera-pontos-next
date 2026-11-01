@@ -14,15 +14,16 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
   if (!ObjectId.isValid(id)) return NextResponse.json({ error: "Empresa inválida." }, { status: 400 });
   const companyId = new ObjectId(id);
   const db = (await clientPromise).db(DB_NAME);
-  const [company, subscription, schools, users, billingEvents, privacyRequests] = await Promise.all([
+  const [company, subscription, schools, users, billingEvents, exemptionAudits, privacyRequests] = await Promise.all([
     db.collection("companies").findOne({ _id: companyId }, { projection: { legalName: 1, tradeName: 1, cnpj: 1, email: 1, phone: 1, status: 1, onboardingState: 1, createdAt: 1, legalAcceptance: 1 } }),
-    db.collection("subscriptions").findOne({ companyId }, { sort: { createdAt: -1 }, projection: { status: 1, planCode: 1, requestedMaxUnits: 1, maxUnits: 1, unitCount: 1, pricePerUnitCents: 1, totalMonthlyCents: 1, providerCustomerId: 1, providerSubscriptionId: 1, createdAt: 1 } }),
+    db.collection("subscriptions").findOne({ companyId }, { sort: { createdAt: -1 }, projection: { status: 1, planCode: 1, requestedMaxUnits: 1, maxUnits: 1, unitCount: 1, pricePerUnitCents: 1, totalMonthlyCents: 1, providerCustomerId: 1, providerSubscriptionId: 1, billingExemption: 1, createdAt: 1 } }),
     db.collection("schools").find({ companyId }, { projection: { name: 1, active: 1, createdAt: 1 } }).toArray(),
     db.collection("users").find({ companyId }, { projection: { name: 1, email: 1, role: 1, schoolId: 1, active: 1, createdAt: 1 } }).limit(500).toArray(),
-    db.collection("billingEvents").find({ companyId }, { projection: { type: 1, status: 1, providerEventId: 1, createdAt: 1 } }).sort({ createdAt: -1 }).limit(100).toArray(),
+    db.collection("billingEvents").find({ companyId }, { projection: { eventType: 1, providerEventId: 1, processedAt: 1, createdAt: 1 } }).sort({ createdAt: -1 }).limit(100).toArray(),
+    db.collection("billingExemptionAudits").find({ companyId }, { projection: { action: 1, superAdminId: 1, occurredAt: 1, reason: 1, previous: 1, next: 1 } }).sort({ occurredAt: -1 }).limit(100).toArray(),
     db.collection("privacyRequests").find({ companyId }, { projection: { type: 1, status: 1, createdAt: 1 } }).sort({ createdAt: -1 }).limit(100).toArray(),
   ]);
   if (!company) return NextResponse.json({ error: "Empresa não encontrada." }, { status: 404 });
   const safeSubscription = subscription ? { ...subscription, providerCustomerId: mask(subscription.providerCustomerId), providerSubscriptionId: mask(subscription.providerSubscriptionId) } : null;
-  return NextResponse.json({ company, subscription: safeSubscription, schools, users, billingEvents: billingEvents.map((item) => ({ ...item, providerEventId: mask(item.providerEventId) })), privacyRequests });
+  return NextResponse.json({ company, subscription: safeSubscription, schools, users, billingEvents: billingEvents.map((item) => ({ ...item, providerEventId: mask(item.providerEventId) })), exemptionAudits, privacyRequests });
 }
