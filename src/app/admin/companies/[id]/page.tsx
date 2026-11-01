@@ -13,11 +13,18 @@ type Exemption = {
   reason: string;
   providerAction?: { required: boolean; reason: string | null };
 };
+type CompanyUser = {
+  _id: string;
+  name?: string;
+  email?: string;
+  role?: string;
+  active?: boolean;
+};
 type Detail = {
   company: Record<string, unknown>;
   subscription: (Record<string, unknown> & { billingExemption?: Exemption }) | null;
   schools: Array<Record<string, unknown>>;
-  users: Array<Record<string, unknown>>;
+  users: CompanyUser[];
   billingEvents: Array<Record<string, unknown>>;
   exemptionAudits: Array<Record<string, unknown>>;
   privacyRequests: Array<Record<string, unknown>>;
@@ -37,6 +44,8 @@ export default function CompanyDetailPage() {
   const [message, setMessage] = useState("");
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [passwordTarget, setPasswordTarget] = useState<CompanyUser | null>(null);
+  const [passwordForm, setPasswordForm] = useState({ newPassword: "", confirmPassword: "" });
   const [form, setForm] = useState({
     type: "months",
     startsAt: new Date().toISOString().slice(0, 10),
@@ -121,6 +130,33 @@ export default function CompanyDetailPage() {
     }
   }
 
+  async function resetPassword(event: FormEvent) {
+    event.preventDefault();
+    if (!passwordTarget) return;
+    setSaving(true);
+    setError("");
+    setMessage("");
+    try {
+      const response = await fetch(
+        `/api/admin/companies/${encodeURIComponent(id)}/users/${encodeURIComponent(passwordTarget._id)}/password`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(passwordForm),
+        },
+      );
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error);
+      setMessage(body.message);
+      setPasswordTarget(null);
+      setPasswordForm({ newPassword: "", confirmPassword: "" });
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Não foi possível redefinir a senha.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return <main className="min-h-screen bg-slate-50 px-4 py-8">
     <div className="mx-auto max-w-6xl">
       <Link href="/admin/companies" className="font-bold text-orange-700">← Empresas</Link>
@@ -158,12 +194,34 @@ export default function CompanyDetailPage() {
           <Panel title="Histórico de isenções" rows={data.exemptionAudits}/>
           <Panel title="Assinatura local" rows={data.subscription ? [data.subscription] : []}/>
           <Panel title="Unidades" rows={data.schools}/>
-          <Panel title="Usuários" rows={data.users}/>
+          <UsersPanel users={data.users} onReset={(user) => {
+            setPasswordForm({ newPassword: "", confirmPassword: "" });
+            setPasswordTarget(user);
+          }}/>
           <Panel title="Eventos financeiros reais" rows={data.billingEvents}/>
           <Panel title="Solicitações de privacidade" rows={data.privacyRequests}/>
         </div>
       </div>}
     </div>
+    {passwordTarget && <div className="fixed inset-0 z-[60] grid place-items-center bg-slate-950/50 p-4">
+      <form onSubmit={resetPassword} className="w-full max-w-lg space-y-4 rounded-3xl bg-white p-6">
+        <div>
+          <h2 className="text-2xl font-black">Redefinir senha</h2>
+          <p className="mt-1 text-sm text-slate-500">{passwordTarget.name ?? "Usuário"} · {passwordTarget.email ?? "sem e-mail"}</p>
+        </div>
+        <label className="block text-sm font-bold">Nova senha
+          <input required type="password" minLength={8} maxLength={100} autoComplete="new-password" value={passwordForm.newPassword} onChange={(event) => setPasswordForm({ ...passwordForm, newPassword: event.target.value })} className="mt-2 w-full rounded-xl border p-3"/>
+        </label>
+        <label className="block text-sm font-bold">Confirmar nova senha
+          <input required type="password" minLength={8} maxLength={100} autoComplete="new-password" value={passwordForm.confirmPassword} onChange={(event) => setPasswordForm({ ...passwordForm, confirmPassword: event.target.value })} className="mt-2 w-full rounded-xl border p-3"/>
+        </label>
+        <p className="rounded-xl bg-amber-50 p-3 text-sm text-amber-900">A senha não será exibida nem registrada. Todas as sessões anteriores deste usuário serão encerradas.</p>
+        <div className="flex justify-end gap-3">
+          <button type="button" disabled={saving} onClick={() => setPasswordTarget(null)} className="rounded-xl border px-5 py-3 font-bold">Cancelar</button>
+          <button disabled={saving || passwordForm.newPassword !== passwordForm.confirmPassword} className="rounded-xl bg-orange-500 px-5 py-3 font-bold text-white disabled:opacity-50">{saving ? "Redefinindo..." : "Redefinir senha"}</button>
+        </div>
+      </form>
+    </div>}
     {open && <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/50 p-4">
       <form onSubmit={save} className="w-full max-w-xl space-y-4 rounded-3xl bg-white p-6">
         <h2 className="text-2xl font-black">Gerenciar isenção</h2>
@@ -181,6 +239,22 @@ export default function CompanyDetailPage() {
       </form>
     </div>}
   </main>;
+}
+
+function UsersPanel({ users, onReset }: { users: CompanyUser[]; onReset: (user: CompanyUser) => void }) {
+  return <section className="overflow-auto rounded-2xl border bg-white p-5 lg:col-span-2">
+    <h2 className="font-black">Usuários da empresa</h2>
+    {users.length === 0 ? <p className="mt-3 text-sm text-slate-500">Nenhum usuário vinculado.</p> : <table className="mt-4 w-full min-w-[680px] text-left text-sm">
+      <thead className="border-b text-xs uppercase text-slate-500"><tr><th className="py-3">Nome</th><th>E-mail</th><th>Perfil</th><th>Status</th><th className="text-right">Ação</th></tr></thead>
+      <tbody>{users.map((user) => <tr key={user._id} className="border-b last:border-0">
+        <td className="py-3 font-bold">{user.name ?? "—"}</td>
+        <td>{user.email ?? "—"}</td>
+        <td>{user.role ?? "—"}</td>
+        <td><span className={`rounded-full px-3 py-1 text-xs font-bold ${user.active === false ? "bg-slate-100 text-slate-600" : "bg-emerald-50 text-emerald-700"}`}>{user.active === false ? "Inativo" : "Ativo"}</span></td>
+        <td className="text-right"><button onClick={() => onReset(user)} className="rounded-lg border border-orange-200 px-3 py-2 font-bold text-orange-700">Redefinir senha</button></td>
+      </tr>)}</tbody>
+    </table>}
+  </section>;
 }
 
 function Panel({ title, rows }: { title: string; rows: Array<Record<string, unknown>> }) {
