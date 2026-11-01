@@ -6,7 +6,7 @@ import { Building2, CreditCard, GraduationCap, Palette, Plus, School, ShieldChec
 import { contrastText } from "@/lib/tenant-branding";
 
 type Dashboard = {
-  company: { tradeName: string; legalName: string; cnpj: string; status: string; branding: { logoUrl: string | null; primaryColor: string; secondaryColor: string; accentColor: string } };
+  company: { tradeName: string; legalName: string; cnpj: string; status: string; branding: { logoUrl: string | null; primaryColor: string; secondaryColor: string; accentColor: string; displayName: string } };
   subscription: null | { planName: string; status: string; maxUnits: number; requestedMaxUnits: number };
   usage: { usedUnits: number; maxUnits: number };
   metrics: { students: number; educators: number; classes: number; pointsDistributed: number };
@@ -80,7 +80,7 @@ export default function CompanyPage() {
         {/* Tenant Blob URLs are validated server-side and intentionally rendered without host allowlisting. */}
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={data.company.branding.logoUrl} alt="Logo da empresa" className="h-10 w-10 rounded-lg object-contain"/>
-      </>}{data.company.tradeName}</h1><p className="text-sm text-slate-500">Painel empresarial consolidado · Tecnologia SUPERPONTOS</p></div>
+      </>}{data.company.tradeName}</h1><p className="text-sm text-slate-500">Painel empresarial consolidado · {data.company.branding.displayName} · GFarS</p></div>
       <div className="flex flex-wrap gap-2"><Link href="/company/branding" className="flex items-center gap-2 rounded-xl border bg-white px-4 py-3 font-bold text-slate-700"><Palette size={18}/>Identidade visual</Link><Link href="/company/privacy" className="flex items-center gap-2 rounded-xl border bg-white px-4 py-3 font-bold text-slate-700"><ShieldCheck size={18}/>Privacidade</Link><Link href="/company/billing" className="flex items-center gap-2 rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 font-bold text-orange-700"><CreditCard size={18}/>Financeiro</Link><button onClick={() => setShowForm(!showForm)} className="tenant-brand-bg flex items-center gap-2 rounded-xl px-4 py-3 font-bold"><Plus size={18}/>Adicionar unidade</button></div>
     </div></header>
     <div className="mx-auto max-w-6xl space-y-6 px-4 py-8">

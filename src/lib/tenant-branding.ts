@@ -1,4 +1,5 @@
 import type { Document } from "mongodb";
+import { OFFICIAL_PRODUCT_NAME } from "./product-identity.ts";
 
 export const PLATFORM_BRANDING = {
   logoUrl: null as string | null,
@@ -6,7 +7,8 @@ export const PLATFORM_BRANDING = {
   secondaryColor: "#0f172a",
   accentColor: "#2563eb",
   source: "platform" as const,
-  productName: "SUPERPONTOS",
+  productName: OFFICIAL_PRODUCT_NAME,
+  displayName: OFFICIAL_PRODUCT_NAME,
 };
 
 export type BrandingInput = {
@@ -15,14 +17,43 @@ export type BrandingInput = {
   primaryColor?: string;
   secondaryColor?: string;
   accentColor?: string;
+  displayName?: string | null;
 };
 
-export type EffectiveBranding = Omit<typeof PLATFORM_BRANDING, "source"> & {
+export type EffectiveBranding = Omit<typeof PLATFORM_BRANDING, "source" | "displayName"> & {
   source: "platform" | "company" | "unit";
+  displayName: string;
 };
 
 export const BRANDING_LOGO_MAX_BYTES = 512 * 1024;
 export const BRANDING_ALLOWED_MIME = ["image/png", "image/jpeg", "image/webp"] as const;
+export const DISPLAY_NAME_MIN_LENGTH = 2;
+export const DISPLAY_NAME_MAX_LENGTH = 60;
+
+export type DisplayNameValidation =
+  | { valid: true; value: string | null }
+  | { valid: false; error: string };
+
+export function validateDisplayName(value: unknown): DisplayNameValidation {
+  if (value === null) return { valid: true, value: null };
+  if (typeof value !== "string") {
+    return { valid: false, error: "Nome interno inválido." };
+  }
+  const normalized = value.trim();
+  if (
+    normalized.length < DISPLAY_NAME_MIN_LENGTH ||
+    normalized.length > DISPLAY_NAME_MAX_LENGTH
+  ) {
+    return {
+      valid: false,
+      error: `O nome interno deve ter entre ${DISPLAY_NAME_MIN_LENGTH} e ${DISPLAY_NAME_MAX_LENGTH} caracteres.`,
+    };
+  }
+  if (/[<>]/.test(normalized)) {
+    return { valid: false, error: "O nome interno deve ser texto simples, sem HTML." };
+  }
+  return { valid: true, value: normalized };
+}
 
 export function isSafeBrandColor(value: unknown): value is string {
   return typeof value === "string" && /^#[0-9a-fA-F]{6}$/.test(value);
@@ -69,6 +100,8 @@ function validBranding(value: unknown): BrandingInput | null {
   for (const key of ["primaryColor", "secondaryColor", "accentColor"] as const) {
     if (isSafeBrandColor(item[key])) result[key] = item[key];
   }
+  const displayName = validateDisplayName(item.displayName);
+  if (displayName.valid && displayName.value) result.displayName = displayName.value;
   return Object.keys(result).length ? result : null;
 }
 
@@ -81,14 +114,19 @@ export function resolveEffectiveBranding(
     : null;
   const companyBranding = validBranding(companyValue);
   const unitAllowed = companyValue?.allowUnitBranding === true;
+  const unitDisplayNameAllowed = companyValue?.allowUnitDisplayName === true;
   const unitBranding = unitAllowed ? validBranding(school?.branding) : null;
+  const unitDisplayName = unitDisplayNameAllowed
+    ? validBranding(school?.branding)?.displayName
+    : null;
   return {
     logoUrl: unitBranding?.logoUrl ?? companyBranding?.logoUrl ?? PLATFORM_BRANDING.logoUrl,
     primaryColor: unitBranding?.primaryColor ?? companyBranding?.primaryColor ?? PLATFORM_BRANDING.primaryColor,
     secondaryColor: unitBranding?.secondaryColor ?? companyBranding?.secondaryColor ?? PLATFORM_BRANDING.secondaryColor,
     accentColor: unitBranding?.accentColor ?? companyBranding?.accentColor ?? PLATFORM_BRANDING.accentColor,
-    source: unitBranding ? "unit" : companyBranding ? "company" : "platform",
+    source: unitBranding || unitDisplayName ? "unit" : companyBranding ? "company" : "platform",
     productName: PLATFORM_BRANDING.productName,
+    displayName: unitDisplayName ?? companyBranding?.displayName ?? PLATFORM_BRANDING.displayName,
   };
 }
 

@@ -119,6 +119,7 @@ interface TenantBranding {
   primaryColor: string;
   secondaryColor: string;
   accentColor: string;
+  displayName: string;
 }
 
 function getInitials(name: string) {
@@ -283,7 +284,10 @@ export default function DashboardPage() {
       if (brandingResponse.ok) {
         const brandingData = await brandingResponse.json();
         setBranding(brandingData.branding);
-        setCanEditUnitBranding(brandingData.permissions?.canEditUnit === true);
+        setCanEditUnitBranding(
+          brandingData.permissions?.canEditUnit === true ||
+          brandingData.permissions?.canEditUnitDisplayName === true
+        );
       }
 
       const weeklyUrl =
@@ -580,12 +584,9 @@ export default function DashboardPage() {
                 </> : <BookOpen className="w-6 h-6 text-white" />}
               </div>
 
-              <div className="text-left">
-                <h1 className="text-lg font-black text-slate-800">
-                  Supera
-                  <span className="tenant-brand-text">
-                    Pontos
-                  </span>
+              <div className="min-w-0 text-left">
+                <h1 className="max-w-40 truncate text-lg font-black text-slate-800 sm:max-w-md">
+                  {branding?.displayName ?? "SUPERPONTOS"}
                 </h1>
 
                 <p className="text-[11px] text-slate-400 font-semibold">
@@ -2177,7 +2178,7 @@ export default function DashboardPage() {
             <BookOpen size={15} />
 
             <span className="text-xs font-bold">
-              SUPERPONTOS
+              {branding?.displayName ?? "SUPERPONTOS"}
             </span>
 
           </div>

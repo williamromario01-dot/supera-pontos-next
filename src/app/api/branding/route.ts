@@ -21,11 +21,14 @@ export async function GET(request: NextRequest) {
   const db = (await clientPromise).db(DB_NAME);
   const school = auth.schoolId
     ? await db.collection("schools").findOne(
-        { _id: auth.schoolId },
+        {
+          _id: auth.schoolId,
+          ...(auth.companyId ? { companyId: auth.companyId } : {}),
+        },
         { projection: { companyId: 1, branding: 1 } },
       )
     : null;
-  const companyId = auth.companyId ?? school?.companyId ?? null;
+  const companyId = school?.companyId ?? auth.companyId ?? null;
   const company = companyId
     ? await db.collection("companies").findOne(
         { _id: companyId },
@@ -43,7 +46,9 @@ export async function GET(request: NextRequest) {
     permissions: {
       canEditCompany: auth.role === "company_admin",
       canEditUnit: auth.role === "admin" && company.branding?.allowUnitBranding === true,
+      canEditUnitDisplayName: auth.role === "admin" && company.branding?.allowUnitDisplayName === true,
       allowUnitBranding: company.branding?.allowUnitBranding === true,
+      allowUnitDisplayName: company.branding?.allowUnitDisplayName === true,
     },
   }, { headers: { "Cache-Control": "private, no-store" } });
 }

@@ -8,7 +8,17 @@ import {
   detectBrandingImageType,
   resolveEffectiveBranding,
   sanitizeBrandingInput,
+  validateDisplayName,
 } from "@/lib/tenant-branding";
+
+const COMPANY_PATCH_FIELDS = new Set([
+  "primaryColor",
+  "secondaryColor",
+  "accentColor",
+  "displayName",
+  "allowUnitBranding",
+  "allowUnitDisplayName",
+]);
 
 async function context(request: NextRequest) {
   const result = await authenticateRequest(request);
@@ -34,6 +44,7 @@ export async function GET(request: NextRequest) {
     branding: value.company.branding ?? null,
     effectiveBranding: resolveEffectiveBranding(value.company, null),
     allowUnitBranding: value.company.branding?.allowUnitBranding === true,
+    allowUnitDisplayName: value.company.branding?.allowUnitDisplayName === true,
   });
 }
 
@@ -46,13 +57,33 @@ export async function PATCH(request: NextRequest) {
   } catch {
     return NextResponse.json({ error: "JSON inválido." }, { status: 400 });
   }
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return NextResponse.json({ error: "Configuração de identidade inválida." }, { status: 400 });
+  }
+  const input = body as Record<string, unknown>;
+  if (
+    Object.keys(input).length === 0 ||
+    Object.keys(input).some((key) => !COMPANY_PATCH_FIELDS.has(key))
+  ) {
+    return NextResponse.json({ error: "Campo de identidade não permitido." }, { status: 400 });
+  }
   const branding = sanitizeBrandingInput(body);
-  if (!branding || !body || typeof body !== "object") {
+  if (!branding) {
     return NextResponse.json({ error: "Cores inválidas." }, { status: 400 });
   }
-  const allowUnitBranding = (body as Record<string, unknown>).allowUnitBranding;
+  const allowUnitBranding = input.allowUnitBranding;
   if (allowUnitBranding !== undefined && typeof allowUnitBranding !== "boolean") {
     return NextResponse.json({ error: "Permissão de unidades inválida." }, { status: 400 });
+  }
+  const allowUnitDisplayName = input.allowUnitDisplayName;
+  if (allowUnitDisplayName !== undefined && typeof allowUnitDisplayName !== "boolean") {
+    return NextResponse.json({ error: "Permissão de nome por unidade inválida." }, { status: 400 });
+  }
+  const displayName = Object.hasOwn(input, "displayName")
+    ? validateDisplayName(input.displayName)
+    : null;
+  if (displayName && !displayName.valid) {
+    return NextResponse.json({ error: displayName.error }, { status: 400 });
   }
   const now = new Date();
   const fields: Record<string, unknown> = {
@@ -64,9 +95,22 @@ export async function PATCH(request: NextRequest) {
   if (typeof allowUnitBranding === "boolean") {
     fields["branding.allowUnitBranding"] = allowUnitBranding;
   }
+  if (typeof allowUnitDisplayName === "boolean") {
+    fields["branding.allowUnitDisplayName"] = allowUnitDisplayName;
+  }
+  if (displayName?.valid && displayName.value) {
+    fields["branding.displayName"] = displayName.value;
+  }
+  const update: {
+    $set: Record<string, unknown>;
+    $unset?: Record<string, "">;
+  } = { $set: fields };
+  if (displayName?.valid && displayName.value === null) {
+    update.$unset = { "branding.displayName": "" };
+  }
   await value.db.collection("companies").updateOne(
     { _id: value.companyId },
-    { $set: fields },
+    update,
   );
   const company = await value.db.collection("companies").findOne({ _id: value.companyId });
   return NextResponse.json({
