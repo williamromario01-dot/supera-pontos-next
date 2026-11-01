@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { FormEvent, useEffect, useState, type CSSProperties } from "react";
-import { Building2, CreditCard, GraduationCap, Palette, Plus, School, ShieldCheck, Users } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Building2, CreditCard, GraduationCap, KeyRound, LogOut, Palette, Plus, School, ShieldCheck, Users } from "lucide-react";
 import { contrastText } from "@/lib/tenant-branding";
 
 type Dashboard = {
@@ -20,11 +21,13 @@ type Dashboard = {
 };
 
 export default function CompanyPage() {
+  const router = useRouter();
   const [data, setData] = useState<Dashboard | null>(null);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
   const [showForm, setShowForm] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
   const [form, setForm] = useState({ name: "", description: "", address: "", phone: "", email: "" });
 
   async function load() {
@@ -60,6 +63,19 @@ export default function CompanyPage() {
     }
   }
 
+  async function logout() {
+    setLoggingOut(true);
+    try {
+      const response = await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
+      if (!response.ok) throw new Error("Não foi possível encerrar a sessão.");
+      router.replace("/");
+      router.refresh();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Não foi possível encerrar a sessão.");
+      setLoggingOut(false);
+    }
+  }
+
   if (!data) return <main className="min-h-screen bg-slate-50 p-8"><div className="mx-auto max-w-6xl">{error || "Carregando painel empresarial..."}</div></main>;
   const cards = [
     ["Unidades", data.usage.usedUnits, School],
@@ -81,7 +97,7 @@ export default function CompanyPage() {
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={data.company.branding.logoUrl} alt="Logo da empresa" className="h-10 w-10 rounded-lg object-contain"/>
       </>}{data.company.tradeName}</h1><p className="text-sm text-slate-500">Painel empresarial consolidado · Tecnologia SUPERPONTOS</p></div>
-      <div className="flex flex-wrap gap-2"><Link href="/company/branding" className="flex items-center gap-2 rounded-xl border bg-white px-4 py-3 font-bold text-slate-700"><Palette size={18}/>Identidade visual</Link><Link href="/company/privacy" className="flex items-center gap-2 rounded-xl border bg-white px-4 py-3 font-bold text-slate-700"><ShieldCheck size={18}/>Privacidade</Link><Link href="/company/billing" className="flex items-center gap-2 rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 font-bold text-orange-700"><CreditCard size={18}/>Financeiro</Link><button onClick={() => setShowForm(!showForm)} className="tenant-brand-bg flex items-center gap-2 rounded-xl px-4 py-3 font-bold"><Plus size={18}/>Adicionar unidade</button></div>
+      <div className="flex flex-wrap gap-2"><Link href="/credential-management" className="flex items-center gap-2 rounded-xl border bg-white px-4 py-3 font-bold text-slate-700"><KeyRound size={18}/>Credenciais</Link><Link href="/company/branding" className="flex items-center gap-2 rounded-xl border bg-white px-4 py-3 font-bold text-slate-700"><Palette size={18}/>Identidade visual</Link><Link href="/company/privacy" className="flex items-center gap-2 rounded-xl border bg-white px-4 py-3 font-bold text-slate-700"><ShieldCheck size={18}/>Privacidade</Link><Link href="/company/billing" className="flex items-center gap-2 rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 font-bold text-orange-700"><CreditCard size={18}/>Financeiro</Link><button onClick={() => setShowForm(!showForm)} className="tenant-brand-bg flex items-center gap-2 rounded-xl px-4 py-3 font-bold"><Plus size={18}/>Adicionar unidade</button><button disabled={loggingOut} onClick={() => void logout()} className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 font-bold text-red-700 disabled:opacity-50"><LogOut size={18}/>{loggingOut ? "Saindo..." : "Sair"}</button></div>
     </div></header>
     <div className="mx-auto max-w-6xl space-y-6 px-4 py-8">
       {data.access?.state === "exempt" && <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-900"><b>Mensalidade isenta</b><p className="mt-1 text-sm">A empresa permanece ativa durante a isenção concedida pelo SUPERPONTOS.</p><Link href="/company/billing" className="mt-3 inline-block font-bold text-emerald-800">Ver detalhes no Financeiro</Link></div>}

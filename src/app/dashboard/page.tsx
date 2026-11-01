@@ -34,6 +34,7 @@ import {
   UserCheck,
   CalendarDays,
   Palette,
+  KeyRound,
 } from "lucide-react";
 
 interface User {
@@ -472,6 +473,9 @@ export default function DashboardPage() {
   const canManageEducators =
     user?.role === "admin" &&
     Boolean(ownUnitPath);
+  const canManageCredentials =
+    user?.role === "admin" ||
+    user?.role === "educator";
 
   const educatorsPath = ownUnitPath
     ? `${ownUnitPath}#educadores`
@@ -661,6 +665,16 @@ export default function DashboardPage() {
                   >
                     <Users size={17} />
                     Alunos
+                  </button>
+                )}
+
+                {canManageCredentials && (
+                  <button
+                    onClick={() => router.push("/credential-management")}
+                    className="flex-shrink-0 flex items-center gap-2 px-4 py-2.5 rounded-xl text-slate-500 hover:bg-slate-100 text-sm font-bold transition"
+                  >
+                    <KeyRound size={17} />
+                    Credenciais
                   </button>
                 )}
 
@@ -945,6 +959,19 @@ export default function DashboardPage() {
                   >
                     <Users size={18} />
                     Alunos
+                  </button>
+                )}
+
+                {canManageCredentials && (
+                  <button
+                    onClick={() => {
+                      setMenuOpen(false);
+                      router.push("/credential-management");
+                    }}
+                    className="flex items-center gap-3 px-4 py-3 rounded-xl text-slate-600 hover:bg-slate-100 font-bold text-sm"
+                  >
+                    <KeyRound size={18} />
+                    Credenciais
                   </button>
                 )}
 

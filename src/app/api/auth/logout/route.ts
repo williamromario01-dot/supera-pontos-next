@@ -1,6 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import clientPromise from "@/lib/mongodb";
 
+function clearSessionCookie(response: NextResponse) {
+  response.cookies.set("supera_session", "", {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/",
+    expires: new Date(0),
+    maxAge: 0,
+  });
+  return response;
+}
+
 export async function POST(request: NextRequest) {
   try {
     const sessionToken = request.cookies.get("supera_session")?.value;
@@ -14,25 +26,15 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    const response = NextResponse.json({
+    return clearSessionCookie(NextResponse.json({
       message: "Logout realizado com sucesso.",
-    });
-
-    response.cookies.set("supera_session", "", {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
-      path: "/",
-      expires: new Date(0),
-    });
-
-    return response;
+    }));
   } catch (error) {
     console.error("Erro no logout:", error);
 
-    return NextResponse.json(
+    return clearSessionCookie(NextResponse.json(
       { error: "Erro interno ao realizar logout." },
       { status: 500 }
-    );
+    ));
   }
 }
