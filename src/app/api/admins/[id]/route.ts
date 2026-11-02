@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import bcrypt from "bcryptjs";
+import { changeUserCredentials } from "@/lib/user-credentials";
 import { ObjectId } from "mongodb";
 import clientPromise from "@/lib/mongodb";
 import { getOperationalAccessForAuth, subscriptionPastDueResponse } from "@/lib/subscription-access";
@@ -48,6 +48,11 @@ function isValidObjectId(id: string) {
 
 export async function PATCH(request: NextRequest, props: { params: Promise<{ id: string }> }) {
   const params = await props.params;
+  const credentialPayload = await request.clone().json().catch(() => null);
+  if (credentialPayload && ("email" in Object(credentialPayload) || "password" in Object(credentialPayload))) {
+    return changeUserCredentials(request, params.id, { legacyRole: "admin" });
+  }
+
   try {
     const authenticatedUser =
       await getAuthenticatedUser(request);
@@ -137,74 +142,7 @@ export async function PATCH(request: NextRequest, props: { params: Promise<{ id:
       updateData.name = name;
     }
 
-    /* =====================================================
-       E-MAIL
-       ===================================================== */
-
-    if (body.email !== undefined) {
-      const email = String(body.email)
-        .trim()
-        .toLowerCase();
-
-      const emailRegex =
-        /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-      if (!emailRegex.test(email)) {
-        return NextResponse.json(
-          { error: "E-mail inválido." },
-          { status: 400 }
-        );
-      }
-
-      const existingEmail = await users.findOne({
-        email,
-        _id: {
-          $ne: administrator._id,
-        },
-      });
-
-      if (existingEmail) {
-        return NextResponse.json(
-          {
-            error:
-              "Este e-mail já está cadastrado no sistema.",
-          },
-          { status: 409 }
-        );
-      }
-
-      updateData.email = email;
-    }
-
-    /* =====================================================
-       SENHA
-       ===================================================== */
-
-    if (body.password !== undefined) {
-      const password = String(body.password);
-
-      if (password.length < 6 || password.length > 100) {
-        return NextResponse.json(
-          {
-            error:
-              "A senha deve ter entre 6 e 100 caracteres.",
-          },
-          { status: 400 }
-        );
-      }
-
-      updateData.passwordHash =
-        await bcrypt.hash(password, 12);
-
-      // Encerra sessões antigas
-      await sessions.deleteMany({
-        userId: administrator._id,
-      });
-    }
-
-    /* =====================================================
-       ATIVAR / DESATIVAR
-       ===================================================== */
+    // Credential fields are handled by changeUserCredentials above.
 
     if (body.active !== undefined) {
       if (typeof body.active !== "boolean") {

@@ -3,6 +3,7 @@
 import InternalPlatformName from "@/components/InternalPlatformName";
 
 import Link from "next/link";
+import LogoutButton from "@/components/LogoutButton";
 import { FormEvent, useEffect, useState, type CSSProperties } from "react";
 import { Building2, CreditCard, GraduationCap, Palette, Plus, School, ShieldCheck, Users } from "lucide-react";
 import { contrastText } from "@/lib/tenant-branding";
@@ -83,7 +84,7 @@ export default function CompanyPage() {
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={data.company.branding.logoUrl} alt="Logo da empresa" className="h-10 w-10 rounded-lg object-contain"/>
       </>}{data.company.tradeName}</h1><p className="text-sm text-slate-500">Painel empresarial consolidado · <InternalPlatformName displayName={data.company.branding.displayName} /> · GFarS</p></div>
-      <div className="flex flex-wrap gap-2"><Link href="/company/branding" className="flex items-center gap-2 rounded-xl border bg-white px-4 py-3 font-bold text-slate-700"><Palette size={18}/>Identidade visual</Link><Link href="/company/privacy" className="flex items-center gap-2 rounded-xl border bg-white px-4 py-3 font-bold text-slate-700"><ShieldCheck size={18}/>Privacidade</Link><Link href="/company/billing" className="flex items-center gap-2 rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 font-bold text-orange-700"><CreditCard size={18}/>Financeiro</Link><button onClick={() => setShowForm(!showForm)} className="tenant-brand-bg flex items-center gap-2 rounded-xl px-4 py-3 font-bold"><Plus size={18}/>Adicionar unidade</button></div>
+      <div className="flex flex-wrap gap-2"><LogoutButton/><Link href="/users/credentials" className="flex items-center gap-2 rounded-xl border bg-white px-4 py-3 font-bold text-slate-700"><Users size={18}/>Credenciais dos usuários</Link><Link href="/company/branding" className="flex items-center gap-2 rounded-xl border bg-white px-4 py-3 font-bold text-slate-700"><Palette size={18}/>Identidade visual</Link><Link href="/company/privacy" className="flex items-center gap-2 rounded-xl border bg-white px-4 py-3 font-bold text-slate-700"><ShieldCheck size={18}/>Privacidade</Link><Link href="/company/billing" className="flex items-center gap-2 rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 font-bold text-orange-700"><CreditCard size={18}/>Financeiro</Link><button onClick={() => setShowForm(!showForm)} className="tenant-brand-bg flex items-center gap-2 rounded-xl px-4 py-3 font-bold"><Plus size={18}/>Adicionar unidade</button></div>
     </div></header>
     <div className="mx-auto max-w-6xl space-y-6 px-4 py-8">
       {data.access?.state === "exempt" && <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-900"><b>Mensalidade isenta</b><p className="mt-1 text-sm">A empresa permanece ativa durante a isenção concedida pelo SUPERPONTOS.</p><Link href="/company/billing" className="mt-3 inline-block font-bold text-emerald-800">Ver detalhes no Financeiro</Link></div>}

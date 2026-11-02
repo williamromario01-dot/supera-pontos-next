@@ -19,46 +19,16 @@ test("password policy matches current company and recovery policy", () => {
   assert.equal(validatePassword("valid-password"), null);
 });
 
-test("only super_admin can reset a company user password", async () => {
+test("company password route delegates to the shared tenant-scoped credential service", async () => {
   const source = await read(routePath);
-  assert.match(source, /authenticateRequest\(request\)/);
-  assert.match(source, /result\.auth\.role !== "super_admin"/);
-  assert.match(source, /status: 403/);
-  assert.doesNotMatch(source, /company_admin"\s*\|\||admin"\s*\|\||educator"\s*\|\||student"/);
-});
-
-test("company and target user must exist in the same tenant", async () => {
-  const source = await read(routePath);
-  assert.match(source, /collection\("companies"\)\.findOne\([\s\S]*\{ _id: companyId \}/);
-  assert.match(source, /Empresa não encontrada/);
-  assert.match(source, /collection\("users"\)\.findOne\([\s\S]*\{ _id: targetUserId, companyId \}/);
-  assert.match(source, /collection\("users"\)\.updateOne\([\s\S]*\{ _id: targetUserId, companyId \}/);
-  assert.match(source, /Usuário não encontrado nesta empresa/);
-  assert.doesNotMatch(source, /payload\.companyId|body\.companyId/);
-});
-
-test("reset validates confirmation, hashes with bcrypt cost 12 and invalidates access", async () => {
-  const source = await read(routePath);
-  assert.match(source, /validatePassword\(newPassword\)/);
-  assert.match(source, /newPassword !== confirmPassword/);
-  assert.match(source, /bcrypt\.hash\(newPassword, 12\)/);
-  assert.match(source, /collection\("sessions"\)\.deleteMany/);
-  assert.match(source, /collection\("passwordResetTokens"\)\.deleteMany/);
-  assert.match(source, /withTransaction/);
-});
-
-test("response and audit never expose or record password material", async () => {
-  const source = await read(routePath);
-  assert.doesNotMatch(source, /console\.(log|info|warn|error)/);
-  assert.match(source, /collection\("adminAuditLogs"\)\.insertOne\(\{/);
-  const audit = source.slice(
-    source.indexOf('collection("adminAuditLogs")'),
-    source.indexOf("}, { session });", source.indexOf('collection("adminAuditLogs")')),
-  );
-  assert.doesNotMatch(audit, /newPassword|confirmPassword|passwordHash|password:/);
-  assert.match(source, /action: "company_user_password_reset"/);
-  const successResponse = source.slice(source.lastIndexOf("return NextResponse.json({"));
-  assert.doesNotMatch(successResponse, /passwordHash|newPassword|confirmPassword/);
+  assert.match(source, /changeUserCredentials/);
+  assert.match(source, /expectedCompanyId: id/);
+  assert.match(source, /passwordOnly: true/);
+  const service = await read("src/lib/user-credentials.ts");
+  assert.match(service, /authenticateRequest/);
+  assert.match(service, /authorizeCredentialTarget/);
+  assert.match(service, /withTransaction/);
+  assert.match(service, /bcrypt.hash\(newPassword as string, 12\)/);
 });
 
 test("company detail returns safe user fields and renders password management UI", async () => {

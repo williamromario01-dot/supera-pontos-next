@@ -609,6 +609,9 @@ export default function DashboardPage() {
                 className="flex items-center gap-1 overflow-x-auto pr-10 min-w-0 scrollbar-hide"
               >
 
+                {user && ["super_admin", "company_admin", "admin", "educator"].includes(user.role) && <button onClick={() => router.push("/users/credentials")} className="flex-shrink-0 rounded-xl px-4 py-2.5 text-sm font-bold text-slate-500 hover:bg-slate-100">Credenciais dos usuários</button>}
+
+
                 {canManageSchools && (
                   <button
                     onClick={() =>
@@ -885,6 +888,8 @@ export default function DashboardPage() {
             <div className="md:hidden pb-4 border-t border-slate-100 pt-3">
 
               <div className="grid gap-2">
+
+                {user && ["super_admin", "company_admin", "admin", "educator"].includes(user.role) && <button onClick={() => { setMenuOpen(false); router.push("/users/credentials"); }} className="rounded-xl px-4 py-3 text-left font-bold text-slate-600 hover:bg-slate-100">Credenciais dos usuários</button>}
 
                 {canManageSchools && (
                   <button
