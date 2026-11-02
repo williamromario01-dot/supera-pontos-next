@@ -1,5 +1,7 @@
 "use client";
 
+import InternalPlatformName from "@/components/InternalPlatformName";
+
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { useRouter } from "next/navigation";
 import { contrastText } from "@/lib/tenant-branding";
@@ -586,7 +588,7 @@ export default function DashboardPage() {
 
               <div className="min-w-0 text-left">
                 <h1 className="max-w-40 truncate text-lg font-black text-slate-800 sm:max-w-md">
-                  {branding?.displayName ?? "SUPERPONTOS"}
+                  <InternalPlatformName displayName={branding?.displayName} />
                 </h1>
 
                 <p className="text-[11px] text-slate-400 font-semibold">
@@ -2178,7 +2180,7 @@ export default function DashboardPage() {
             <BookOpen size={15} />
 
             <span className="text-xs font-bold">
-              {branding?.displayName ?? "SUPERPONTOS"}
+              <InternalPlatformName displayName={branding?.displayName} />
             </span>
 
           </div>

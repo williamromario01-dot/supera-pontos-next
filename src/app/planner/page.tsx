@@ -1,5 +1,7 @@
 "use client";
 
+import InternalPlatformName from "@/components/InternalPlatformName";
+
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, CheckCircle2, ChevronLeft, ChevronRight, Pencil, Plus, Trash2 } from "lucide-react";
@@ -89,7 +91,7 @@ export default function PlannerPage() {
   if (!user) return <main className="p-8">Carregando...</main>;
   return <main className="min-h-screen bg-slate-50 px-4 py-6"><div className="mx-auto max-w-7xl">
     <button onClick={() => router.push("/dashboard")} className="mb-5 flex items-center gap-2 font-bold text-orange-600"><ArrowLeft size={18} />Dashboard</button>
-    <header className="flex flex-col gap-4 rounded-3xl bg-orange-500 p-6 text-white sm:flex-row sm:items-center sm:justify-between"><div><p className="text-xs font-black uppercase tracking-wider text-orange-100">SUPERPONTOS</p><h1 className="mt-1 text-3xl font-black">Agenda semanal</h1><p className="mt-2 text-sm text-orange-50">Minha agenda e compromissos da unidade no mesmo lugar.</p></div><button onClick={openNew} className="flex items-center justify-center gap-2 rounded-xl bg-white px-4 py-3 font-black text-orange-600"><Plus size={18} />{user.role === "student" ? "Novo compromisso" : "Novo evento da unidade"}</button></header>
+    <header className="flex flex-col gap-4 rounded-3xl bg-white p-6 text-slate-900 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-xs font-black uppercase tracking-wider"><InternalPlatformName /></p><h1 className="mt-1 text-3xl font-black">Agenda semanal</h1><p className="mt-2 text-sm text-slate-500">Minha agenda e compromissos da unidade no mesmo lugar.</p></div><button onClick={openNew} className="flex items-center justify-center gap-2 rounded-xl bg-white px-4 py-3 font-black text-orange-600"><Plus size={18} />{user.role === "student" ? "Novo compromisso" : "Novo evento da unidade"}</button></header>
     {(user.role === "admin" || user.role === "super_admin") && effectiveSchoolId && <section className="mt-4 rounded-2xl border bg-white p-4"><label className="text-sm font-black text-slate-700">Cor dos eventos da unidade</label><div className="mt-3 flex flex-wrap gap-2">{colorOptions.map(([key, label]) => <button type="button" key={key} disabled={savingColor} onClick={() => void saveInstitutionalColor(key)} className={`rounded-xl border-2 px-3 py-2 text-sm font-bold ${eventColors[key]} ${institutionalColorKey === key ? "ring-2 ring-slate-700 ring-offset-2" : ""}`}>{label}</button>)}</div></section>}
     {user.role === "student" && <PlannerPushSettings />}
     {error && <p className="mt-4 rounded-xl bg-red-50 p-3 text-red-700">{error}</p>}{message && <p className="mt-4 rounded-xl bg-emerald-50 p-3 text-emerald-700">{message}</p>}

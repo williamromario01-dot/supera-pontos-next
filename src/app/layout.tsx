@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import { Inter } from 'next/font/google';
 import './globals.css';
+import TenantTheme from '@/components/TenantTheme';
 import LegalFooter from '@/components/LegalFooter';
 import PwaServiceWorkerRegistration from '@/components/PwaServiceWorkerRegistration';
 
@@ -38,7 +39,7 @@ export default function RootLayout({
     <html lang="pt-BR">
       <body className={`${inter.className} bg-slate-50 text-slate-900 min-h-screen`}>
         <PwaServiceWorkerRegistration />
-        {children}
+        <TenantTheme>{children}</TenantTheme>
         <LegalFooter />
       </body>
     </html>

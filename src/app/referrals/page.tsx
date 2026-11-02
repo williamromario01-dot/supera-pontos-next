@@ -1,5 +1,7 @@
 "use client";
 
+import InternalPlatformName from "@/components/InternalPlatformName";
+
 import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -875,7 +877,7 @@ export default function ReferralsPage() {
             <UserPlus size={15} />
 
             <span className="text-xs font-bold">
-              SUPERPONTOS • Indicações
+              <InternalPlatformName /> • Indicações
             </span>
           </div>
 
