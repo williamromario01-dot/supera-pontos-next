@@ -1,3 +1,4 @@
+import { blocksExemptionBilling } from "@/lib/billing-exemption";
 import { randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import type { Collection, Document, ObjectId } from "mongodb";
@@ -158,6 +159,7 @@ export async function POST(request: NextRequest) {
       db.collection("schools").countDocuments(activeSchoolFilter(auth.companyId)),
     ]);
     if (!subscription) throw new ReactivationError("SUBSCRIPTION_NOT_FOUND", 404);
+    if (blocksExemptionBilling(subscription)) return NextResponse.json({ error: "Isenção exige fluxo próprio de reconciliação.", code: "BILLING_EXEMPTION_PROTECTED" }, { status: 409 });
     if (subscription.status === "past_due") {
       throw new ReactivationError("SUBSCRIPTION_PAST_DUE", 409);
     }
@@ -210,6 +212,7 @@ export async function POST(request: NextRequest) {
         companyId: auth.companyId,
         cancelAtPeriodEnd: true,
         cancellationEffectiveAt: { $lte: now },
+        "billingExemption.status": { $nin: ["active", "scheduled", "suspending", "pending_provider_action", "resume_pending"] },
         "quantityChange.status": { $nin: ["preparing", "pending_payment", "reconciliation_required"] },
         $or: [
           { reactivation: { $exists: false } },

@@ -363,6 +363,7 @@ export async function POST(request: NextRequest) {
       {
         _id: subscription._id,
         companyId: auth.companyId,
+        "billingExemption.status": { $nin: ["active", "scheduled", "suspending", "pending_provider_action", "resume_pending"] },
         status: "active",
         cancelAtPeriodEnd: { $ne: true },
         "cancellationOperation.status": { $nin: ["preparing", "reconciliation_required"] },

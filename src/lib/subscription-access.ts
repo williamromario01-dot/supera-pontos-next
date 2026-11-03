@@ -27,6 +27,10 @@ export function getSubscriptionAccessState(
   now = new Date(),
 ): SubscriptionAccessState {
   const billingExemption = subscription?.billingExemption ?? null;
+  if (billingExemption?.status === "resume_pending" && billingExemption.activatedAt instanceof Date) {
+    return { state: "exemption_expired", pastDueAt: null, gracePeriodEndsAt: null,
+      daysPastDue: 0, cancellationEffectiveAt: null, canPerformOperationalMutation: true, billingExemption };
+  }
   if (isBillingExemptionActive(billingExemption, now)) {
     return {
       state: "exempt",
@@ -45,7 +49,7 @@ export function getSubscriptionAccessState(
       gracePeriodEndsAt: null,
       daysPastDue: 0,
       cancellationEffectiveAt: null,
-      canPerformOperationalMutation: false,
+      canPerformOperationalMutation: true,
       billingExemption,
     };
   }
@@ -138,10 +142,22 @@ export async function getOperationalAccessForAuth(
 ): Promise<SubscriptionAccessState> {
   const companyId = await companyIdForAuth(db, auth);
   if (!companyId) return getSubscriptionAccessState(null, now);
-  const subscription = await db.collection("subscriptions").findOne(
+  let subscription: Document | null = await db.collection("subscriptions").findOne(
     { companyId },
     { sort: { createdAt: -1 } },
   );
+  const exemption = subscription?.billingExemption;
+  if (subscription && exemption && (
+    exemption.status === "scheduled" && exemption.startsAt instanceof Date && exemption.startsAt <= now ||
+    exemption.status === "active" && exemption.endsAt instanceof Date && exemption.endsAt < now ||
+    exemption.status === "resume_pending"
+  )) {
+    // Lazy reconciliation also covers access after a missed scheduled run.
+    try {
+      const { reconcileExemptionOnAccess } = await import("./billing-exemption-lifecycle");
+      subscription = await reconcileExemptionOnAccess(db, subscription, now);
+    } catch { /* Access state explicitly reports pending resumption; no silent delinquency block. */ }
+  }
   return getSubscriptionAccessState(subscription, now);
 }
 

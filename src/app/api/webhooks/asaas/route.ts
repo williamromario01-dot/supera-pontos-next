@@ -8,6 +8,7 @@ import {
 } from "@/lib/billing-events";
 import type { AsaasEnvironment } from "@/lib/asaas";
 import { billingCorrelationId } from "@/lib/billing-observability";
+import { parseExemptionWebhook, processExemptionWebhook } from "@/lib/billing-exemption-webhooks";
 
 export const dynamic = "force-dynamic";
 
@@ -63,6 +64,15 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "JSON inválido." }, { status: 400 });
   }
   const event = parseAsaasPaymentWebhookEvent(parsed);
+  const exemptionEvent = parseExemptionWebhook(parsed);
+  if (exemptionEvent) {
+    try {
+      const result = await processExemptionWebhook((await clientPromise).db(DB_NAME), exemptionEvent, providerEnvironment);
+      return NextResponse.json({ ok: true, duplicate: result === "duplicate" });
+    } catch {
+      return NextResponse.json({ error: "Reconciliação do provedor pendente." }, { status: 503 });
+    }
+  }
   if (!event) {
     return NextResponse.json({ error: "Evento não suportado." }, { status: 400 });
   }

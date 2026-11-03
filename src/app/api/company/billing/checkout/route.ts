@@ -1,3 +1,4 @@
+import { blocksExemptionBilling } from "@/lib/billing-exemption";
 import { NextRequest, NextResponse } from "next/server";
 import { authenticateRequest } from "@/lib/auth";
 import clientPromise from "@/lib/mongodb";
@@ -47,6 +48,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const checkoutDb = (await clientPromise).db(DB_NAME);
+    const protectedSubscription = await checkoutDb.collection("subscriptions").findOne({ companyId: auth.companyId }, { sort: { createdAt: -1 } });
+    if (blocksExemptionBilling(protectedSubscription)) return NextResponse.json({ error: "Checkout indisponível durante a isenção ou reconciliação.", code: "BILLING_EXEMPTION_PROTECTED" }, { status: 409 });
     // Existing handlers own idempotency, locks, reconciliation and mutation gates.
     const customerResponse = await ensureCustomer(request);
     const customerResult = await readStep(customerResponse);

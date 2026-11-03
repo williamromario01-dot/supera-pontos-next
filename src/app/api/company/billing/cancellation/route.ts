@@ -1,3 +1,4 @@
+import { blocksExemptionBilling } from "@/lib/billing-exemption";
 import { randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import type { Collection, Document, ObjectId } from "mongodb";
@@ -161,6 +162,7 @@ export async function POST(request: NextRequest) {
       { companyId: auth.companyId },
       { sort: { createdAt: -1 } },
     );
+    if (blocksExemptionBilling(subscription)) return NextResponse.json({ code: "BILLING_EXEMPTION_PROTECTED" }, { status: 409 });
     if (!subscription) throw new CancellationError("SUBSCRIPTION_NOT_FOUND", 404);
     if (subscription.status === "past_due") {
       throw new CancellationError("SUBSCRIPTION_PAST_DUE", 409);
@@ -198,6 +200,7 @@ export async function POST(request: NextRequest) {
         _id: subscription._id,
         companyId: auth.companyId,
         status: "active",
+        "billingExemption.status": { $nin: ["active", "scheduled", "suspending", "pending_provider_action", "resume_pending"] },
         cancelAtPeriodEnd: { $ne: true },
         "quantityChange.status": { $nin: [...OPEN_QUANTITY_CHANGE_STATUSES] },
         $or: [
@@ -342,6 +345,7 @@ export async function DELETE(request: NextRequest) {
       { companyId: auth.companyId },
       { sort: { createdAt: -1 } },
     );
+    if (blocksExemptionBilling(subscription)) return NextResponse.json({ code: "BILLING_EXEMPTION_PROTECTED" }, { status: 409 });
     if (!subscription) throw new CancellationError("SUBSCRIPTION_NOT_FOUND", 404);
     if (subscription.cancelAtPeriodEnd !== true) {
       return NextResponse.json({
@@ -371,6 +375,7 @@ export async function DELETE(request: NextRequest) {
         companyId: auth.companyId,
         cancelAtPeriodEnd: true,
         cancellationEffectiveAt: { $gt: revertedAt },
+        "billingExemption.status": { $nin: ["active", "scheduled", "suspending", "pending_provider_action", "resume_pending"] },
         $or: [
           { cancellationOperation: { $exists: false } },
           { "cancellationOperation.status": "failed" },

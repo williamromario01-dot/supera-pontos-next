@@ -20,7 +20,8 @@ import { getAsaasEnvironment } from "@/lib/asaas";
 import { getBillingProviderLink } from "@/lib/billing-provider-links";
 import { billingCorrelationId } from "@/lib/billing-observability";
 import { reconcileExistingBillingCheckout } from "@/lib/billing-checkout-reconciliation";
-import { normalizeBillingExemption } from "@/lib/billing-exemption";
+import { normalizeBillingExemption, blocksExemptionBilling } from "@/lib/billing-exemption";
+import { reconcileExemptionOnAccess } from "@/lib/billing-exemption-lifecycle";
 
 export const dynamic = "force-dynamic";
 
@@ -59,7 +60,7 @@ export async function GET(request: NextRequest) {
 
     const client = await clientPromise;
     const db = client.db(DB_NAME);
-    const [company, subscription, activeUnits, archivedUnits] = await Promise.all([
+    const [company, initialSubscription, activeUnits, archivedUnits] = await Promise.all([
       db.collection("companies").findOne({ _id: auth.companyId }),
       db.collection("subscriptions").findOne(
         { companyId: auth.companyId },
@@ -71,6 +72,7 @@ export async function GET(request: NextRequest) {
         status: "archived",
       }),
     ]);
+    const subscription = initialSubscription ? await reconcileExemptionOnAccess(db, initialSubscription) : null;
     if (!company) {
       return NextResponse.json({ error: "Empresa não encontrada." }, { status: 404 });
     }
@@ -180,10 +182,13 @@ export async function GET(request: NextRequest) {
     }
     if (access.state === "exemption_expired") {
       checkout = {
-        state: "not_started",
-        canStart: true,
-        message: "A isenção terminou. Gere a próxima cobrança para retomar a assinatura.",
+        state: "reconciliation_required",
+        canStart: false,
+        message: "Isenção encerrada; retomada em reconciliação. O acesso operacional está preservado.",
       };
+    }
+    if (blocksExemptionBilling(subscription) && access.state !== "exempt" && access.state !== "exemption_expired") {
+      checkout = { state: "reconciliation_required", canStart: false, message: "Isenção agendada ou pendente de reconciliação. Checkout protegido." };
     }
     let remote: Record<string, unknown> = {
       available: false,
@@ -194,7 +199,7 @@ export async function GET(request: NextRequest) {
       pendingPayment: null,
       payments: [],
     };
-    if (access.state !== "exempt" && link?.providerSubscriptionId && link.providerCustomerId) try {
+    if (!blocksExemptionBilling(subscription) && link?.providerSubscriptionId && link.providerCustomerId) try {
       if (
         !link || typeof link.providerSubscriptionId !== "string" ||
         typeof link.providerCustomerId !== "string"
@@ -287,7 +292,7 @@ export async function GET(request: NextRequest) {
         statusLabel: access.state === "exempt"
           ? "Mensalidade isenta"
           : access.state === "exemption_expired"
-            ? "Isenção encerrada — cobrança pendente"
+            ? "Retomada em reconciliação — acesso preservado"
           : reactivationOpen
           ? "Reativação aguardando pagamento"
           : cancellation.state === "cancelled"
@@ -305,6 +310,7 @@ export async function GET(request: NextRequest) {
           : 0,
         pricePerUnitCents: pricing?.pricePerUnitCents ?? 0,
         totalMonthlyValueCents: pricing?.totalMonthlyCents ?? 0,
+        effectiveMonthlyValueCents: access.state === "exempt" ? 0 : pricing?.totalMonthlyCents ?? 0,
         billingInterval: pricing?.billingInterval ?? "monthly",
       },
       cancellation: {

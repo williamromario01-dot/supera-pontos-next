@@ -25,7 +25,7 @@ test("period, month and indefinite exemptions resolve without fake payments", ()
   }, new Date("2030-01-01T00:00:00.000Z")), true);
 });
 
-test("active exemption overrides delinquency and expiry blocks until billing resumes", () => {
+test("active exemption overrides delinquency and expiry explicitly awaits billing resumption without blocking", () => {
   const subscription = {
     status: "past_due",
     pastDueAt: new Date("2026-01-01T00:00:00.000Z"),
@@ -41,7 +41,7 @@ test("active exemption overrides delinquency and expiry blocks until billing res
   assert.equal(exempt.canPerformOperationalMutation, true);
   const expired = getSubscriptionAccessState(subscription, new Date("2026-02-01T00:00:00.000Z"));
   assert.equal(expired.state, "exemption_expired");
-  assert.equal(expired.canPerformOperationalMutation, false);
+  assert.equal(expired.canPerformOperationalMutation, true);
 });
 
 test("existing subscription or pending charge requires provider action", () => {
@@ -55,15 +55,15 @@ test("existing subscription or pending charge requires provider action", () => {
   assert.equal(exemptionProviderAction({ providerPaymentId: "pay_1" }).reason, "pending_payment");
 });
 
-test("admin exemption API is super-admin-only, audited and never mutates Asaas", async () => {
+test("admin exemption API is super-admin-only and delegates audited provider orchestration", async () => {
   const source = await read("src/app/api/admin/companies/[id]/billing-exemption/route.ts");
+  const lifecycle = await read("src/lib/billing-exemption-lifecycle.ts");
   assert.match(source, /auth\.role !== "super_admin"/);
   assert.match(source, /body as Record<string, unknown>/);
   assert.match(source, /item\.confirm !== true/);
-  assert.match(source, /billingExemptionAudits/);
-  assert.match(source, /previous,/);
-  assert.match(source, /next,/);
-  assert.match(source, /pending_provider_action/);
+  assert.match(source, /runExemption/);
+  assert.match(lifecycle, /billingExemptionAudits/);
+  assert.match(lifecycle, /pending_provider_action/);
   assert.doesNotMatch(source, /billingEvents/);
   assert.doesNotMatch(source, /PAYMENT_(RECEIVED|CONFIRMED)/);
   assert.doesNotMatch(source, /createAsaas|updateAsaas|deleteAsaas|fetch\(/);

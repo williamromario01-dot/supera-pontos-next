@@ -207,7 +207,7 @@ test("integration uses read-only Asaas calls, Production-scoped links, safe logs
   assert.match(adapter, /safeDetails/);
   assert.doesNotMatch(adapter, /apiKey|access_token|Authorization|encodedImage|payload/);
   assert.match(provider, /`\/subscriptions\/\$\{encodeURIComponent\(subscriptionId\)\}\/payments`/);
-  assert.doesNotMatch(provider, /\/payments\?limit=/);
+  assert.doesNotMatch(provider, /requestAsaas\([`"]\/payments\?/);
   assert.match(summary, /reconcileExistingBillingCheckout/);
   assert.match(subscriptionRoute, /billingSubscription\.providerSubscriptionId/);
   assert.match(pixRoute, /paymentId === link\.providerPaymentId/);

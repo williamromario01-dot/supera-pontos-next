@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { ObjectId } from "mongodb";
+import { ObjectId, type Document } from "mongodb";
 import clientPromise from "@/lib/mongodb";
 import { authenticateRequest } from "@/lib/auth";
 import { DB_NAME } from "@/lib/saas";
@@ -20,10 +20,14 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
     db.collection("schools").find({ companyId }, { projection: { name: 1, active: 1, createdAt: 1 } }).toArray(),
     db.collection("users").find({ companyId }, { projection: { name: 1, email: 1, role: 1, schoolId: 1, active: 1, createdAt: 1 } }).limit(500).toArray(),
     db.collection("billingEvents").find({ companyId }, { projection: { eventType: 1, providerEventId: 1, processedAt: 1, createdAt: 1 } }).sort({ createdAt: -1 }).limit(100).toArray(),
-    db.collection("billingExemptionAudits").find({ companyId }, { projection: { action: 1, superAdminId: 1, occurredAt: 1, reason: 1, previous: 1, next: 1 } }).sort({ occurredAt: -1 }).limit(100).toArray(),
+    db.collection("billingExemptionAudits").find({ companyId }, { projection: { action: 1, superAdminId: 1, occurredAt: 1, reason: 1, previous: 1, next: 1, code: 1, providerState: 1, units: 1, policy: 1, startsAt: 1, endsAt: 1, type: 1, previousStatus: 1, previousExemptionStatus: 1 } }).sort({ occurredAt: -1 }).limit(100).toArray(),
     db.collection("privacyRequests").find({ companyId }, { projection: { type: 1, status: 1, createdAt: 1 } }).sort({ createdAt: -1 }).limit(100).toArray(),
   ]);
   if (!company) return NextResponse.json({ error: "Empresa não encontrada." }, { status: 404 });
-  const safeSubscription = subscription ? { ...subscription, providerCustomerId: mask(subscription.providerCustomerId), providerSubscriptionId: mask(subscription.providerSubscriptionId) } : null;
+  const safeSubscription: Document | null = subscription ? { ...subscription, providerCustomerId: mask(subscription.providerCustomerId), providerSubscriptionId: mask(subscription.providerSubscriptionId) } : null;
+  if (safeSubscription?.billingExemption) {
+    safeSubscription.billingExemption = { ...safeSubscription.billingExemption };
+    delete safeSubscription.billingExemption.leaseToken;
+  }
   return NextResponse.json({ company, subscription: safeSubscription, schools, users, billingEvents: billingEvents.map((item) => ({ ...item, providerEventId: mask(item.providerEventId) })), exemptionAudits, privacyRequests });
 }

@@ -1,28 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
-import { ObjectId, type Document } from "mongodb";
+import { ObjectId } from "mongodb";
 import { authenticateRequest } from "@/lib/auth";
 import clientPromise from "@/lib/mongodb";
 import { DB_NAME } from "@/lib/saas";
 import {
   ALLOWED_EXEMPTION_MONTHS,
   calculateMonthsEnd,
-  exemptionProviderAction,
-  isBillingExemptionActive,
-  normalizeBillingExemption,
   parseDateOnly,
   type BillingExemptionType,
 } from "@/lib/billing-exemption";
-import { getAsaasEnvironment } from "@/lib/asaas";
-import { getBillingProviderLink } from "@/lib/billing-provider-links";
+import { ExemptionError, inspectExemptionProvider, parseExemptionDecision, runExemption } from "@/lib/billing-exemption-lifecycle";
 
 type Context = { params: Promise<{ id: string }> };
-
-function publicSnapshot(subscription: Document | null) {
-  return {
-    subscriptionStatus: subscription?.status ?? null,
-    billingExemption: subscription?.billingExemption ?? null,
-  };
-}
 
 async function authorize(request: NextRequest, id: string) {
   const result = await authenticateRequest(request);
@@ -86,8 +75,10 @@ async function upsertExemption(request: NextRequest, context: Context) {
     return NextResponse.json({ error: "JSON inválido." }, { status: 400 });
   }
   const now = new Date();
-  const grant = parseGrant(body, now);
-  if (!grant) {
+  const item = body && typeof body === "object" ? body as Record<string, unknown> : {};
+  const reconcile = item.action === "reconcile" && item.confirm === true;
+  const grant = reconcile ? undefined : parseGrant(body, now);
+  if (!grant && !reconcile) {
     return NextResponse.json(
       { error: "Dados inválidos ou confirmação explícita ausente." },
       { status: 400 },
@@ -105,160 +96,42 @@ async function upsertExemption(request: NextRequest, context: Context) {
   if (!company) return NextResponse.json({ error: "Empresa não encontrada." }, { status: 404 });
   if (!subscription) return NextResponse.json({ error: "Assinatura local não encontrada." }, { status: 409 });
 
-  const providerLink = await getBillingProviderLink(db, subscription, getAsaasEnvironment());
-  const previous = publicSnapshot(subscription);
-  const existing = normalizeBillingExemption(subscription.billingExemption);
-  const providerAction = exemptionProviderAction({
-    ...subscription,
-    providerSubscriptionId: providerLink?.providerSubscriptionId ?? subscription.providerSubscriptionId,
-    providerPaymentId: providerLink?.providerPaymentId ?? subscription.providerPaymentId,
-  });
-  const exemption = {
-    status: providerAction.required ? "pending_provider_action" : grant.initialStatus,
-    type: grant.type,
-    startsAt: grant.startsAt,
-    endsAt: grant.endsAt,
-    months: grant.months,
-    reason: grant.reason,
-    grantedBy: existing?.grantedBy ?? authorization.auth.userId,
-    grantedAt: existing?.grantedAt ?? now,
-    updatedAt: now,
-    providerAction,
-    previousCompanyStatus: existing
-      ? subscription.billingExemption?.previousCompanyStatus
-      : company.status,
-    previousSubscriptionStatus: existing
-      ? subscription.billingExemption?.previousSubscriptionStatus
-      : subscription.status,
-  };
-  const next = {
-    subscriptionStatus: providerAction.required || grant.initialStatus === "scheduled"
-      ? subscription.status
-      : "active",
-    billingExemption: exemption,
-  };
-
-  const session = client.startSession();
   try {
-    await session.withTransaction(async () => {
-      await db.collection("subscriptions").updateOne(
-        { _id: subscription._id, companyId: authorization.companyId },
-        {
-          $set: {
-            billingExemption: exemption,
-            ...(providerAction.required || grant.initialStatus === "scheduled"
-              ? {}
-              : { status: "active" }),
-            updatedAt: now,
-          },
-        },
-        { session },
-      );
-      if (!providerAction.required && grant.initialStatus === "active") {
-        await db.collection("companies").updateOne(
-          { _id: authorization.companyId },
-          { $set: { status: "active", updatedAt: now } },
-          { session },
-        );
-      }
-      await db.collection("billingExemptionAudits").insertOne({
-        action: existing ? "updated" : "granted",
-        companyId: authorization.companyId,
-        subscriptionId: subscription._id,
-        superAdminId: authorization.auth.userId,
-        occurredAt: now,
-        reason: grant.reason,
-        previous,
-        next,
-      }, { session });
-    });
-  } finally {
-    await session.endSession();
-  }
-  return NextResponse.json({
-    exemption,
-    activeLocally: !providerAction.required && grant.initialStatus === "active",
-    providerActionRequired: providerAction.required,
-    message: providerAction.required
-      ? "A isenção foi registrada e aguarda tratamento seguro da assinatura/cobrança existente no Asaas. Nenhuma mutação remota foi executada."
-      : "Isenção de mensalidade registrada.",
-  }, { status: providerAction.required ? 202 : 200 });
+    const decision = item.decision === undefined ? undefined : parseExemptionDecision(item.decision);
+    if (decision === null) return NextResponse.json({ error: "Política de cobranças inválida." }, { status: 400 });
+    const result = await runExemption(db, subscription, authorization.auth.userId, { grant: grant ?? undefined, decision, reconcile });
+    return NextResponse.json({ ...result, message: `Estado da isenção: ${result.status}.` });
+  } catch (error) { return failure(error); }
 }
 
 export const POST = upsertExemption;
 export const PATCH = upsertExemption;
 
+function failure(error: unknown) {
+  return NextResponse.json({ error: "Operação não concluída. Revise a situação do provedor.", code: error instanceof ExemptionError ? error.code : "EXEMPTION_RECONCILIATION_REQUIRED" }, { status: error instanceof ExemptionError ? error.status : 503 });
+}
+
+export async function GET(request: NextRequest, context: Context) {
+  const authorization = await authorize(request, (await context.params).id);
+  if ("response" in authorization) return authorization.response;
+  const db = (await clientPromise).db(DB_NAME);
+  const subscription = await db.collection("subscriptions").findOne({ companyId: authorization.companyId }, { sort: { createdAt: -1 } });
+  if (!subscription) return NextResponse.json({ error: "Assinatura local não encontrada." }, { status: 404 });
+  try { return NextResponse.json(await inspectExemptionProvider(db, subscription)); } catch (error) { return failure(error); }
+}
+
 export async function DELETE(request: NextRequest, context: Context) {
-  const { id } = await context.params;
-  const authorization = await authorize(request, id);
+  const authorization = await authorize(request, (await context.params).id);
   if ("response" in authorization) return authorization.response;
   let body: unknown;
-  try {
-    body = await request.json();
-  } catch {
-    return NextResponse.json({ error: "JSON inválido." }, { status: 400 });
-  }
+  try { body = await request.json(); } catch { return NextResponse.json({ error: "JSON inválido." }, { status: 400 }); }
   const item = body && typeof body === "object" ? body as Record<string, unknown> : {};
-  const reason = typeof item.reason === "string" ? item.reason.trim() : "";
-  if (item.confirm !== true || reason.length < 3 || reason.length > 500) {
-    return NextResponse.json(
-      { error: "Motivo e confirmação explícita são obrigatórios." },
-      { status: 400 },
-    );
-  }
-  const client = await clientPromise;
-  const db = client.db(DB_NAME);
-  const subscription = await db.collection("subscriptions").findOne(
-    { companyId: authorization.companyId },
-    { sort: { createdAt: -1 } },
-  );
-  const current = normalizeBillingExemption(subscription?.billingExemption);
-  if (!subscription || !current || current.status === "ended") {
-    return NextResponse.json({ error: "Não há isenção vigente para encerrar." }, { status: 409 });
-  }
-  const now = new Date();
-  const wasLocallyActive = isBillingExemptionActive(current, now);
-  const ended = {
-    ...subscription.billingExemption,
-    status: "ended",
-    endedAt: now,
-    endedBy: authorization.auth.userId,
-    endReason: reason,
-    updatedAt: now,
-  };
-  const nextStatus = wasLocallyActive ? "pending" : subscription.status;
-  const session = client.startSession();
+  if (item.confirm !== true || typeof item.reason !== "string" || item.reason.trim().length < 3 || item.reason.length > 500) return NextResponse.json({ error: "Motivo e confirmação obrigatórios." }, { status: 400 });
+  const db = (await clientPromise).db(DB_NAME);
+  const subscription = await db.collection("subscriptions").findOne({ companyId: authorization.companyId }, { sort: { createdAt: -1 } });
+  if (!subscription) return NextResponse.json({ error: "Assinatura local não encontrada." }, { status: 404 });
   try {
-    await session.withTransaction(async () => {
-      await db.collection("subscriptions").updateOne(
-        { _id: subscription._id, companyId: authorization.companyId },
-        { $set: { billingExemption: ended, status: nextStatus, updatedAt: now } },
-        { session },
-      );
-      if (wasLocallyActive) {
-        await db.collection("companies").updateOne(
-          { _id: authorization.companyId },
-          { $set: { status: "pending_payment", updatedAt: now } },
-          { session },
-        );
-      }
-      await db.collection("billingExemptionAudits").insertOne({
-        action: "ended",
-        companyId: authorization.companyId,
-        subscriptionId: subscription._id,
-        superAdminId: authorization.auth.userId,
-        occurredAt: now,
-        reason,
-        previous: publicSnapshot(subscription),
-        next: { subscriptionStatus: nextStatus, billingExemption: ended },
-      }, { session });
-    });
-  } finally {
-    await session.endSession();
-  }
-  return NextResponse.json({
-    exemption: ended,
-    billingResumeRequired: wasLocallyActive,
-    message: "Isenção encerrada. Nenhum pagamento foi criado ou marcado como recebido.",
-  });
+    const result = await runExemption(db, subscription, authorization.auth.userId, { endReason: item.reason });
+    return NextResponse.json({ ...result, message: "Isenção encerrada; retomada verificada sem cobrança retroativa." });
+  } catch (error) { return failure(error); }
 }

@@ -100,7 +100,10 @@ async function processInTransaction(
   const subscriptions = db.collection("subscriptions");
   const link = await db.collection("billingProviderLinks").findOne({
     provider: "asaas", environment: providerEnvironment,
-    $or: [{ providerPaymentId: event.payment.id }, { quantityChangePaymentId: event.payment.id }, { reactivationPaymentId: event.payment.id }],
+    $or: [{ providerPaymentId: event.payment.id }, { quantityChangePaymentId: event.payment.id }, { reactivationPaymentId: event.payment.id },
+      ...(event.payment.subscription && event.payment.customer
+        ? [{ providerSubscriptionId: event.payment.subscription, providerCustomerId: event.payment.customer }] : []),
+    ],
   }, { session });
   const subscription = link
     ? await subscriptions.findOne({ _id: link.internalSubscriptionId }, { session })
@@ -112,6 +115,7 @@ async function processInTransaction(
       ] }, { session })
       : null;
   if (!subscription) throw new Error("PAYMENT_NOT_LINKED");
+  if (link && String(link.companyId) !== String(subscription.companyId)) throw new Error("PAYMENT_LINK_CONFLICT");
   const providerCustomerId = link?.providerCustomerId ?? subscription.providerCustomerId;
   const providerSubscriptionId = link?.providerSubscriptionId ?? subscription.providerSubscriptionId;
   const quantityPaymentId = link?.quantityChangePaymentId ?? subscription.quantityChange?.providerPaymentId;
@@ -158,10 +162,11 @@ async function processInTransaction(
           : subscription.requestedMaxUnits,
   );
   if (!pricing) throw new Error("SUBSCRIPTION_DATA_INVALID");
+  const preservedValue = subscription.billingExemption?.preservedPaymentValues?.[event.payment.id];
   if (
     !quantityPayment && !reactivationPayment &&
     (typeof event.payment.value !== "number" ||
-      Math.round(event.payment.value * 100) !== pricing.totalMonthlyCents)
+      Math.round(event.payment.value * 100) !== (typeof preservedValue === "number" ? preservedValue : pricing.totalMonthlyCents))
   ) throw new Error("PAYMENT_VALUE_CONFLICT");
 
   const confirmsPayment = event.event === "PAYMENT_CONFIRMED" ||
@@ -204,7 +209,9 @@ async function processInTransaction(
     : reactivationPayment
       ? subscription.reactivation?.providerPaymentLastEvent
       : subscription.providerPaymentLastEvent;
-  const staleOverdue = event.event === "PAYMENT_OVERDUE" &&
+  const samePayment = quantityPayment || reactivationPayment ||
+    (subscription.providerPaymentLastEventPaymentId ?? link?.providerPaymentId ?? subscription.providerPaymentId) === event.payment.id;
+  const staleOverdue = samePayment && event.event === "PAYMENT_OVERDUE" &&
     (priorEvent === "PAYMENT_CONFIRMED" || priorEvent === "PAYMENT_RECEIVED");
   if (quantityPayment) {
     subscriptionSet["quantityChange.providerPaymentStatus"] =
@@ -216,6 +223,7 @@ async function processInTransaction(
     subscriptionSet["reactivation.providerPaymentLastEvent"] = event.event;
     subscriptionSet["reactivation.providerPaymentUpdatedAt"] = now;
   } else {
+    subscriptionSet.providerPaymentLastEventPaymentId = event.payment.id;
     subscriptionSet.providerPaymentStatus = event.payment.status ?? event.event;
     subscriptionSet.providerPaymentLastEvent = event.event;
     subscriptionSet.providerPaymentUpdatedAt = now;
@@ -313,8 +321,15 @@ async function processInTransaction(
       subscriptionSet["quantityChange.updatedAt"] = now;
     }
   }
+  const exemptionProtected = ["active", "suspending", "resume_pending"].includes(subscription.billingExemption?.status);
+  if (exemptionProtected) {
+    // Record actual payment outcomes without undoing exempt capacity or saga state.
+    for (const key of Object.keys(subscriptionSet)) {
+      if (!key.startsWith("providerPayment") && key !== "updatedAt") delete subscriptionSet[key];
+    }
+  }
   const subscriptionUpdate: Record<string, unknown> = { $set: subscriptionSet };
-  if (confirmsPayment && !quantityPayment && subscription.status === "past_due") {
+  if (!exemptionProtected && confirmsPayment && !quantityPayment && subscription.status === "past_due") {
     subscriptionSet.lastPastDueAt = subscription.pastDueAt ?? now;
     subscriptionSet.lastReactivatedAt = now;
     subscriptionUpdate.$unset = { pastDueAt: "", gracePeriodEndsAt: "" };
@@ -325,7 +340,7 @@ async function processInTransaction(
     { session },
   );
 
-  if (confirmsPayment) {
+  if (confirmsPayment && !exemptionProtected) {
     const usedUnits = activeUnitsForCompletion ??
       await db.collection("schools").countDocuments(
         activeSchoolFilter(subscription.companyId as ObjectId),

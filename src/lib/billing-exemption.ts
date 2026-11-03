@@ -5,6 +5,8 @@ export type BillingExemptionStatus =
   | "active"
   | "scheduled"
   | "pending_provider_action"
+  | "suspending"
+  | "resume_pending"
   | "ended";
 
 export type BillingExemption = {
@@ -67,7 +69,7 @@ export function normalizeBillingExemption(value: unknown): BillingExemption | nu
   if (
     !startsAt ||
     !["period", "months", "indefinite"].includes(String(item.type)) ||
-    !["active", "scheduled", "pending_provider_action", "ended"].includes(String(item.status))
+    !["active", "scheduled", "pending_provider_action", "suspending", "resume_pending", "ended"].includes(String(item.status))
   ) return null;
   return {
     ...(item as BillingExemption),
@@ -81,7 +83,7 @@ export function isBillingExemptionActive(
   now = new Date(),
 ): boolean {
   const exemption = normalizeBillingExemption(value);
-  if (!exemption || exemption.status === "ended" || exemption.status === "pending_provider_action") {
+  if (!exemption || exemption.status !== "active") {
     return false;
   }
   return now >= exemption.startsAt && (!exemption.endsAt || now <= exemption.endsAt);
@@ -94,8 +96,7 @@ export function isBillingExemptionExpired(
   const exemption = normalizeBillingExemption(value);
   return Boolean(
     exemption &&
-    exemption.status !== "ended" &&
-    exemption.status !== "pending_provider_action" &&
+    exemption.status === "active" &&
     exemption.endsAt &&
     now > exemption.endsAt,
   );
@@ -132,4 +133,10 @@ export function daysUntilExemptionEnd(value: unknown, now = new Date()): number 
   return exemption?.endsAt
     ? Math.max(0, Math.ceil((exemption.endsAt.getTime() - now.getTime()) / DAY_MS))
     : null;
+}
+
+/** Block even uncertain financial operations, not only exemptions displayed as active. */
+export function blocksExemptionBilling(subscription: Document | null): boolean {
+  const value = subscription?.billingExemption;
+  return Boolean(value && value.status !== "ended");
 }

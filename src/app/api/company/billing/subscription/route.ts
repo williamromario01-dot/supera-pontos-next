@@ -1,3 +1,4 @@
+import { blocksExemptionBilling } from "@/lib/billing-exemption";
 import { randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import type { Collection, Db, Document, ObjectId } from "mongodb";
@@ -185,6 +186,7 @@ export async function POST(request: NextRequest) {
       { sort: { createdAt: -1 } },
     );
     if (!subscription) throw new BillingSubscriptionError("SUBSCRIPTION_NOT_FOUND");
+    if (blocksExemptionBilling(subscription)) return NextResponse.json({ error: "Isenção exige fluxo próprio de reconciliação.", code: "BILLING_EXEMPTION_PROTECTED" }, { status: 409 });
     const providerLink = await getBillingProviderLink(db, subscription, environment);
     const billingSubscription = providerLink
       ? {
@@ -212,6 +214,7 @@ export async function POST(request: NextRequest) {
     const lockResult = await subscriptions.updateOne(
       {
         _id: subscriptionId,
+        "billingExemption.status": { $nin: ["active", "scheduled", "suspending", "pending_provider_action", "resume_pending"] },
         $or: [
           { "providerSubscriptionLinkLock.expiresAt": { $lt: now } },
           { providerSubscriptionLinkLock: { $exists: false } },

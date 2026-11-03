@@ -32,6 +32,7 @@ export interface CreateAsaasSubscriptionInput {
 }
 
 export interface AsaasPayment {
+  deleted?: boolean;
   id: string;
   customer?: string;
   subscription?: string;
@@ -284,6 +285,7 @@ function parsePayment(value: unknown): AsaasPayment | null {
   return {
     id: item.id,
     customer: typeof item.customer === "string" ? item.customer : undefined,
+    deleted: item.deleted === true,
     subscription: typeof item.subscription === "string" ? item.subscription : undefined,
     billingType: item.billingType,
     status: item.status,
@@ -323,6 +325,34 @@ export async function listAsaasSubscriptionPayments(
     throw new AsaasCustomerRequestError("ASAAS_INVALID_RESPONSE", 200, true);
   }
   return data.map(parsePayment).filter((item): item is AsaasPayment => item !== null);
+}
+
+// Financial exemption operations deliberately preserve the subscription identity.
+export async function suspendAsaasSubscription(id: string): Promise<void> {
+  await requestAsaas(`/subscriptions/${encodeURIComponent(id)}`, {
+    method: "PUT", body: JSON.stringify({ status: "INACTIVE", updatePendingPayments: false }),
+  });
+}
+
+export async function removeAsaasExemptedPayment(id: string): Promise<void> {
+  await requestAsaas(`/payments/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+export async function listAllAsaasSubscriptionPayments(id: string): Promise<AsaasPayment[]> {
+  const result: AsaasPayment[] = [];
+  for (let offset = 0; offset < 100_000; offset += 100) {
+    const raw = await requestAsaas(`/subscriptions/${encodeURIComponent(id)}/payments?limit=100&offset=${offset}`, { method: "GET" });
+    const page = raw as { data?: unknown[]; hasMore?: boolean };
+    if (!Array.isArray(page?.data)) throw new Error("ASAAS_INVALID_RESPONSE");
+    for (const value of page.data) {
+      const payment = parsePayment(value);
+      if (!payment) throw new Error("ASAAS_INVALID_RESPONSE");
+      result.push(payment);
+    }
+    if (!page.hasMore) return result;
+    if (page.data.length !== 100) throw new Error("ASAAS_PAGINATION_INCOMPLETE");
+  }
+  throw new Error("ASAAS_PAGINATION_INCOMPLETE");
 }
 
 export async function getAsaasPaymentPixQrCode(
