@@ -1,3 +1,4 @@
+import { summarizeAttendance, type AttendanceSession } from "@/lib/attendance-core";
 import { ObjectId, type Db, type Document } from "mongodb";
 import { getCategoryScopeFilter } from "@/lib/category-scope";
 import {
@@ -50,6 +51,8 @@ function countStatuses(values: Document[], field: string) {
 }
 
 export async function buildWeeklyReportSnapshot(db: Db, schoolId: ObjectId, period: WeeklyReportPeriod, now = new Date(), generatedBy: "automatic" | "recovery" = generationMode(now)) {
+  // A ausência de pontos não é falta; apenas chamadas explícitas compõem o snapshot.
+  const attendanceSessions = await db.collection("attendanceSessions").find({ schoolId: SCHOOL_ID(schoolId), date: { $gte: period.weekStart, $lte: period.weekEnd } }).toArray();
   const previous = periodForWeekStart(addCivilDays(period.weekStart, -7));
   const school = await db.collection("schools").findOne({ _id: schoolId });
   if (!school) throw new Error("SCHOOL_NOT_FOUND");
@@ -146,7 +149,7 @@ export async function buildWeeklyReportSnapshot(db: Db, schoolId: ObjectId, peri
     salesMetrics: { available: false, reason: "O sistema não persiste vendas concluídas; o contato via WhatsApp não comprova uma venda." },
     redemptionMetrics: { available: true, count: redemptions.length, pointsSpent: redemptions.reduce((total, item) => total + Number(item.pointsSpent || 0), 0), items: redemptions.map((item) => ({ redemptionId: id(item._id), studentId: id(item.studentId), productId: id(item.productId), productName: name(item.productName, "Produto"), pointsSpent: Number(item.pointsSpent || 0), status: name(item.status, "unknown"), createdAt: item.createdAt })) },
     inventoryMetrics: { available: true, snapshotOnly: true, movementAvailable: false, lowStockAvailable: false, reason: "Não há ledger de entradas/ajustes nem limite confiável de estoque baixo.", products: inventoryProducts, outOfStockProducts: inventoryProducts.filter((product) => product.active && product.stock === 0).length },
-    attendanceMetrics: { available: false, reason: "Não existe estrutura de frequência escolar; ausência de pontos não é falta." },
+    attendanceMetrics: summarizeAttendance(attendanceSessions as unknown as AttendanceSession[]),
   };
 }
 

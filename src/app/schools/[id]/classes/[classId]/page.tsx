@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import ClassAttendance from "@/components/ClassAttendance";
+import ClassEducatorAssignment from "@/components/ClassEducatorAssignment";
+import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
   ArrowLeft,
@@ -114,64 +116,7 @@ export default function ClassManagementPage() {
   // CARREGAR TURMA
   // ============================================================
 
-  async function loadClass() {
-    try {
-      setLoading(true);
-      setClassError("");
-
-      const response = await fetch(
-        `/api/classes/${encodeURIComponent(classId)}/students`,
-        {
-          credentials: "include",
-        }
-      );
-
-      console.info("[ClassPage] students request", {
-        status: response.status,
-      });
-
-      const data = await response.json().catch(() => ({}));
-
-      if (!response.ok) {
-        throw new Error(
-          `TURMA_STUDENTS_${response.status}: ${
-            data.error || "Não foi possível carregar a turma."
-          }`
-        );
-      }
-
-      if (
-        typeof data.schoolId !== "string" ||
-        !Array.isArray(data.students) ||
-        !Array.isArray(data.availableStudents)
-      ) {
-        throw new Error(
-          "TURMA_STUDENTS_200: Resposta da turma inválida."
-        );
-      }
-
-      setClassData(data);
-      console.info("[ClassPage] resolved schoolId", {
-        schoolId: data.schoolId,
-        routeSchoolId: schoolId,
-        matchesRoute: data.schoolId === schoolId,
-      });
-      void loadCategories(data.schoolId);
-    } catch (err: any) {
-      setClassError(
-        err.message ||
-          "Erro ao carregar os dados da turma."
-      );
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  // ============================================================
-  // CARREGAR CATEGORIAS
-  // ============================================================
-
-  async function loadCategories(classSchoolId: string) {
+  const loadCategories = useCallback(async (classSchoolId: string) => {
     try {
       setLoadingCategories(true);
       setCategoriesError("");
@@ -205,16 +150,72 @@ export default function ClassManagementPage() {
           [];
 
       setCategories(categoriesList);
-    } catch (err: any) {
+    } catch (err: unknown) {
       setCategories([]);
       setCategoriesError(
-        err.message ||
+        (err instanceof Error ? err.message : "") ||
           "Não foi possível carregar as categorias para pontuação."
       );
     } finally {
       setLoadingCategories(false);
     }
-  }
+  }, []);
+
+  const loadClass = useCallback(async () => {
+    return fetch(
+      `/api/classes/${encodeURIComponent(classId)}/students`,
+      {
+        credentials: "include",
+      }
+    ).then(async (response) => {
+
+      setClassError("");
+      console.info("[ClassPage] students request", {
+        status: response.status,
+      });
+
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(
+          `TURMA_STUDENTS_${response.status}: ${
+            data.error || "Não foi possível carregar a turma."
+          }`
+        );
+      }
+
+      if (
+        typeof data.schoolId !== "string" ||
+        !Array.isArray(data.students) ||
+        !Array.isArray(data.availableStudents)
+      ) {
+        throw new Error(
+          "TURMA_STUDENTS_200: Resposta da turma inválida."
+        );
+      }
+
+      setClassData(data);
+      console.info("[ClassPage] resolved schoolId", {
+        schoolId: data.schoolId,
+        routeSchoolId: schoolId,
+        matchesRoute: data.schoolId === schoolId,
+      });
+      void loadCategories(data.schoolId);
+    }).catch((err: unknown) => {
+      setClassError(
+        (err instanceof Error ? err.message : "") ||
+          "Erro ao carregar os dados da turma."
+      );
+    }).finally(() => {
+      setLoading(false);
+    });
+  }, [classId, schoolId, loadCategories]);
+
+  // ============================================================
+  // CARREGAR CATEGORIAS
+  // ============================================================
+
+
 
   useEffect(() => {
     if (!/^[a-f\d]{24}$/i.test(classId)) {
@@ -226,8 +227,8 @@ export default function ClassManagementPage() {
       return;
     }
 
-    loadClass();
-  }, [classId, schoolId, router]);
+    void loadClass();
+  }, [classId, schoolId, router, loadClass]);
 
   // ============================================================
   // SELEÇÃO DE ALUNOS PARA ALOCAR
@@ -302,10 +303,12 @@ export default function ClassManagementPage() {
 
       setSelectedStudents([]);
 
+      setLoading(true);
+      setClassError("");
       await loadClass();
-    } catch (err: any) {
+    } catch (err: unknown) {
       setError(
-        err.message ||
+        (err instanceof Error ? err.message : "") ||
           "Erro ao alocar os alunos."
       );
     } finally {
@@ -371,10 +374,12 @@ export default function ClassManagementPage() {
         setQuickObservation("");
       }
 
+      setLoading(true);
+      setClassError("");
       await loadClass();
-    } catch (err: any) {
+    } catch (err: unknown) {
       setError(
-        err.message ||
+        (err instanceof Error ? err.message : "") ||
           "Erro ao remover o aluno."
       );
     } finally {
@@ -501,9 +506,9 @@ export default function ClassManagementPage() {
 
       // Mantém a categoria selecionada para facilitar
       // o próximo lançamento para o mesmo aluno.
-    } catch (err: any) {
+    } catch (err: unknown) {
       setError(
-        err.message ||
+        (err instanceof Error ? err.message : "") ||
           "Erro ao registrar a pontuação."
       );
     } finally {
@@ -773,6 +778,8 @@ export default function ClassManagementPage() {
             SELEÇÃO DE ALUNOS
         ====================================================== */}
 
+        <ClassEducatorAssignment classId={classId} schoolId={classData.schoolId} />
+        <ClassAttendance classId={classId} schoolId={classData.schoolId} />
         <section className="bg-white rounded-2xl border border-gray-200 shadow-sm mb-6">
 
           <div className="p-6 border-b border-gray-200">

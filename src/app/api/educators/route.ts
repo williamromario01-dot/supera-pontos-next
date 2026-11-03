@@ -103,12 +103,12 @@ export async function GET(request: NextRequest) {
       schoolId = new ObjectId(requestedSchoolId);
     }
 
-    const filter: any = {
+    const filter: Record<string, unknown> = {
       role: "educator",
     };
 
     if (schoolId) {
-      filter.schoolId = schoolId;
+      filter.schoolId = { $in: [schoolId, schoolId.toString()] };
     }
 
     const educators = await db

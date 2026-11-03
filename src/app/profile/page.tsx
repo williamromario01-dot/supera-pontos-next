@@ -1,6 +1,6 @@
 "use client";
 
-import { ChangeEvent, FormEvent, useEffect, useState } from "react";
+import { ChangeEvent, FormEvent, useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
@@ -71,15 +71,10 @@ export default function ProfilePage() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
-  useEffect(() => {
-    loadUser();
-  }, []);
-
-  async function loadUser() {
-    try {
-      const response = await fetch("/api/auth/me", {
-        cache: "no-store",
-      });
+  const loadUser = useCallback(async () => {
+    return fetch("/api/auth/me", {
+      cache: "no-store",
+    }).then(async (response) => {
 
       if (!response.ok) {
         router.push("/");
@@ -90,12 +85,16 @@ export default function ProfilePage() {
 
       setUser(data.user);
       setAvatarPreview(data.user.avatar || null);
-    } catch {
+    }).catch(() => {
       router.push("/");
-    } finally {
+    }).finally(() => {
       setLoading(false);
-    }
-  }
+    });
+  }, [router]);
+
+  useEffect(() => {
+    void loadUser();
+  }, [loadUser]);
 
   function handleAvatarChange(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];

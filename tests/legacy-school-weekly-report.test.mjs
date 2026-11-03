@@ -15,6 +15,7 @@ function matches(doc, filter) {
       if (op === "$in") return expected.some(item => matches({ value: actual }, { value: item }));
       if (op === "$ne") return actual !== expected;
       if (op === "$lt") return actual < expected;
+      if (op === "$lte") return actual <= expected;
       if (op === "$gte") return actual >= expected;
       if (op === "$gt") return actual > expected;
       throw Error(`Unexpected filter ${op}`);
@@ -32,7 +33,7 @@ function fixture() {
     users: [{ _id: studentId, role: "student", schoolId, name: "Fixture student", points: 30, createdAt: new Date("2026-09-26Z") }],
     categories: [{ _id: categoryId, schoolId, name: "Fixture category", weeklyGoal: 10, participatesInRanking: true }],
     pointEvents: [{ _id: new ObjectId(), studentId, categoryId, points: 10, createdAt: new Date("2026-10-20T15:00Z") }, { _id: new ObjectId(), studentId, categoryId, points: 20, createdAt: new Date("2026-10-28T15:00Z") }],
-    classes: [], pointStoreRedemptions: [], referrals: [], pointStoreProducts: [], productsSupera: [], weeklyReports: [],
+    attendanceSessions: [], classes: [], pointStoreRedemptions: [], referrals: [], pointStoreProducts: [], productsSupera: [], weeklyReports: [],
   };
   const db = { collection(name) {
     assert.ok(name in data, `Unexpected collection ${name}`);
@@ -76,4 +77,22 @@ test("recovery is idempotent and subsequent weekly closure includes the migrated
   const next = await f.reports.closeLatestEligibleReports(f.db, new Date("2026-11-09T16:00Z"));
   assert.equal(next.results[0].created, true); assert.equal(next.results[0].weekStart, "2026-11-02");
   assert.equal(f.data.weeklyReports.length, 2); assert.equal(JSON.stringify(f.data.weeklyReports[0]), first);
+});
+
+test("official closure snapshots attendance names/dates and never recalculates a closed report", async () => {
+  const f = fixture(); f.school.companyId = f.companyId;
+  f.data.attendanceSessions.push({ schoolId: f.schoolId, companyId: f.companyId, classId: "historical", className: "Turma histórica", date: "2026-10-28", session: "Aula 1", students: [{ studentId: "a", studentName: "Ana", present: true }, { studentId: "b", studentName: "Bia", present: false }] });
+  const protectedBefore = JSON.stringify([f.data.users, f.data.pointEvents]);
+  const now = new Date("2026-11-03T15:00Z");
+  await f.reports.closeLatestEligibleReports(f.db, now);
+  const report = f.data.weeklyReports[0];
+  assert.equal(report.attendanceMetrics.percentage, 50);
+  assert.equal(report.attendanceMetrics.absentees[0].studentName, "Bia");
+  assert.equal(report.attendanceMetrics.absentees[0].date, "2026-10-28");
+  const snapshot = JSON.stringify(report);
+  f.data.attendanceSessions[0].students = [];
+  await f.reports.closeLatestEligibleReports(f.db, now);
+  assert.equal(f.data.weeklyReports.length, 1);
+  assert.equal(JSON.stringify(f.data.weeklyReports[0]), snapshot);
+  assert.equal(JSON.stringify([f.data.users, f.data.pointEvents]), protectedBefore);
 });

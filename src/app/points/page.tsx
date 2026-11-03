@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowLeft,
@@ -127,18 +127,10 @@ function PointsPageContent() {
   // CARREGAR DADOS
   // =========================
 
-  useEffect(() => {
-    loadData();
-  }, [queryStudentId, selectedSchoolId]);
-
-  async function loadData() {
-    try {
-      setLoading(true);
-      setError("");
-
-      const initialUserResponse = await fetch("/api/auth/me", {
-        credentials: "include",
-      });
+  const loadData = useCallback(async () => {
+    return fetch("/api/auth/me", {
+      credentials: "include",
+    }).then(async (initialUserResponse) => {
       if (!initialUserResponse.ok) {
         throw new Error("Não foi possível identificar o usuário.");
       }
@@ -286,16 +278,20 @@ function PointsPageContent() {
       } else {
         setSelectedCategory(null);
       }
-    } catch (err) {
+    }).catch((err: unknown) => {
       setError(
         err instanceof Error
           ? err.message
           : "Ocorreu um erro ao carregar os dados."
       );
-    } finally {
+    }).finally(() => {
       setLoading(false);
-    }
-  }
+    });
+  }, [router, queryStudentId, selectedSchoolId]);
+
+  useEffect(() => {
+    void loadData();
+  }, [loadData]);
 
   // =========================
   // BUSCA DE ALUNOS
@@ -665,6 +661,8 @@ function PointsPageContent() {
           <select
             value={selectedSchoolId}
             onChange={(event) => {
+              setLoading(true);
+              setError("");
               setSelectedSchoolId(event.target.value);
               setSelectedStudent(null);
               setSelectedCategory(null);
@@ -925,8 +923,8 @@ function PointsPageContent() {
                     <p className="mt-2 text-xs text-orange-600">
                       Nenhuma categoria
                       cadastrada. Clique
-                      em "Adicionar
-                      categoria" para
+                      em &quot;Adicionar
+                      categoria&quot; para
                       criar uma.
                     </p>
                   )}

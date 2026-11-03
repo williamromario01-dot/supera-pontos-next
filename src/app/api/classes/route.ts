@@ -1,3 +1,4 @@
+import { canAssignEducator, eligibleEducator } from "@/lib/attendance-core";
 
 import { NextRequest, NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
@@ -242,6 +243,7 @@ export async function POST(request: NextRequest) {
     let educatorObjectId: ObjectId | null = null;
 
     if (educatorIdParam !== null) {
+      if (!canAssignEducator(auth.role)) return NextResponse.json({ error: "Sem permissão para alocar educador." }, { status: 403 });
       educatorObjectId = getSchoolObjectId(educatorIdParam);
 
       if (!educatorObjectId) {
@@ -262,40 +264,7 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      if (educator.active === false) {
-        return NextResponse.json(
-          { error: "Não é possível atribuir uma turma a um usuário inativo." },
-          { status: 400 }
-        );
-      }
-
-      if (
-        !["educator", "admin", "super_admin"].includes(
-          String(educator.role)
-        )
-      ) {
-        return NextResponse.json(
-          { error: "O responsável selecionado não possui um perfil permitido." },
-          { status: 400 }
-        );
-      }
-
-      // O responsável deve pertencer à mesma escola da turma.
-      // Essa regra também se aplica quando a operação é feita pelo super_admin.
-      const educatorSchoolId = getSchoolObjectId(educator.schoolId);
-
-      if (
-        !educatorSchoolId ||
-        !educatorSchoolId.equals(schoolObjectId)
-      ) {
-        return NextResponse.json(
-          {
-            error:
-              "O responsável deve pertencer à mesma escola da turma.",
-          },
-          { status: 403 }
-        );
-      }
+      if (!eligibleEducator(educator, schoolObjectId, school.companyId)) return NextResponse.json({ error: "Selecione um educador ativo da mesma unidade e empresa." }, { status: 403 });
     }
 
     const normalizedName = name.toLocaleLowerCase("pt-BR");

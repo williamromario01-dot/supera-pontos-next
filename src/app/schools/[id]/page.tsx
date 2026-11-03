@@ -1,5 +1,6 @@
 "use client";
 
+import ClassEducatorAssignment from "@/components/ClassEducatorAssignment";
 import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { StudentCredentialActions } from "@/components/StudentCredentialActions";
@@ -1934,19 +1935,10 @@ export default function SchoolPage() {
                           </span>
                         </div>
 
-                        <div className="flex items-center justify-between gap-3">
-                          <span className="text-sm text-slate-500">
-                            Educador
-                          </span>
 
-                          <span className="text-sm font-medium text-slate-700 text-right truncate">
-                            {classItem.educator
-                              ?.name ||
-                              "Não definido"}
-                          </span>
-                        </div>
                       </div>
 
+                      <ClassEducatorAssignment classId={getClassId(classItem)} schoolId={schoolId} />
                       <button
                         onClick={() => {
                           const resolvedClassId = getClassId(classItem);

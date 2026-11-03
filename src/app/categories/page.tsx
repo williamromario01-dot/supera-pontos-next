@@ -42,6 +42,7 @@ interface Category {
   color: string;
   weeklyGoal: number;
   defaultPoints: number;
+  isAttendance: boolean;
   participatesInRanking: boolean;
   rankable?: boolean;
   categoryType?: CategoryType;
@@ -59,6 +60,7 @@ interface CategoryForm {
   color: string;
   weeklyGoal: string;
   defaultPoints: string;
+  isAttendance: boolean;
   participatesInRanking: boolean;
   categoryType: "official" | "extra";
 }
@@ -70,12 +72,14 @@ const emptyForm: CategoryForm = {
   color: "#F97316",
   weeklyGoal: "200",
   defaultPoints: "50",
+  isAttendance: false,
   participatesInRanking: true,
   categoryType: "official",
 };
 
-function normalizeCategory(value: any): Category {
+function normalizeCategory(value: Partial<Category> & { _id?: unknown }): Category {
   return {
+    isAttendance: value.isAttendance === true,
     id: String(value.id ?? value._id ?? ""),
     name: String(value.name ?? ""),
     description: String(value.description ?? ""),
@@ -103,7 +107,14 @@ function normalizeCategory(value: any): Category {
   };
 }
 
-async function readResponse(response: Response): Promise<any> {
+type CategoryApiResponse = Partial<CurrentUser> & {
+  user?: CurrentUser;
+  categories?: Array<Partial<Category> & { _id?: unknown }>;
+  schools?: School[];
+  error?: string;
+};
+
+async function readResponse(response: Response): Promise<CategoryApiResponse> {
   const text = await response.text();
 
   if (!text) return {};
@@ -191,14 +202,11 @@ export default function CategoriesPage() {
   );
 
   const loadCategories = useCallback(async () => {
-    try {
-      setLoading(true);
+    return fetch("/api/auth/me", {
+      credentials: "include",
+      cache: "no-store",
+    }).then(async (userResponse) => {
       setError("");
-
-      const userResponse = await fetch("/api/auth/me", {
-        credentials: "include",
-        cache: "no-store",
-      });
       const initialUserData = await readResponse(userResponse);
       const initialUser = initialUserData.user ?? initialUserData;
       if (userResponse.ok && initialUser?.role === "super_admin") {
@@ -263,9 +271,8 @@ export default function CategoriesPage() {
       const rawUser = userData.user ?? userData;
 
       if (
-        !["super_admin", "admin", "educator", "student"].includes(
-          rawUser?.role
-        )
+        !rawUser?.role ||
+        !["super_admin", "admin", "educator", "student"].includes(rawUser.role)
       ) {
         setError("Não foi possível identificar seu perfil de acesso.");
         return;
@@ -290,12 +297,12 @@ export default function CategoriesPage() {
           ? categoryData.categories.map(normalizeCategory)
           : []
       );
-    } catch (err) {
+    }).catch((err: unknown) => {
       console.error("Erro ao carregar categorias:", err);
       setError("Não foi possível conectar ao servidor.");
-    } finally {
+    }).finally(() => {
       setLoading(false);
-    }
+    });
   }, [router, selectedSchoolId]);
 
   useEffect(() => {
@@ -328,6 +335,7 @@ export default function CategoriesPage() {
       color: category.color || "#F97316",
       weeklyGoal: String(category.weeklyGoal ?? 10),
       defaultPoints: String(category.defaultPoints ?? 50),
+      isAttendance: category.isAttendance,
       participatesInRanking: category.participatesInRanking,
       categoryType:
         category.categoryType === "extra" ? "extra" : "official",
@@ -411,6 +419,7 @@ export default function CategoriesPage() {
         color: form.color,
         weeklyGoal,
         defaultPoints,
+        isAttendance: form.isAttendance,
         participatesInRanking: form.participatesInRanking,
         ...(isSuperAdmin ? { schoolId: selectedSchoolId } : {}),
         ...(editingId
@@ -460,6 +469,8 @@ export default function CategoriesPage() {
           : "Categoria criada com sucesso!"
       );
 
+      setLoading(true);
+      setError("");
       await loadCategories();
 
       window.setTimeout(() => {
@@ -519,6 +530,8 @@ export default function CategoriesPage() {
       }
 
       setSuccess("Categoria excluída com sucesso!");
+      setLoading(true);
+      setError("");
       await loadCategories();
 
       window.setTimeout(() => setSuccess(""), 1500);
@@ -571,7 +584,7 @@ export default function CategoriesPage() {
             </div>
 
             <button
-              onClick={() => void loadCategories()}
+              onClick={() => { setLoading(true); setError(""); void loadCategories(); }}
               disabled={loading}
               className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 transition-colors hover:border-orange-200 hover:text-orange-600 disabled:opacity-50"
               title="Atualizar categorias"
@@ -590,6 +603,8 @@ export default function CategoriesPage() {
           <select
             value={selectedSchoolId}
             onChange={(event) => {
+              setLoading(true);
+              setError("");
               setSelectedSchoolId(event.target.value);
               setCategories([]);
               setEditingId(null);
@@ -683,6 +698,7 @@ export default function CategoriesPage() {
           </div>
         )}
 
+              <p className="mb-4 text-sm text-slate-600">Categoria de frequência: <strong>{categories.find((category) => category.isAttendance && category.active !== false)?.name || "Não configurada"}</strong></p>
         {showForm && (
           <section className="mb-6 overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-lg">
             <div className="h-1.5 bg-gradient-to-r from-orange-400 via-orange-500 to-orange-600" />
@@ -716,6 +732,7 @@ export default function CategoriesPage() {
               </div>
 
               <form onSubmit={handleSubmit} className="space-y-6">
+                {(!categories.some((category) => category.isAttendance && category.active !== false && category.id !== editingId)) && <label className="flex items-center gap-3 rounded-xl border border-orange-200 bg-orange-50 p-4"><input type="checkbox" checked={form.isAttendance} onChange={(event) => updateForm("isAttendance", event.target.checked)} />Considerar esta categoria como frequência?</label>}
                 <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
                   <div className="md:col-span-2">
                     <label className="mb-2 block text-sm font-bold text-slate-700">

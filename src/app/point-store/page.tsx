@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
   Home,
@@ -97,24 +97,25 @@ export default function PointStorePage() {
     return school?.name || "Escola";
   }
 
-  async function loadUser() {
-    const response = await fetch("/api/auth/me", {
+  const loadUser = useCallback(async () => {
+    return fetch("/api/auth/me", {
       cache: "no-store",
       credentials: "include",
+    }).then(async (response) => {
+
+      if (!response.ok) {
+        throw new Error("Não foi possível carregar o usuário.");
+      }
+
+      const data = await response.json();
+
+      setUser(data.user);
+
+      return data.user as User;
     });
+  }, []);
 
-    if (!response.ok) {
-      throw new Error("Não foi possível carregar o usuário.");
-    }
-
-    const data = await response.json();
-
-    setUser(data.user);
-
-    return data.user as User;
-  }
-
-  async function loadProducts() {
+  const loadProducts = useCallback(async () => {
     const response = await fetch("/api/point-store", {
       cache: "no-store",
       credentials: "include",
@@ -129,9 +130,9 @@ export default function PointStorePage() {
     }
 
     setProducts(Array.isArray(data) ? data : []);
-  }
+  }, []);
 
-  async function loadSchools(currentUser: User) {
+  const loadSchools = useCallback(async (currentUser: User) => {
     if (currentUser.role !== "super_admin") {
       return;
     }
@@ -154,25 +155,22 @@ export default function PointStorePage() {
       : [];
 
     setSchools(
-      list.map((school: any) => ({
+      list.map((school: { id?: string; _id?: string; name: string }) => ({
         id: school.id || school._id?.toString(),
         name: school.name,
       }))
     );
-  }
+  }, []);
 
-  async function loadPage() {
-    try {
-      setLoading(true);
+  const loadPage = useCallback(async () => {
+    return loadUser().then(async (currentUser) => {
       setError("");
-
-      const currentUser = await loadUser();
 
       await Promise.all([
         loadProducts(),
         loadSchools(currentUser),
       ]);
-    } catch (err) {
+    }).catch((err: unknown) => {
       console.error(err);
 
       setError(
@@ -180,14 +178,14 @@ export default function PointStorePage() {
           ? err.message
           : "Erro ao carregar a Loja de Pontos."
       );
-    } finally {
+    }).finally(() => {
       setLoading(false);
-    }
-  }
+    });
+  }, [loadUser, loadProducts, loadSchools]);
 
   useEffect(() => {
-    loadPage();
-  }, []);
+    void loadPage();
+  }, [loadPage]);
 
   function resetForm() {
     setForm({
@@ -707,7 +705,7 @@ export default function PointStorePage() {
         `https://wa.me/${whatsappNumber}` +
         `?text=${encodeURIComponent(whatsappMessage)}`;
 
-      window.location.href = whatsappUrl;
+      window.location.assign(whatsappUrl);
     } catch (err) {
       console.error(
         "Erro ao realizar troca:",

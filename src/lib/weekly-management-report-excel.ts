@@ -273,7 +273,15 @@ export async function generateWeeklyManagementReportExcel(input: { report: Weekl
   workbook.calcProperties.fullCalcOnLoad = false;
   addExecutiveSummary(workbook, report, previous);
   addDetailSheets(workbook, report);
-  addUnavailableSheet(workbook, "Frequência", report, ["Os dados de presença e faltas ainda não estão disponíveis nesta versão do SUPERPONTOS.", "Esta ausência de informação não representa zero faltas ou 100% de presença."]);
+  if (report.attendanceMetrics.available) {
+    const attendance = workbook.addWorksheet("Frequência");
+    attendance.addRow(["SUPERPONTOS", report.schoolName, report.weekStart, report.weekEnd]);
+    attendance.addRow(["Chamadas", "Presenças", "Faltas", "Frequência (%)"]);
+    attendance.addRow([report.attendanceMetrics.totalSessions, report.attendanceMetrics.presences, report.attendanceMetrics.absences, report.attendanceMetrics.percentage ?? null]);
+    attendance.addRow(["Turma", "Aluno faltante", "Data", "Sessão"]);
+    for (const item of report.attendanceMetrics.absentees || []) attendance.addRow([item.className, item.studentName, item.date, item.session]);
+    attendance.columns.forEach((column) => { column.width = 30; });
+  } else addUnavailableSheet(workbook, "Frequência", report, ["Sem registros de frequência no período", "Esta ausência de informação não representa zero faltas ou 100% de presença."]);
   addUnavailableSheet(workbook, "Vendas", report, ["Os dados históricos de vendas ainda não estão disponíveis nesta versão do SUPERPONTOS.", "A ausência de estrutura histórica não representa ausência de vendas."]);
   return Buffer.from(await workbook.xlsx.writeBuffer());
 }

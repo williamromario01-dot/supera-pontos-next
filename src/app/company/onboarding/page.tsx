@@ -27,11 +27,12 @@ export default function CompanyOnboardingPage() {
   const [admin, setAdmin] = useState({ name: "", email: "", password: "" });
 
   const load = useCallback(async () => {
-    setError("");
-    const response = await fetch("/api/company/onboarding", { cache: "no-store" });
-    const body = await response.json();
-    if (!response.ok) throw new Error(body.error ?? "Não foi possível carregar a configuração inicial.");
-    setData(body);
+    return fetch("/api/company/onboarding", { cache: "no-store" }).then(async (response) => {
+      setError("");
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error ?? "Não foi possível carregar a configuração inicial.");
+      setData(body);
+    });
   }, []);
 
   useEffect(() => { load().catch((reason) => setError(reason instanceof Error ? reason.message : "Erro ao carregar.")); }, [load]);

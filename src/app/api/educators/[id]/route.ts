@@ -130,7 +130,7 @@ export async function PATCH(request: NextRequest, props: { params: Promise<{ id:
       }
     }
 
-    let body: any;
+    let body: Record<string, unknown>;
 
     try {
       body = await request.json();
@@ -141,7 +141,7 @@ export async function PATCH(request: NextRequest, props: { params: Promise<{ id:
       );
     }
 
-    const updateData: any = {
+    const updateData: Record<string, unknown> = {
       updatedAt: new Date(),
     };
 

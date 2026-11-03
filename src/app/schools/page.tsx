@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   Home,
   Building2,
@@ -46,15 +46,12 @@ export default function SchoolsPage() {
     email: "",
   });
 
-  async function loadSchools() {
-    try {
-      setLoading(true);
+  const loadSchools = useCallback(async () => {
+    return fetch("/api/schools", {
+      credentials: "include",
+    }).then(async (response) => {
+
       setError("");
-
-      const response = await fetch("/api/schools", {
-        credentials: "include",
-      });
-
       const data = await response.json();
 
       if (!response.ok) {
@@ -62,16 +59,16 @@ export default function SchoolsPage() {
       }
 
       setSchools(data.schools || []);
-    } catch (err: any) {
-      setError(err.message || "Erro ao carregar unidades.");
-    } finally {
+    }).catch((err: unknown) => {
+      setError((err instanceof Error ? err.message : "") || "Erro ao carregar unidades.");
+    }).finally(() => {
       setLoading(false);
-    }
-  }
+    });
+  }, []);
 
   useEffect(() => {
-    loadSchools();
-  }, []);
+    void loadSchools();
+  }, [loadSchools]);
 
   function updateField(field: string, value: string) {
     setForm((current) => ({
@@ -121,9 +118,11 @@ export default function SchoolsPage() {
 
       setShowForm(false);
 
+      setLoading(true);
+      setError("");
       await loadSchools();
-    } catch (err: any) {
-      setError(err.message || "Erro ao criar unidade.");
+    } catch (err: unknown) {
+      setError((err instanceof Error ? err.message : "") || "Erro ao criar unidade.");
     } finally {
       setSaving(false);
     }

@@ -18,6 +18,8 @@ import {
 } from "@/lib/category-scope";
 import { isSchoolArchived } from "@/lib/schools";
 
+import { attendanceCategoryFields, ensureAttendanceCategoryIndex } from "@/lib/attendance-category";
+
 const DB_NAME = "supera_pontos";
 const ALLOWED_ROLES = ["super_admin", "admin", "educator"] as const;
 
@@ -93,6 +95,8 @@ export async function GET(request: NextRequest) {
 
     const formattedCategories = categories.map((category) => ({
       id: category._id.toString(),
+      isAttendance: category.isAttendance === true,
+      active: category.active !== false,
       name: category.name,
       description: category.description || "",
       icon: category.icon || "⭐",
@@ -382,7 +386,10 @@ export async function POST(request: NextRequest) {
 
     const now = new Date();
 
+    if (body.isAttendance !== undefined && typeof body.isAttendance !== "boolean") return NextResponse.json({ error: "Marcação de frequência inválida." }, { status: 400 });
+    await ensureAttendanceCategoryIndex(db);
     const newCategory = {
+      ...attendanceCategoryFields(effectiveSchoolId, body.isAttendance === true, true),
       name,
       description,
       icon,

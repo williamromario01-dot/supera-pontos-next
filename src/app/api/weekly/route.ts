@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { ObjectId } from "mongodb";
+import { ObjectId, type Collection, type Document, type WithId } from "mongodb";
 import clientPromise from "@/lib/mongodb";
 import { getCategoryScopeFilter } from "@/lib/category-scope";
 
@@ -206,8 +206,8 @@ function belongsToSchool(
 }
 
 async function buildWeeklyCategories(
-  pointEvents: any,
-  rankingCategories: any[],
+  pointEvents: Collection<Document>,
+  rankingCategories: WithId<Document>[],
   studentIdFilter: ObjectId | { $in: ObjectId[] },
   currentWeekStart: Date,
   currentWeekEnd: Date,
@@ -240,12 +240,12 @@ async function buildWeeklyCategories(
       .toArray();
 
     const currentPoints = currentWeekEvents.reduce(
-      (total: number, event: any) => total + Number(event.points || 0),
+      (total: number, event: Document) => total + Number(event.points || 0),
       0
     );
 
     const previousPoints = previousWeekEvents.reduce(
-      (total: number, event: any) => total + Number(event.points || 0),
+      (total: number, event: Document) => total + Number(event.points || 0),
       0
     );
 

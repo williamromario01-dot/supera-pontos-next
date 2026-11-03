@@ -1,5 +1,7 @@
+import { canAssignEducator, eligibleEducator } from "@/lib/attendance-core";
+import { isSchoolActive } from "@/lib/schools";
 import { NextRequest, NextResponse } from "next/server";
-import { ObjectId } from "mongodb";
+import { ObjectId, type Document } from "mongodb";
 import clientPromise from "@/lib/mongodb";
 import { getOperationalAccessForAuth, subscriptionPastDueResponseForAccess } from "@/lib/subscription-access";
 
@@ -201,7 +203,7 @@ export async function GET(
       ? classData.studentIds
       : [];
 
-    let students: any[] = [];
+    let students: Document[] = [];
 
     if (studentIds.length > 0) {
       students = await db
@@ -379,6 +381,16 @@ export async function PATCH(
      * Educador responsável
      */
     if (body.educatorId !== undefined) {
+      if (!canAssignEducator(user.role) || (user.role === "super_admin" && request.nextUrl.searchParams.get("schoolId") !== String(classData.schoolId))) {
+        return NextResponse.json({ error: "Sem permissão para alocar educador nesta unidade." }, { status: 403 });
+      }
+      if (body.educatorId !== null && typeof body.educatorId !== "string") {
+        return NextResponse.json({ error: "ID do educador inválido." }, { status: 400 });
+      }
+      const school = await db.collection("schools").findOne({ _id: new ObjectId(String(classData.schoolId)) });
+      if (!isSchoolActive(school) || (user.role !== "super_admin" && user.companyId && String(user.companyId) !== String(school?.companyId))) {
+        return NextResponse.json({ error: "Unidade inativa ou não autorizada." }, { status: 403 });
+      }
       const educatorId =
         typeof body.educatorId === "string"
           ? body.educatorId.trim()
@@ -415,33 +427,8 @@ export async function PATCH(
           );
         }
 
-        if (
-          educator.role !== "educator" &&
-          educator.role !== "admin" &&
-          educator.role !== "super_admin"
-        ) {
-          return NextResponse.json(
-            {
-              error:
-                "Este usuário não pode ser responsável por uma turma.",
-            },
-            { status: 400 }
-          );
-        }
-
-        if (
-          user.role !== "super_admin" &&
-          educator.schoolId &&
-          String(educator.schoolId) !==
-            String(classData.schoolId)
-        ) {
-          return NextResponse.json(
-            {
-              error:
-                "O responsável deve pertencer à mesma escola da turma.",
-            },
-            { status: 403 }
-          );
+        if (!school || !eligibleEducator(educator, classData.schoolId, school.companyId) || (user.role !== "super_admin" && user.companyId && String(user.companyId) !== String(school.companyId))) {
+          return NextResponse.json({ error: "Selecione um educador ativo da mesma unidade e empresa." }, { status: 403 });
         }
 
         updates.educatorId = educatorObjectId;

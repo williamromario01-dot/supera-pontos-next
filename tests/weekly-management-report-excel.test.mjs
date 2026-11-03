@@ -45,6 +45,18 @@ async function loadWorkbook(buffer) {
   return workbook;
 }
 
+test("attendance Excel uses recorded totals and historical absentee names/dates", async () => {
+  const report = fixture({ attendanceMetrics: { available: true, totalSessions: 1, opportunities: 2, presences: 1, absences: 1, percentage: 50, absentees: [{ classId: "class-1", className: "Turma histórica", studentId: "student-2", studentName: "Bruno histórico", date: "2026-10-15", session: "Aula 2" }] } });
+  const before = structuredClone(report);
+  const workbook = await loadWorkbook(await generateWeeklyManagementReportExcel({ report }));
+  const sheet = workbook.getWorksheet("Frequência");
+  assert.equal(sheet.getCell("D3").value, 50);
+  assert.equal(sheet.getCell("B5").value, "Bruno histórico");
+  assert.equal(sheet.getCell("C5").value, "2026-10-15");
+  assert.equal(sheet.getCell("D5").value, "Aula 2");
+  assert.deepEqual(report, before);
+});
+
 test("produces a valid XLSX exclusively from an immutable v1 CLOSED snapshot", async () => {
   const report = fixture();
   const original = structuredClone(report);
@@ -60,7 +72,7 @@ test("produces a valid XLSX exclusively from an immutable v1 CLOSED snapshot", a
   assert.equal(workbook.getWorksheet("Aluno x Categoria").getCell("B11").value, "Categoria Personalizada");
   assert.equal(workbook.getWorksheet("Aluno x Categoria").getCell("F11").value, 1.2);
   assert.equal(workbook.getWorksheet("Aluno x Categoria").getCell("F11").numFmt, "0.0%");
-  assert.match(String(workbook.getWorksheet("Frequência").getCell("A10").value), /ainda não estão disponíveis/);
+  assert.match(String(workbook.getWorksheet("Frequência").getCell("A10").value), /Sem registros de frequência no período/);
   assert.match(String(workbook.getWorksheet("Vendas").getCell("A10").value), /ainda não estão disponíveis/);
   assert.match(String(workbook.getWorksheet("Estoque").getCell("A9").value), /movimentação histórica/);
   assert.ok(workbook.getWorksheet("Resgates").getCell("D12").value instanceof Date);

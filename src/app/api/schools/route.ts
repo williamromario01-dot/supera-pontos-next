@@ -38,7 +38,7 @@ async function getAuthenticatedUser(request: NextRequest) {
   return user || null;
 }
 
-function isSuperAdmin(user: any) {
+function isSuperAdmin(user: Record<string, unknown> | null) {
   return user?.role === "super_admin";
 }
 
@@ -139,7 +139,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    let body: any;
+    let body: Record<string, unknown>;
 
     try {
       body = await request.json();

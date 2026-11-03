@@ -1,3 +1,4 @@
+import type { summarizeAttendance } from "./attendance-core";
 export type EvolutionStatus = "EVOLVED" | "MAINTAINED" | "DECLINED" | "INSUFFICIENT_DATA";
 
 export type ReportSummary = {
@@ -108,7 +109,7 @@ export type WeeklyReport = {
   salesMetrics: { available: boolean; reason?: string };
   redemptionMetrics: { available: boolean; count: number; pointsSpent: number; items: Array<{ redemptionId: string; studentId?: string; productId?: string; productName: string; pointsSpent: number; status: string; createdAt?: string | Date }> };
   inventoryMetrics: { available: boolean; snapshotOnly: boolean; movementAvailable: boolean; lowStockAvailable: boolean; reason?: string; products: Array<{ source: string; productId: string; productName: string; stock: number; active: boolean }>; outOfStockProducts: number };
-  attendanceMetrics: { available: boolean; reason?: string };
+  attendanceMetrics: { available: boolean; reason?: string } & Partial<ReturnType<typeof summarizeAttendance>>;
 };
 
 export type WeeklyReportV1 = WeeklyReport & { reportVersion: 1 };

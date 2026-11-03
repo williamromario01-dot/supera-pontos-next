@@ -1,6 +1,6 @@
 
 import { NextRequest, NextResponse } from "next/server";
-import { MongoServerError, ObjectId } from "mongodb";
+import { MongoServerError, ObjectId, type Document } from "mongodb";
 import clientPromise from "@/lib/mongodb";
 import {
   authenticateRequest,
@@ -17,6 +17,8 @@ import {
 } from "@/lib/category-scope";
 import { isSchoolArchived } from "@/lib/schools";
 import { getOperationalAccessForAuth, subscriptionPastDueResponseForAccess } from "@/lib/subscription-access";
+
+import { attendanceCategoryFields, ensureAttendanceCategoryIndex } from "@/lib/attendance-category";
 
 const DB_NAME = "supera_pontos";
 const ALLOWED_ROLES = ["super_admin", "admin", "educator"] as const;
@@ -97,7 +99,7 @@ function isSameId(first: unknown, second: unknown) {
   return String(first) === String(second);
 }
 
-function canManageCategory(user: any, category: any) {
+function canManageCategory(user: Document, category: Document & { _id: unknown }) {
   if (isProtectedLegacyCategory(category)) {
     return false;
   }
@@ -188,6 +190,7 @@ export async function PATCH(
     }
 
     const allowedFields = [
+      "isAttendance",
       "name",
       "description",
       "icon",
@@ -456,6 +459,12 @@ export async function PATCH(
       updateData.active = body.active;
     }
 
+    if (body.isAttendance !== undefined && typeof body.isAttendance !== "boolean") return NextResponse.json({ error: "Marcação de frequência inválida." }, { status: 400 });
+    await ensureAttendanceCategoryIndex(db);
+    const attendance = body.isAttendance === undefined ? currentCategory.isAttendance === true : body.isAttendance === true;
+    const active = body.active === undefined ? currentCategory.active !== false : body.active === true;
+    Object.assign(updateData, attendanceCategoryFields(targetSchoolId, attendance, active));
+
     const result = await categories.updateOne(
       { _id: categoryId },
       { $set: updateData }
@@ -490,6 +499,7 @@ export async function PATCH(
       message: "Categoria atualizada com sucesso.",
       category: {
         id: updatedCategory._id.toString(),
+        isAttendance: updatedCategory.isAttendance === true,
         name: updatedCategory.name,
         description: updatedCategory.description || "",
         icon: updatedCategory.icon || "⭐",
@@ -615,6 +625,8 @@ export async function DELETE(
       );
     }
 
+    const hasAttendance = await db.collection("attendanceSessions").findOne({ categoryId });
+    if (hasAttendance || category.attendanceHistoryProtected) return NextResponse.json({ error: "Categoria reservada ao histórico de frequência. Desative para preservar o histórico." }, { status: 409 });
     const pointEvents = db.collection("pointEvents");
 
     const hasPointEvents = await pointEvents.findOne({
@@ -636,6 +648,7 @@ export async function DELETE(
 
     const result = await categories.deleteOne({
       _id: categoryId,
+      attendanceHistoryProtected: { $ne: true },
     });
 
     if (result.deletedCount !== 1) {

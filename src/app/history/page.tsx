@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
@@ -70,18 +70,10 @@ export default function HistoryPage() {
 
   const itemsPerPage = 10;
 
-  useEffect(() => {
-    loadHistory();
-  }, []);
-
-  async function loadHistory() {
-    try {
-      setLoading(true);
-      setError("");
-
-      const meResponse = await fetch("/api/auth/me", {
-        credentials: "include",
-      });
+  const loadHistory = useCallback(async () => {
+    return fetch("/api/auth/me", {
+      credentials: "include",
+    }).then(async (meResponse) => {
 
       if (!meResponse.ok) {
         router.push("/");
@@ -110,16 +102,20 @@ export default function HistoryPage() {
         data.events || data.history || [];
 
       setEvents(history);
-    } catch (err) {
+    }).catch((err: unknown) => {
       console.error(err);
 
       setError(
         "Não foi possível carregar seu histórico de pontos."
       );
-    } finally {
+    }).finally(() => {
       setLoading(false);
-    }
-  }
+    });
+  }, [router]);
+
+  useEffect(() => {
+    void loadHistory();
+  }, [loadHistory]);
 
   function formatDate(date: string) {
     const parsed = new Date(date);

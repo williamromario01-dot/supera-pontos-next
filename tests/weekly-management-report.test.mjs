@@ -126,7 +126,7 @@ test("custom categories are data-driven and goalReached is separate from evoluti
 
 test("attendance is unavailable and is never inferred from missing points", async () => {
   const source = await read("src/lib/weekly-management-report.ts");
-  assert.match(source, /attendanceMetrics: \{ available: false/);
+  assert.match(source, /attendanceMetrics: summarizeAttendance/);
   assert.match(source, /ausência de pontos não é falta/);
 });
 

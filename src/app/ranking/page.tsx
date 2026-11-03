@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Home,
@@ -47,17 +47,14 @@ export default function RankingPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  const loadRankings = async () => {
-    try {
-      setLoading(true);
+  const loadRankings = useCallback(async () => {
+    return fetch("/api/rankings", {
+      method: "GET",
+      credentials: "include",
+      cache: "no-store",
+    }).then(async (response) => {
+
       setError("");
-
-      const response = await fetch("/api/rankings", {
-        method: "GET",
-        credentials: "include",
-        cache: "no-store",
-      });
-
       const data = await response.json();
 
       if (response.status === 401) {
@@ -88,17 +85,17 @@ export default function RankingPage() {
           return rankingData[0].category.id;
         });
       }
-    } catch (err) {
+    }).catch((err: unknown) => {
       console.error(err);
       setError("Não foi possível conectar ao servidor.");
-    } finally {
+    }).finally(() => {
       setLoading(false);
-    }
-  };
+    });
+  }, [router]);
 
   useEffect(() => {
-    loadRankings();
-  }, []);
+    void loadRankings();
+  }, [loadRankings]);
 
   const selectedRanking = rankings.find(
     (item) => item.category.id === selectedCategoryId
@@ -150,7 +147,7 @@ export default function RankingPage() {
           </div>
 
           <button
-            onClick={loadRankings}
+            onClick={() => { setLoading(true); setError(""); void loadRankings(); }}
             disabled={loading}
             className="w-10 h-10 rounded-xl border border-slate-200 bg-white flex items-center justify-center text-slate-500 hover:text-orange-600 hover:border-orange-200 transition-colors disabled:opacity-50"
             title="Atualizar ranking"
@@ -219,7 +216,7 @@ export default function RankingPage() {
             <p className="text-red-600 font-semibold mb-4">{error}</p>
 
             <button
-              onClick={loadRankings}
+              onClick={() => { setLoading(true); setError(""); void loadRankings(); }}
               className="px-5 py-3 rounded-xl bg-orange-500 hover:bg-orange-600 text-white font-bold transition-colors"
             >
               Tentar novamente
