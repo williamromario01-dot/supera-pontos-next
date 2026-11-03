@@ -1,3 +1,4 @@
+import { operationalCategories } from "@/lib/category-management";
 import { NextRequest, NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
 import clientPromise from "@/lib/mongodb";
@@ -204,7 +205,7 @@ export async function GET(request: NextRequest) {
         );
       }
 
-      const category = await categories.findOne({
+      let category = await categories.findOne({
         $and: [
           { _id: categoryObjectId },
           getCategoryScopeFilter(schoolFilter),
@@ -217,6 +218,9 @@ export async function GET(request: NextRequest) {
           { status: 404 }
         );
       }
+
+      category = (await operationalCategories(db, schoolFilter, [category]))[0] ?? null;
+      if (!category) return NextResponse.json({ error: "Categoria arquivada." }, { status: 409 });
 
       if (category.participatesInRanking !== true) {
         return NextResponse.json({
@@ -363,7 +367,7 @@ export async function GET(request: NextRequest) {
      * retorna todos os rankings das categorias
      * que participam do ranking.
      */
-    const rankingCategories = await categories
+    let rankingCategories = await categories
       .find({
         $and: [
           getCategoryScopeFilter(schoolFilter),
@@ -374,6 +378,8 @@ export async function GET(request: NextRequest) {
         name: 1,
       })
       .toArray();
+
+    rankingCategories = (await operationalCategories(db, schoolFilter, rankingCategories)).filter(category => category.participatesInRanking !== false);
 
     const rankings = [];
 

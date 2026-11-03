@@ -103,7 +103,7 @@ test("super admin requires explicit valid school context", () => {
 test("snapshot implementation is insert-only, school-scoped and preserves historical names", async () => {
   const source = await read("src/lib/weekly-management-report.ts");
   assert.match(source, /collection<WeeklyReportDbDocument>\("weeklyReports"\)/);
-  assert.match(source, /reports\.insertOne\(snapshot\)/);
+  assert.match(source, /reports\.insertOne\(snapshot, \{ session \}\)/);
   assert.match(source, /if \(existing\) return \{ created: false/);
   assert.match(source, /error\.code === 11000/);
   assert.doesNotMatch(source, /reports\.(replaceOne|updateOne|findOneAndUpdate)/);

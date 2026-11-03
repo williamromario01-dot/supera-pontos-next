@@ -1,3 +1,4 @@
+import { lockCategorySchool, categoryOverride, isSharedCategory, CategoryConflict } from "@/lib/category-management";
 import { NextRequest, NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
 import clientPromise from "@/lib/mongodb";
@@ -30,6 +31,17 @@ export async function PUT(request:NextRequest){try{
   const db=(await clientPromise).db(DB_NAME);const categories=parsed.length?await db.collection("categories").find({$and:[getCategoryScopeFilter(schoolId),{_id:{$in:parsed.map((item)=>item.categoryId!)}}]}).toArray():[];
   if(categories.length!==parsed.length)return bad("Uma ou mais categorias não pertencem à escola.",403);const names=new Map(categories.map((category)=>[category._id.toString(),String(category.name||"")]));
   const items=parsed.map((item)=>({categoryId:item.categoryId,categoryName:names.get(item.categoryId!.toString())||"",description:item.description}));const now=new Date();
-  await db.collection("weeklyGoals").updateOne({schoolId,weekStart},{$set:{items,updatedBy:auth.userId,updatedAt:now},$setOnInsert:{schoolId,weekStart,createdBy:auth.userId,createdAt:now}},{upsert:true});
+  const session=(await clientPromise).startSession();
+  try { await session.withTransaction(async()=>{
+    await lockCategorySchool(db,schoolId,session);
+    for(const item of items){
+      const category=await db.collection("categories").findOne({_id:item.categoryId!},{session});
+      if(!category||category.active===false)throw new CategoryConflict("Uma categoria foi excluida ou arquivada. Recarregue a lista.");
+      const local=isSharedCategory(category)?await categoryOverride(db,schoolId,category._id,session):null;
+      if(local?.active===false)throw new CategoryConflict("Categoria arquivada nesta unidade.");
+      item.categoryName=String(local?.name??category.name??"");
+    }
+  await db.collection("weeklyGoals").updateOne({schoolId,weekStart},{$set:{items,updatedBy:auth.userId,updatedAt:now},$setOnInsert:{schoolId,weekStart,createdBy:auth.userId,createdAt:now}},{upsert:true,session});
+  }); }finally{await session.endSession();}
   return NextResponse.json({message:"Meta da semana salva.",goal:{weekStart,items:items.map((item)=>({...item,categoryId:item.categoryId!.toString()}))}});
-}catch(error){console.error("Erro ao salvar meta semanal:",error);return bad("Erro interno ao salvar meta semanal.",500)}}
+}catch(error){if(error instanceof CategoryConflict)return bad(error.message,409);console.error("Erro ao salvar meta semanal:",error);return bad("Erro interno ao salvar meta semanal.",500)}}

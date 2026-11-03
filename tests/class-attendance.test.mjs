@@ -34,7 +34,7 @@ function fixture(role = "admin") {
         doc._id = new ObjectId(); data[name].push(doc); return { insertedId: doc._id };
       },
       updateOne: async (filter, update) => {
-        assert.ok(["classes", "attendanceSessions"].includes(name));
+        assert.ok(["classes", "attendanceSessions", "schools"].includes(name));
         const doc = data[name].find(row => matches(row, filter)); if (!doc) return { matchedCount: 0, modifiedCount: 0 };
         Object.assign(doc, update.$set); if (update.$inc) for (const [key, value] of Object.entries(update.$inc)) doc[key] += value;
         return { matchedCount: 1, modifiedCount: 1 };
@@ -43,7 +43,7 @@ function fixture(role = "admin") {
     return collection;
   } };
   const mocks = {
-    "@/lib/mongodb": { __esModule: true, default: Promise.resolve({ db: () => db }) },
+    "@/lib/mongodb": { __esModule: true, default: Promise.resolve({ db: () => db, startSession: () => ({ withTransaction: async fn => fn(), endSession: async () => {} }) }) },
     "@/lib/auth": { authenticateRequest: async () => ({ authenticated: true, auth }), hasSchoolAccess: (actor, school) => actor.role === "super_admin" || equal(actor.schoolId, school) },
     "@/lib/subscription-access": { getOperationalAccessForAuth: async () => ({ canPerformOperationalMutation: true }) },
   };
@@ -147,4 +147,17 @@ test("frequency counts only recorded opportunities, with names, dates and separa
   const summary = summarizeAttendance([session]);
   assert.equal(summary.totalSessions, 1); assert.equal(summary.presences, 1); assert.equal(summary.absences, 1); assert.equal(summary.percentage, 50);
   assert.equal(summary.absentees[0].studentName, "Bia"); assert.equal(summary.absentees[0].date, "2026-10-28");
+});
+
+test("new attendance sessions snapshot selected category while corrections keep original category", async () => {
+  const f = fixture(); const first = { _id: new ObjectId(), schoolId: f.schoolId, name: "Primeira" }, second = { _id: new ObjectId(), schoolId: f.schoolId, name: "Segunda" };
+  f.data.categories.push(first, second); f.data.schools[0].attendanceCategoryId = first._id;
+  assert.equal((await f.route.POST(f.request(f.body()), f.context)).status, 200);
+  f.data.schools[0].attendanceCategoryId = second._id;
+  const next = { ...f.body(), session: "Aula 2" };
+  assert.equal((await f.route.POST(f.request(next), f.context)).status, 200);
+  assert.equal(String(f.data.attendanceSessions[0].categoryId), String(first._id)); assert.equal(f.data.attendanceSessions[0].categoryName, first.name);
+  assert.equal(String(f.data.attendanceSessions[1].categoryId), String(second._id));
+  assert.equal((await f.route.PATCH(f.request({ ...f.body(), version: 1, reason: "Correcao" }), f.context)).status, 200);
+  assert.equal(String(f.data.attendanceSessions[0].categoryId), String(first._id)); assert.equal(f.data.users[0].points, 100);
 });

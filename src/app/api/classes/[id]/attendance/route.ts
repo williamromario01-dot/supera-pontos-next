@@ -1,3 +1,4 @@
+import { activeAttendanceId, lockCategorySchool, isSharedCategory, categoryOverride } from "@/lib/category-management";
 import { NextRequest, NextResponse } from "next/server";
 import { MongoServerError, ObjectId } from "mongodb";
 import clientPromise from "@/lib/mongodb";
@@ -75,8 +76,16 @@ async function save(request: NextRequest, context: Context, correction: boolean)
       const updated = await collection.updateOne({ ...filter, version: body.version }, { $set: { students, updatedAt: now, audit: [...existing.audit, { actorId: auth.userId, at: now, reason: body.reason.trim(), before: existing.students, after: students }] }, $inc: { version: 1 } });
       if (!updated.modifiedCount) return NextResponse.json({ error: "Outra pessoa alterou esta chamada. Recarregue." }, { status: 409 });
     } else {
-      const category = await db.collection("categories").findOne({ attendanceSchoolKey: String(schoolId), isAttendance: true, active: { $ne: false } });
-      await collection.insertOne({ ...filter, companyId: school.companyId ?? null, className: String(classData.name), categoryId: category?._id ?? null, students, version: 1, createdAt: now, updatedAt: now, createdBy: auth.userId, audit: [{ actorId: auth.userId, at: now, reason: "Registro inicial", after: students }] });
+      const transaction = (await clientPromise).startSession();
+      try {
+        await transaction.withTransaction(async () => {
+          await lockCategorySchool(db, schoolId, transaction);
+          const categoryId = await activeAttendanceId(db, schoolId, transaction);
+          let category = categoryId ? await db.collection("categories").findOne({ _id: new ObjectId(categoryId) }, { session: transaction }) : null;
+          if (category && isSharedCategory(category)) category = { ...category, ...await categoryOverride(db, schoolId, category._id, transaction), _id: category._id };
+          await collection.insertOne({ ...filter, companyId: school.companyId ?? null, className: String(classData.name), categoryId: categoryId ? new ObjectId(categoryId) : null, categoryName: category?.name ?? null, students, version: 1, createdAt: now, updatedAt: now, createdBy: auth.userId, audit: [{ actorId: auth.userId, at: now, reason: "Registro inicial", after: students }] }, { session: transaction });
+        });
+      } finally { await transaction.endSession(); }
     }
     return NextResponse.json({ message: "Chamada salva. Nenhum ponto foi lançado." });
   } catch (error) {

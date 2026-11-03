@@ -18,52 +18,12 @@ import {
 import { isSchoolArchived } from "@/lib/schools";
 import { getOperationalAccessForAuth, subscriptionPastDueResponseForAccess } from "@/lib/subscription-access";
 
-import { attendanceCategoryFields, ensureAttendanceCategoryIndex } from "@/lib/attendance-category";
+import { ensureCategoryManagementIndexes, CategoryConflict, saveManagedCategory, deleteManagedCategory, categoryOverride, isSharedCategory } from "@/lib/category-management";
 
 const DB_NAME = "supera_pontos";
 const ALLOWED_ROLES = ["super_admin", "admin", "educator"] as const;
 
 type CategoryUpdate = Record<string, unknown>;
-
-async function getAuthenticatedUser(request: NextRequest) {
-  const sessionToken = request.cookies.get("supera_session")?.value;
-
-  if (!sessionToken) {
-    return null;
-  }
-
-  const client = await clientPromise;
-  const db = client.db(DB_NAME);
-
-  const session = await db.collection("sessions").findOne({
-    token: sessionToken,
-  });
-
-  if (!session) {
-    return null;
-  }
-
-  if (
-    !session.expiresAt ||
-    new Date(session.expiresAt) <= new Date()
-  ) {
-    await db.collection("sessions").deleteOne({
-      _id: session._id,
-    });
-
-    return null;
-  }
-
-  const user = await db.collection("users").findOne({
-    _id: session.userId,
-  });
-
-  if (!user || user.active === false) {
-    return null;
-  }
-
-  return user;
-}
 
 function getObjectId(id: string) {
   if (!ObjectId.isValid(id)) {
@@ -71,20 +31,6 @@ function getObjectId(id: string) {
   }
 
   return new ObjectId(id);
-}
-
-function getSchoolIdVariants(schoolId: unknown) {
-  if (!schoolId) {
-    return [];
-  }
-
-  const value = String(schoolId);
-
-  if (ObjectId.isValid(value)) {
-    return [new ObjectId(value), value];
-  }
-
-  return [value];
 }
 
 function isSameId(first: unknown, second: unknown) {
@@ -100,20 +46,16 @@ function isSameId(first: unknown, second: unknown) {
 }
 
 function canManageCategory(user: Document, category: Document & { _id: unknown }) {
-  if (isProtectedLegacyCategory(category)) {
-    return false;
-  }
-
   if (user.role === "super_admin") {
     return true;
   }
 
   // Categorias antigas sem escola identificada ficam protegidas.
-  if (!category.schoolId || !user.schoolId) {
+  if (!user.schoolId) {
     return false;
   }
 
-  if (String(user.schoolId) !== String(category.schoolId)) {
+  if (!categoryBelongsToSchool(category, new ObjectId(String(user.schoolId)))) {
     return false;
   }
 
@@ -123,6 +65,7 @@ function canManageCategory(user: Document, category: Document & { _id: unknown }
 
   if (user.role === "educator") {
     return (
+      !isProtectedLegacyCategory(category) &&
       category.categoryType === "extra" &&
       isSameId(category.createdBy, user._id)
     );
@@ -220,7 +163,7 @@ export async function PATCH(
     }
     const categories = db.collection("categories");
 
-    const currentCategory = await categories.findOne({
+    let currentCategory = await categories.findOne({
       _id: categoryId,
     });
 
@@ -270,8 +213,14 @@ export async function PATCH(
       );
     }
 
+    if (isSharedCategory(currentCategory)) {
+      const local = await categoryOverride(db, targetSchoolId, categoryId);
+      currentCategory = { ...currentCategory, ...local, _id: categoryId, schoolId: currentCategory.schoolId };
+    }
+
     const updateData: Record<string, unknown> = {
       updatedAt: new Date(),
+      ...(body.expectedVersion !== undefined ? { expectedVersion: body.expectedVersion } : {}),
     };
 
     if (body.name !== undefined) {
@@ -460,24 +409,19 @@ export async function PATCH(
     }
 
     if (body.isAttendance !== undefined && typeof body.isAttendance !== "boolean") return NextResponse.json({ error: "Marcação de frequência inválida." }, { status: 400 });
-    await ensureAttendanceCategoryIndex(db);
-    const attendance = body.isAttendance === undefined ? currentCategory.isAttendance === true : body.isAttendance === true;
-    const active = body.active === undefined ? currentCategory.active !== false : body.active === true;
-    Object.assign(updateData, attendanceCategoryFields(targetSchoolId, attendance, active));
-
-    const result = await categories.updateOne(
-      { _id: categoryId },
-      { $set: updateData }
-    );
-
-    if (result.matchedCount === 0) {
-      return NextResponse.json(
-        { error: "Categoria não encontrada." },
-        { status: 404 }
-      );
+    if (body.isAttendance !== undefined) updateData.isAttendance = body.isAttendance;
+    if (body.active === false) {
+      if (currentCategory.isAttendance && body.isAttendance !== false) return NextResponse.json({ error: "Desmarque ou substitua a categoria de frequencia antes de arquivar." }, { status: 409 });
+      updateData.isAttendance = false;
+      updateData.archivedAt = new Date();
     }
+    await ensureCategoryManagementIndexes(db);
+    const session = client.startSession();
+    try {
+      await session.withTransaction(() => saveManagedCategory(db, targetSchoolId, currentCategory!, updateData, body.expectedAttendanceCategoryId, session));
+    } finally { await session.endSession(); }
 
-    const updatedCategory = await categories.findOne({
+    let updatedCategory = await categories.findOne({
       _id: categoryId,
     });
 
@@ -489,6 +433,8 @@ export async function PATCH(
         { status: 404 }
       );
     }
+
+    if (isSharedCategory(updatedCategory)) updatedCategory = { ...updatedCategory, ...await categoryOverride(db, targetSchoolId, categoryId), _id: categoryId };
 
     const participatesInRanking =
       updatedCategory.participatesInRanking !== undefined
@@ -527,6 +473,7 @@ export async function PATCH(
       },
     });
   } catch (error) {
+    if (error instanceof CategoryConflict) return NextResponse.json({ error: error.message, canArchive: true }, { status: 409 });
     if (error instanceof MongoServerError && error.code === 11000) {
       return NextResponse.json(
         { error: "Já existe uma categoria conflitante nesta escola." },
@@ -625,43 +572,17 @@ export async function DELETE(
       );
     }
 
-    const hasAttendance = await db.collection("attendanceSessions").findOne({ categoryId });
-    if (hasAttendance || category.attendanceHistoryProtected) return NextResponse.json({ error: "Categoria reservada ao histórico de frequência. Desative para preservar o histórico." }, { status: 409 });
-    const pointEvents = db.collection("pointEvents");
-
-    const hasPointEvents = await pointEvents.findOne({
-      $or: [
-        { categoryId },
-        { categoryId: categoryId.toString() },
-      ],
-    });
-
-    if (hasPointEvents) {
-      return NextResponse.json(
-        {
-          error:
-            "Esta categoria possui histórico de pontuação e não pode ser excluída. Preserve o histórico e solicite uma desativação da categoria.",
-        },
-        { status: 409 }
-      );
-    }
-
-    const result = await categories.deleteOne({
-      _id: categoryId,
-      attendanceHistoryProtected: { $ne: true },
-    });
-
-    if (result.deletedCount !== 1) {
-      return NextResponse.json(
-        { error: "Não foi possível excluir a categoria." },
-        { status: 500 }
-      );
-    }
+    await ensureCategoryManagementIndexes(db);
+    const session = client.startSession();
+    try {
+      await session.withTransaction(() => deleteManagedCategory(db, targetSchoolId, categoryId, session));
+    } finally { await session.endSession(); }
 
     return NextResponse.json({
       message: "Categoria excluída com sucesso.",
     });
   } catch (error) {
+    if (error instanceof CategoryConflict) return NextResponse.json({ error: error.message, canArchive: true }, { status: 409 });
     console.error("Erro ao excluir categoria:", error);
 
     return NextResponse.json(

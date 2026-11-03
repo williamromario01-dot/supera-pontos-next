@@ -50,6 +50,8 @@ interface Category {
   createdBy?: string | null;
   legacy?: boolean;
   protectedLegacy?: boolean;
+  shared?: boolean;
+  managementVersion?: number;
   active?: boolean;
 }
 
@@ -103,6 +105,8 @@ function normalizeCategory(value: Partial<Category> & { _id?: unknown }): Catego
     createdBy: value.createdBy ? String(value.createdBy) : null,
     legacy: value.legacy === true || !value.schoolId,
     protectedLegacy: value.protectedLegacy === true,
+    shared: value.shared === true,
+    managementVersion: value.managementVersion ?? 0,
     active: value.active !== false,
   };
 }
@@ -158,8 +162,6 @@ export default function CategoriesPage() {
     (category: Category) => {
       if (!user) return false;
 
-      if (category.protectedLegacy) return false;
-
       if (user.role === "super_admin") return true;
 
       // Categorias sem escola identificada são legadas.
@@ -174,6 +176,7 @@ export default function CategoriesPage() {
 
       if (user.role === "educator") {
         return (
+          !category.legacy &&
           category.categoryType === "extra" &&
           Boolean(category.createdBy) &&
           category.createdBy === getUserId()
@@ -309,6 +312,10 @@ export default function CategoriesPage() {
     void loadCategories();
   }, [loadCategories]);
 
+  useEffect(() => {
+    if (error) window.scrollTo({ top: 0, behavior: "smooth" });
+  }, [error]);
+
   function openCreateForm() {
     setEditingId(null);
     setForm({
@@ -409,6 +416,8 @@ export default function CategoriesPage() {
       }
     }
 
+    const currentAttendance = categories.find(category => category.isAttendance && category.active !== false);
+    if (form.isAttendance && currentAttendance && currentAttendance.id !== editingId && !window.confirm(`Substituir a categoria de frequencia "${currentAttendance.name}"? As chamadas anteriores serao preservadas.`)) return;
     setSaving(true);
 
     try {
@@ -420,6 +429,8 @@ export default function CategoriesPage() {
         weeklyGoal,
         defaultPoints,
         isAttendance: form.isAttendance,
+        expectedAttendanceCategoryId: currentAttendance?.id ?? null,
+        ...(editingId ? { expectedVersion: categories.find(category => category.id === editingId)?.managementVersion ?? 0 } : {}),
         participatesInRanking: form.participatesInRanking,
         ...(isSuperAdmin ? { schoolId: selectedSchoolId } : {}),
         ...(editingId
@@ -529,6 +540,7 @@ export default function CategoriesPage() {
         return;
       }
 
+      setCategories(current => current.filter(item => item.id !== category.id));
       setSuccess("Categoria excluída com sucesso!");
       setLoading(true);
       setError("");
@@ -543,6 +555,25 @@ export default function CategoriesPage() {
     }
   }
 
+  async function handleArchive(category: Category) {
+    if (!window.confirm(`Arquivar "${category.name}" nesta unidade? A categoria saira das listas operacionais. Todos os historicos serao preservados.${category.isAttendance ? " A configuracao ativa de frequencia sera desmarcada." : ""}`)) return;
+    setDeletingId(category.id);
+    setError("");
+    setSuccess("");
+    try {
+      const response = await fetch(`/api/categories/${category.id}${isSuperAdmin ? `?schoolId=${encodeURIComponent(selectedSchoolId)}` : ""}`, {
+        method: "PATCH", credentials: "include", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ active: false, isAttendance: false, expectedAttendanceCategoryId: categories.find(item => item.isAttendance)?.id ?? null }),
+      });
+      const data = await readResponse(response);
+      if (!response.ok) { setError(data.error || "Nao foi possivel arquivar a categoria."); return; }
+      setCategories(current => current.filter(item => item.id !== category.id));
+      await loadCategories();
+      setSuccess("Categoria arquivada. Historico preservado.");
+    } catch { setError("Nao foi possivel conectar ao servidor."); }
+    finally { setDeletingId(""); }
+  }
+
   function updateForm<K extends keyof CategoryForm>(
     field: K,
     value: CategoryForm[K]
@@ -553,7 +584,7 @@ export default function CategoriesPage() {
   function categoryTypeLabel(category: Category) {
     if (category.categoryType === "official") return "Oficial";
     if (category.categoryType === "extra") return "Extra";
-    return "Antiga • tipo não identificado";
+    return "Classifica\u00e7\u00e3o original n\u00e3o informada";
   }
 
   return (
@@ -732,7 +763,8 @@ export default function CategoriesPage() {
               </div>
 
               <form onSubmit={handleSubmit} className="space-y-6">
-                {(!categories.some((category) => category.isAttendance && category.active !== false && category.id !== editingId)) && <label className="flex items-center gap-3 rounded-xl border border-orange-200 bg-orange-50 p-4"><input type="checkbox" checked={form.isAttendance} onChange={(event) => updateForm("isAttendance", event.target.checked)} />Considerar esta categoria como frequência?</label>}
+                <label className="flex items-center gap-3 rounded-xl border border-orange-200 bg-orange-50 p-4"><input type="checkbox" checked={form.isAttendance} onChange={(event) => updateForm("isAttendance", event.target.checked)} />Considerar esta categoria como frequência?</label>
+                <p className="text-sm text-slate-600">Frequência atual: {categories.find(category => category.isAttendance)?.name ?? "Nenhuma"}. As chamadas anteriores serão preservadas.</p>
                 <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
                   <div className="md:col-span-2">
                     <label className="mb-2 block text-sm font-bold text-slate-700">
@@ -960,6 +992,8 @@ export default function CategoriesPage() {
                           </div>
                           <div className="min-w-0">
                             <h3 className="truncate text-lg font-black text-slate-900">{category.name}</h3>
+                            {category.isAttendance && <p className="mt-2 text-xs font-bold text-orange-600">Categoria de frequência da unidade</p>}
+                            {category.shared && <p className="mt-2 text-xs text-slate-500">Origem compartilhada. Alterações personalizam apenas esta unidade.</p>}
                             <p className="mt-1 text-xs text-slate-400">
                               {category.participatesInRanking ? "Participa do ranking" : "Fora do ranking"}
                             </p>
@@ -999,18 +1033,20 @@ export default function CategoriesPage() {
                         </div>
                       </div>
 
+                      {canEdit && !category.isAttendance && <button onClick={() => { openEditForm(category); updateForm("isAttendance", true); }} className="mt-5 text-sm font-bold text-orange-600">Configurar como frequência</button>}
                       {(canEdit || canDelete) && (
-                        <div className="mt-5 flex gap-2">
+                        <div className="mt-5 flex flex-wrap gap-2">
                           {canEdit && (
                             <button
                               onClick={() => openEditForm(category)}
                               className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 font-bold text-slate-600 transition-colors hover:border-orange-300 hover:bg-orange-50 hover:text-orange-600"
                             >
                               <Pencil className="h-4 w-4" />
-                              Editar
+                              {category.shared ? "Personalizar na unidade" : "Editar"}
                             </button>
                           )}
-                          {canDelete && (
+                          {canEdit && <button disabled={deletingId === category.id} onClick={() => void handleArchive(category)} className="rounded-xl border border-slate-200 px-3 text-sm font-bold text-slate-600">Arquivar categoria</button>}
+                          {canDelete && !category.shared && (
                             <button
                               onClick={() => void handleDelete(category)}
                               disabled={deletingId === category.id}

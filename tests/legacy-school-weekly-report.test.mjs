@@ -35,7 +35,7 @@ function fixture() {
     pointEvents: [{ _id: new ObjectId(), studentId, categoryId, points: 10, createdAt: new Date("2026-10-20T15:00Z") }, { _id: new ObjectId(), studentId, categoryId, points: 20, createdAt: new Date("2026-10-28T15:00Z") }],
     attendanceSessions: [], classes: [], pointStoreRedemptions: [], referrals: [], pointStoreProducts: [], productsSupera: [], weeklyReports: [],
   };
-  const db = { collection(name) {
+  const db = { client: { startSession: () => ({ withTransaction: async fn => fn(), endSession: async () => {} }) }, collection(name) {
     assert.ok(name in data, `Unexpected collection ${name}`);
     return {
       find(filter) {
@@ -44,6 +44,11 @@ function fixture() {
         return cursor;
       },
       findOne: async filter => data[name].find(doc => matches(doc, filter)) ?? null,
+      updateOne: async (filter, update) => {
+        assert.equal(name, "schools"); assert.deepEqual(update, { $inc: { categoryRevision: 1 } });
+        const row = data[name].find(doc => matches(doc, filter)); if (!row) return { matchedCount: 0 };
+        row.categoryRevision = (row.categoryRevision ?? 0) + 1; return { matchedCount: 1 };
+      },
       insertOne: async document => { assert.equal(name, "weeklyReports"); data[name].push(document); return { insertedId: document._id }; },
     };
   } };
@@ -56,7 +61,7 @@ test("legacy school becomes eligible after company linkage without invented conf
   const f = fixture(); const now = new Date("2026-11-03T15:00Z");
   assert.deepEqual((await f.reports.closeLatestEligibleReports(f.db, now)).results, []);
   f.school.companyId = f.companyId;
-  const protectedBefore = JSON.stringify({ users: f.data.users, events: f.data.pointEvents, school: f.school });
+  const protectedBefore = JSON.stringify({ users: f.data.users, events: f.data.pointEvents, school: { ...f.school, categoryRevision: undefined } });
   const result = await f.reports.closeLatestEligibleReports(f.db, now);
   assert.equal(result.results.length, 1); assert.equal(result.results[0].created, true);
   const report = f.data.weeklyReports[0];
@@ -64,7 +69,8 @@ test("legacy school becomes eligible after company linkage without invented conf
   assert.equal(report.generatedBy, "recovery"); assert.equal(report.status, "CLOSED");
   assert.equal(String(report.schoolId), String(f.schoolId)); assert.equal(String(report.companyId), String(f.companyId));
   assert.equal(report.summary.activeStudents, 1); assert.equal(report.summary.pointsAwarded, 20);
-  assert.equal(JSON.stringify({ users: f.data.users, events: f.data.pointEvents, school: f.school }), protectedBefore);
+  assert.equal(JSON.stringify({ users: f.data.users, events: f.data.pointEvents, school: { ...f.school, categoryRevision: undefined } }), protectedBefore);
+  assert.equal(f.school.categoryRevision, 1);
   assert.equal(f.school.status, undefined); assert.equal(f.school.slug, undefined);
 });
 test("recovery is idempotent and subsequent weekly closure includes the migrated school", async () => {

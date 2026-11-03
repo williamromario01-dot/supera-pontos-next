@@ -4,9 +4,9 @@ A gestão de cada turma permite alocar, trocar e remover seu educador. Apenas ad
 
 ## Categoria de frequência
 
-`categories.isAttendance` identifica a categoria sem depender do nome. `attendanceSchoolKey` contém o schoolId canônico em string apenas enquanto a categoria estiver ativa e marcada. Um índice único parcial garante no máximo uma categoria por unidade, inclusive entre requisições concorrentes e schoolIds armazenados em ObjectId/string. Desmarque a atual antes de escolher outra. Categorias globais ou legadas protegidas não podem ser marcadas.
+`schools.attendanceCategoryId` identifica a categoria vigente sem depender do nome. A seleção é única por unidade e a substituição ocorre em uma transação, com confirmação da seleção anterior. O checkbox está disponível na criação e edição. Categorias legadas com escopo conhecido podem usar uma personalização da unidade, preservando o registro original. A leitura de `attendanceSchoolKey` permanece como compatibilidade até a primeira configuração local. Veja [Gestão de categorias](category-management.md).
 
-Uma categoria que já foi configurada recebe `attendanceHistoryProtected: true`, preservado ao desmarcar ou desativar. Sua exclusão fica bloqueada, inclusive durante a troca de configuração. A exclusão também consulta referências em chamadas. A proteção permanente impede corrida entre uma chamada que captura a categoria e sua exclusão.
+Uma categoria que já foi configurada mantém a marca histórica `attendanceHistoryProtected`, mas a decisão de exclusão considera as dependências reais. A configuração ativa precisa ser removida ou substituída. Havendo chamadas, pontos ou outras referências, a exclusão física fica bloqueada e a categoria pode ser arquivada. Chamadas e exclusão disputam uma revisão transacional da escola, impedindo referências órfãs sob concorrência.
 
 Os índices são criados pela aplicação na primeira operação autorizada correspondente. Nenhuma migração ou marcação automática de dados existentes foi adicionada.
 
@@ -26,7 +26,7 @@ Relatórios já fechados continuam imutáveis. Corrigir uma chamada de um perío
 
 ## Verificação
 
-Os testes usam dados isolados e mocks das coleções; nenhuma operação foi executada contra dados de produção. Incluem disputa concorrente pela categoria e sessão, permissões, composição histórica, correções com versão, cálculos e preservação dos relatórios e dos dados de pontos. A exclusividade efetiva em MongoDB é garantida pelos índices únicos, não por uma consulta prévia.
+Os testes usam dados isolados e mocks das coleções. Incluem disputa concorrente pela categoria e sessão, permissões, composição histórica, correções com versão, cálculos e preservação dos relatórios e dos dados de pontos. A exclusividade de sessões usa índice único; a seleção de categoria usa a referência única da escola e transações, sem depender de consulta prévia isolada. A validação atual e o diagnóstico somente de leitura da DoaCao estão em [Gestão de categorias](category-management.md); os resultados abaixo registram a implementação anterior do módulo.
 
 ## Arquivos da implementação
 

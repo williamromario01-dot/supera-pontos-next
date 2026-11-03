@@ -11,8 +11,7 @@ test("category scope assigns only the five protected legacy ids to Jardim das Am
   const idsBlock = source.match(/const LEGACY_CATEGORY_IDS = \[([\s\S]*?)\]/)?.[1] || "";
   assert.equal((idsBlock.match(/"[a-f0-9]{24}"/g) || []).length, 5);
   assert.match(source, /if \(schoolId\.toString\(\) === LEGACY_CATEGORY_SCHOOL_ID\)/);
-  assert.doesNotMatch(source, /schoolId: \{ \$exists: false \}/);
-  assert.doesNotMatch(source, /schoolId: null/);
+  assert.match(source, /filters\.push\(\{ \$and: \[\s*\{ _id: \{ \$in: legacyCategoryObjectIds \} \}/);
 });
 
 test("categories endpoint uses the authenticated or explicitly selected school", async () => {

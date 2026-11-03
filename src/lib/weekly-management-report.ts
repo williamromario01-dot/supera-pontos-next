@@ -1,3 +1,4 @@
+import { lockCategorySchool, CategoryConflict, operationalCategories } from "@/lib/category-management";
 import { summarizeAttendance, type AttendanceSession } from "@/lib/attendance-core";
 import { ObjectId, type Db, type Document } from "mongodb";
 import { getCategoryScopeFilter } from "@/lib/category-scope";
@@ -59,16 +60,18 @@ export async function buildWeeklyReportSnapshot(db: Db, schoolId: ObjectId, peri
   if (!(school.companyId instanceof ObjectId)) throw new Error("SCHOOL_WITHOUT_COMPANY");
   const company = await db.collection("companies").findOne({ _id: school.companyId }, { projection: { tradeName: 1, legalName: 1 } });
 
-  const [students, educators, classes, categories, redemptions, referrals, pointProducts, superaProducts] = await Promise.all([
+  const [students, educators, classes, categoryDocuments, redemptions, referrals, pointProducts, superaProducts] = await Promise.all([
     db.collection("users").find({ role: "student", schoolId: SCHOOL_ID(schoolId), active: { $ne: false }, $or: [{ createdAt: { $lt: period.nextWeekStartAt } }, { createdAt: { $exists: false } }] }, { projection: { name: 1, createdAt: 1 } }).toArray(),
     db.collection("users").find({ role: "educator", schoolId: SCHOOL_ID(schoolId), active: { $ne: false } }, { projection: { name: 1 } }).toArray(),
     db.collection("classes").find({ schoolId: SCHOOL_ID(schoolId), active: { $ne: false } }, { projection: { name: 1, educatorId: 1, studentIds: 1 } }).toArray(),
-    db.collection("categories").find({ $and: [getCategoryScopeFilter(schoolId), { active: { $ne: false }, participatesInRanking: true, weeklyGoal: { $gt: 0 } }] }, { projection: { name: 1, weeklyGoal: 1, createdAt: 1 } }).toArray(),
+    db.collection("categories").find({ $and: [getCategoryScopeFilter(schoolId), { active: { $ne: false }, participatesInRanking: true, weeklyGoal: { $gt: 0 } }] }, { projection: { name: 1, schoolId: 1, weeklyGoal: 1, createdAt: 1 } }).toArray(),
     db.collection("pointStoreRedemptions").find({ schoolId: SCHOOL_ID(schoolId), createdAt: { $gte: period.startAt, $lt: period.nextWeekStartAt } }).toArray(),
     db.collection("referrals").find({ schoolId: SCHOOL_ID(schoolId), createdAt: { $gte: period.startAt, $lt: period.nextWeekStartAt } }).toArray(),
     db.collection("pointStoreProducts").find({ schoolId: SCHOOL_ID(schoolId) }, { projection: { name: 1, stock: 1, active: 1 } }).toArray(),
     db.collection("productsSupera").find({ schoolId: SCHOOL_ID(schoolId) }, { projection: { name: 1, stock: 1, active: 1 } }).toArray(),
   ]);
+
+  const categories = (await operationalCategories(db, schoolId, categoryDocuments)).filter(category => category.participatesInRanking !== false);
 
   // pointEvents antigos nem sempre possuem schoolId; o conjunto de alunos da escola é a fronteira confiável.
   const studentIds = students.map((student) => student._id);
@@ -160,7 +163,17 @@ export async function closeWeeklyReport(db: Db, schoolId: ObjectId, period = lat
   if (existing) return { created: false, report: existing };
   const snapshot = await buildWeeklyReportSnapshot(db, schoolId, period, now, generatedBy);
   try {
-    await reports.insertOne(snapshot);
+    const session = db.client.startSession();
+    try {
+      await session.withTransaction(async () => {
+        await lockCategorySchool(db, schoolId, session);
+        for (const metric of snapshot.categoryMetrics) {
+          const category = await db.collection("categories").findOne({ _id: new ObjectId(metric.categoryId) }, { session });
+          if (!category) throw new CategoryConflict("Uma categoria mudou durante o fechamento. Tente novamente.");
+        }
+        await reports.insertOne(snapshot, { session });
+      });
+    } finally { await session.endSession(); }
     return { created: true, report: snapshot };
   } catch (error) {
     if (error instanceof Error && ("code" in error && error.code === 11000 || error.message.includes("E11000"))) {

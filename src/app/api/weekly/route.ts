@@ -1,3 +1,4 @@
+import { operationalCategories } from "@/lib/category-management";
 import { NextRequest, NextResponse } from "next/server";
 import { ObjectId, type Collection, type Document, type WithId } from "mongodb";
 import clientPromise from "@/lib/mongodb";
@@ -460,7 +461,7 @@ export async function GET(request: NextRequest) {
         (student) => student._id
       );
 
-      const rankingCategories = await categories
+      let rankingCategories = await categories
         .find({
           $and: [
             getCategoryScopeFilter(unitSchoolId),
@@ -469,6 +470,8 @@ export async function GET(request: NextRequest) {
         })
         .sort({ name: 1 })
         .toArray();
+
+      rankingCategories = (await operationalCategories(db, unitSchoolId, rankingCategories)).filter(category => category.participatesInRanking !== false);
 
       const results = await buildWeeklyCategories(
         pointEvents,
@@ -616,7 +619,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const rankingCategories = await categories
+    let rankingCategories = await categories
       .find({
         $and: [
           getCategoryScopeFilter(studentSchoolId),
@@ -625,6 +628,8 @@ export async function GET(request: NextRequest) {
       })
       .sort({ name: 1 })
       .toArray();
+
+    rankingCategories = (await operationalCategories(db, studentSchoolId, rankingCategories)).filter(category => category.participatesInRanking !== false);
 
     const results = await buildWeeklyCategories(
       pointEvents,

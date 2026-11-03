@@ -1,3 +1,4 @@
+import { lockCategorySchool, categoryOverride, isSharedCategory, CategoryConflict } from "@/lib/category-management";
 
 import { NextRequest, NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
@@ -236,6 +237,10 @@ export async function POST(request: NextRequest) {
     try {
       // 8. Registrar o evento e atualizar o saldo na mesma transação
       await session.withTransaction(async () => {
+        await lockCategorySchool(db, effectiveSchoolId, session);
+        const current = await categories.findOne({ _id: categoryObjectId }, { session });
+        if (!current || current.active === false || !categoryBelongsToSchool(current, effectiveSchoolId)) throw new CategoryConflict("Categoria indisponivel. Recarregue a lista.");
+        if (isSharedCategory(current) && (await categoryOverride(db, effectiveSchoolId, categoryObjectId, session))?.active === false) throw new CategoryConflict("Categoria arquivada nesta unidade.");
         const pointEvent = {
           studentId: studentObjectId,
           categoryId: categoryObjectId,
@@ -283,6 +288,7 @@ export async function POST(request: NextRequest) {
       { status: 201 }
     );
   } catch (error) {
+    if (error instanceof CategoryConflict) return NextResponse.json({ error: error.message }, { status: 409 });
     console.error("Erro ao lançar pontos:", error);
 
     return NextResponse.json(

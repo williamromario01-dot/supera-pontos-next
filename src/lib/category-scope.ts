@@ -51,7 +51,10 @@ export function getCategoryScopeFilter(
   ];
 
   if (schoolId.toString() === LEGACY_CATEGORY_SCHOOL_ID) {
-    filters.push({ _id: { $in: legacyCategoryObjectIds } });
+    filters.push({ $and: [
+      { _id: { $in: legacyCategoryObjectIds } },
+      { $or: [{ schoolId: { $exists: false } }, { schoolId: null }] },
+    ] });
   }
 
   return { $or: filters };

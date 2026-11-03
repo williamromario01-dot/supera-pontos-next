@@ -1,6 +1,6 @@
 
 import { NextRequest, NextResponse } from "next/server";
-import { MongoServerError, ObjectId } from "mongodb";
+import { MongoServerError, ObjectId, type Document } from "mongodb";
 import clientPromise from "@/lib/mongodb";
 import { getOperationalAccessForAuth, subscriptionPastDueResponseForAccess } from "@/lib/subscription-access";
 import {
@@ -18,7 +18,7 @@ import {
 } from "@/lib/category-scope";
 import { isSchoolArchived } from "@/lib/schools";
 
-import { attendanceCategoryFields, ensureAttendanceCategoryIndex } from "@/lib/attendance-category";
+import { ensureCategoryManagementIndexes, CategoryConflict, activeAttendanceId, categoryOverride, resolvedCategoryType, isSharedCategory, saveManagedCategory } from "@/lib/category-management";
 
 const DB_NAME = "supera_pontos";
 const ALLOWED_ROLES = ["super_admin", "admin", "educator"] as const;
@@ -93,9 +93,17 @@ export async function GET(request: NextRequest) {
       .sort({ createdAt: 1 })
       .toArray();
 
-    const formattedCategories = categories.map((category) => ({
+    const attendanceId = await activeAttendanceId(db, effectiveSchoolId);
+    const localCategories = await Promise.all(categories.map(async (category): Promise<Document & { _id: ObjectId; shared: boolean; schoolId: ObjectId | null }> => {
+      const shared = isSharedCategory(category);
+      const local = shared ? await categoryOverride(db, effectiveSchoolId, category._id) : null;
+      return { ...category, ...local, _id: category._id, shared, schoolId: getEffectiveCategorySchoolId(category) };
+    }));
+    const formattedCategories = localCategories.filter(category => category.active !== false || request.nextUrl.searchParams.get("includeArchived") === "true").map((category) => ({
       id: category._id.toString(),
-      isAttendance: category.isAttendance === true,
+      isAttendance: attendanceId === String(category._id),
+      shared: category.shared,
+      managementVersion: category.managementVersion ?? 0,
       active: category.active !== false,
       name: category.name,
       description: category.description || "",
@@ -110,15 +118,15 @@ export async function GET(request: NextRequest) {
           ? category.defaultPoints
           : 50,
       participatesInRanking:
-        category.participatesInRanking !== false,
-      categoryType: category.categoryType || null,
+        category.participatesInRanking !== undefined ? category.participatesInRanking !== false : category.rankable !== false,
+      categoryType: resolvedCategoryType(category),
       schoolId:
         getEffectiveCategorySchoolId(category)?.toString() ?? null,
       createdBy: category.createdBy
         ? String(category.createdBy)
         : null,
       legacy: isProtectedLegacyCategory(category),
-      protectedLegacy: isProtectedLegacyCategory(category),
+      protectedLegacy: false,
       createdAt: category.createdAt,
       updatedAt: category.updatedAt,
     }));
@@ -387,9 +395,9 @@ export async function POST(request: NextRequest) {
     const now = new Date();
 
     if (body.isAttendance !== undefined && typeof body.isAttendance !== "boolean") return NextResponse.json({ error: "Marcação de frequência inválida." }, { status: 400 });
-    await ensureAttendanceCategoryIndex(db);
     const newCategory = {
-      ...attendanceCategoryFields(effectiveSchoolId, body.isAttendance === true, true),
+      _id: new ObjectId(),
+      active: true,
       name,
       description,
       icon,
@@ -406,7 +414,15 @@ export async function POST(request: NextRequest) {
       updatedAt: now,
     };
 
-    const result = await categories.insertOne(newCategory);
+    await ensureCategoryManagementIndexes(db);
+    const session = client.startSession();
+    try {
+      await session.withTransaction(async () => {
+        await categories.insertOne(newCategory, { session });
+        await saveManagedCategory(db, effectiveSchoolId, newCategory, { name, isAttendance: body.isAttendance === true }, body.expectedAttendanceCategoryId, session);
+      });
+    } finally { await session.endSession(); }
+    const result = { insertedId: newCategory._id };
 
     return NextResponse.json(
       {
@@ -421,6 +437,7 @@ export async function POST(request: NextRequest) {
       { status: 201 }
     );
   } catch (error) {
+    if (error instanceof CategoryConflict) return NextResponse.json({ error: error.message }, { status: 409 });
     if (error instanceof MongoServerError && error.code === 11000) {
       return NextResponse.json(
         { error: "Já existe uma categoria conflitante nesta escola." },
