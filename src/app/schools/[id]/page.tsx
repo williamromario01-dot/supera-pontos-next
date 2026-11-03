@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { StudentCredentialActions } from "@/components/StudentCredentialActions";
 import {
   ArrowLeft,
   UserPlus,
@@ -566,7 +567,11 @@ export default function SchoolPage() {
   }
 
   useEffect(() => {
+    // Load the external school snapshot, preserving the existing loading indicator.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadData();
+    // Reload only for a new school; the existing loaders are recreated each render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [schoolId]);
 
   useEffect(() => {
@@ -2086,7 +2091,7 @@ export default function SchoolPage() {
                         </div>
                       </div>
 
-                      <div className="flex items-center justify-between sm:justify-end gap-5">
+                      <div className="flex flex-wrap items-center justify-between sm:justify-end gap-5">
                         <div className="text-right">
                           <p className="text-xs text-slate-400">
                             Pontos
@@ -2102,6 +2107,7 @@ export default function SchoolPage() {
                           </p>
                         </div>
 
+                        <StudentCredentialActions role={currentUser?.role} studentId={student.id} />
                         {canManageStudents && (
                           <button
                             onClick={() =>
