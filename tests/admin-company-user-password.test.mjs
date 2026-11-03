@@ -41,6 +41,8 @@ test("company detail returns safe user fields and renders password management UI
   assert.doesNotMatch(detailRoute, /passwordHash: 1|password: 1/);
   assert.match(page, /Usuários da empresa/);
   assert.match(page, /Redefinir senha/);
+  assert.match(page, /Alterar e-mail/);
+  assert.match(page, /\/users\/credentials\?userId=\$\{encodeURIComponent\(user\._id\)\}&action=email/);
   assert.match(page, /newPassword/);
   assert.match(page, /confirmPassword/);
 });

@@ -80,7 +80,8 @@ const matrix = [
   ["educator", "student", {}, true], ["educator", "student", { otherSchool: true }, false],
   ...["educator", "admin", "company_admin", "super_admin"].map(role => ["educator", role, {}, false]), ["educator", "student", { otherCompany: true }, false],
   ...["student", "educator", "admin", "company_admin", "super_admin"].map(role => ["student", role, {}, false]),
-  ["super_admin", "company_admin", { otherCompany: true }, true], ["super_admin", "super_admin", {}, true],
+  ...["company_admin", "admin", "educator", "student"].map(role => ["super_admin", role, { otherCompany: true }, true]),
+  ["super_admin", "super_admin", {}, true],
 ];
 for (const [actor, target, options, allowed] of matrix) {
   for (const [operation, body] of [["password", passwordBody], ["email", emailBody]]) {
@@ -246,4 +247,114 @@ test("inactive actor, malformed tenant scope and invalid IDs fail closed", async
 test("legacy targets without companyId inherit their verified school company", async () => {
   const f = fixture(); delete f.state().users[1].companyId;
   assert.equal((await f.patch(passwordBody, passwordRoute)).status, 200);
+});
+
+test("super admin email uses existing normalization and validation without exposing duplicate owners", async () => {
+  const f = fixture("super_admin", "company_admin", { otherCompany: true });
+  const response = await f.patch(emailBody);
+  assert.equal(response.status, 200);
+  assert.equal(f.state().users[1].email, "new.email@example.test");
+  for (const email of ["invalid", "a b@example.test"]) {
+    assert.equal((await fixture("super_admin", "student").patch({ email })).status, 400);
+  }
+  const duplicate = fixture("super_admin", "educator");
+  const before = clone(duplicate.state());
+  const failure = await duplicate.patch({ email: "TAKEN@EXAMPLE.TEST" });
+  assert.equal(failure.status, 409);
+  assert.deepEqual(duplicate.state(), before);
+  assert.doesNotMatch(JSON.stringify(await failure.json()), /taken@example|unrelated|password|token|hash/i);
+});
+
+test("super admin directory makes all four subordinate profiles available", async () => {
+  for (const role of ["company_admin", "admin", "educator", "student"]) {
+    const f = fixture("super_admin", role, { otherCompany: true });
+    const response = await f.list();
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.ok(body.users.some(user => user.id === String(id(2)) && user.role === role));
+    assert.doesNotMatch(JSON.stringify(body), /passwordHash|old-hash|legacy-value|token/i);
+  }
+});
+
+function findElement(node, predicate) {
+  if (!node || typeof node !== "object") return undefined;
+  if (Array.isArray(node)) return node.map(child => findElement(child, predicate)).find(Boolean);
+  if (predicate(node)) return node;
+  return findElement(node.props?.children, predicate);
+}
+
+test("admin email link opens existing form and submits through the shared protected API", async () => {
+  const f = fixture("super_admin", "company_admin", { otherCompany: true });
+  const previousFetch = globalThis.fetch;
+  const previousWindow = globalThis.window;
+  let cleanup;
+  try {
+    const states = []; let cursor = 0; let effect;
+    const requests = [];
+    globalThis.window = { location: { search: `?userId=${id(2)}&action=email` } };
+    globalThis.fetch = async (url, options) => {
+      requests.push({ url, options });
+      if (options?.method === "PATCH") {
+        assert.equal(url, `/api/users/${id(2)}/credentials`);
+        return f.patch(JSON.parse(options.body));
+      }
+      assert.equal(url, "/api/users/credentials");
+      return f.list();
+    };
+    const Page = loadRoute("src/app/users/credentials/page.tsx", {
+      react: {
+        useState: initial => { const index = cursor++; if (!(index in states)) states[index] = initial; return [states[index], value => { states[index] = value; }]; },
+        useEffect: callback => { effect = callback; },
+      },
+      "next/link": { __esModule: true, default: "a" },
+    }).default;
+    Page(); cleanup = effect();
+    for (let attempt = 0; attempt < 100 && states[1]; attempt++) await new Promise(resolve => setTimeout(resolve, 10));
+    assert.equal(states[1], false);
+    assert.equal(states[5].user.id, String(id(2)));
+    assert.equal(states[5].mode, "email");
+    cursor = 0;
+    let view = Page();
+    const email = findElement(view, element => element.type === "input" && element.props.type === "email");
+    assert.ok(email);
+    email.props.onChange({ target: { value: " NEW.ADMIN@EXAMPLE.TEST " } });
+    cursor = 0; view = Page();
+    const form = findElement(view, element => element.type === "form");
+    await form.props.onSubmit({ preventDefault() {} });
+    assert.equal(f.state().users[1].email, "new.admin@example.test");
+    assert.equal(f.state().adminAuditLogs[0].action, "user_email_changed");
+    assert.equal(f.state().sessions.length, 2);
+    assert.equal(f.state().passwordResetTokens.length, 2);
+    assert.ok(requests.some(request => request.options?.method === "PATCH"));
+    assert.equal(states[5], null);
+  } finally {
+    cleanup?.(); globalThis.fetch = previousFetch;
+    if (previousWindow === undefined) delete globalThis.window; else globalThis.window = previousWindow;
+  }
+});
+
+test("URL target selection cannot open a form for a user absent from the authorized directory", async () => {
+  const f = fixture("company_admin", "super_admin");
+  const previousFetch = globalThis.fetch;
+  const previousWindow = globalThis.window;
+  let cleanup;
+  try {
+    const states = []; let cursor = 0; let effect;
+    globalThis.window = { location: { search: `?userId=${id(2)}&action=email` } };
+    globalThis.fetch = () => f.list();
+    const Page = loadRoute("src/app/users/credentials/page.tsx", {
+      react: {
+        useState: initial => { const index = cursor++; states[index] = initial; return [initial, value => { states[index] = value; }]; },
+        useEffect: callback => { effect = callback; },
+      }, "next/link": { __esModule: true, default: "a" },
+    }).default;
+    Page(); cleanup = effect();
+    for (let attempt = 0; attempt < 100 && states[1]; attempt++) await new Promise(resolve => setTimeout(resolve, 10));
+    assert.equal(states[1], false);
+    assert.equal(states[5], null);
+    assert.equal(f.state().adminAuditLogs.length, 0);
+  } finally {
+    cleanup?.(); globalThis.fetch = previousFetch;
+    if (previousWindow === undefined) delete globalThis.window; else globalThis.window = previousWindow;
+  }
 });

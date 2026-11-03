@@ -29,7 +29,16 @@ export default function CredentialManagementPage() {
       .then(async response => {
         const body = await response.json();
         if (!response.ok) throw new Error(body.error ?? "Erro ao carregar os dados.");
+        if (controller.signal.aborted) return;
         setUsers(body.users);
+        // URL parameters select a form, never authority: only use the server-authorized directory.
+        const params = new URLSearchParams(window.location.search);
+        const mode = params.get("action");
+        const selected = (body.users as ManagedUser[]).find(user => user.id === params.get("userId"));
+        if (selected && (mode === "email" || mode === "password")) {
+          setEmail(selected.email);
+          setEditing({ user: selected, mode });
+        }
       })
       .catch(reason => { if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : "Erro ao carregar os dados."); })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });

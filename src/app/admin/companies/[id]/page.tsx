@@ -251,7 +251,7 @@ function UsersPanel({ users, onReset }: { users: CompanyUser[]; onReset: (user: 
         <td>{user.email ?? "—"}</td>
         <td>{user.role ?? "—"}</td>
         <td><span className={`rounded-full px-3 py-1 text-xs font-bold ${user.active === false ? "bg-slate-100 text-slate-600" : "bg-emerald-50 text-emerald-700"}`}>{user.active === false ? "Inativo" : "Ativo"}</span></td>
-        <td className="text-right"><button onClick={() => onReset(user)} className="rounded-lg border border-orange-200 px-3 py-2 font-bold text-orange-700">Redefinir senha</button></td>
+        <td className="text-right"><div className="flex justify-end gap-2"><Link href={`/users/credentials?userId=${encodeURIComponent(user._id)}&action=email`} className="rounded-lg border border-orange-200 px-3 py-2 font-bold text-orange-700">Alterar e-mail</Link><button onClick={() => onReset(user)} className="rounded-lg border border-orange-200 px-3 py-2 font-bold text-orange-700">Redefinir senha</button></div></td>
       </tr>)}</tbody>
     </table>}
   </section>;
