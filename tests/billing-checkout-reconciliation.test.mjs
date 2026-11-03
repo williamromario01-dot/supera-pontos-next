@@ -336,8 +336,9 @@ test("subscription reconciliation cannot overwrite the canonical local _id with 
   assert.doesNotMatch(source, /\.\.\.providerLink/);
   assert.match(source, /providerCustomerId: providerLink\.providerCustomerId/);
   assert.match(source, /providerSubscriptionId: providerLink\.providerSubscriptionId/);
-  assert.match(adapter, /linkBelongsToSubscription/);
-  assert.match(adapter, /internalSubscriptionId.*subscription\._id/);
-  assert.match(adapter, /companyId.*subscription\.companyId/);
+  assert.match(adapter, /legacyBillingSubscriptionReference/);
+  const shared = await readFile(new URL("../src/lib/billing-subscription-reference.ts", import.meta.url), "utf8");
+  assert.match(shared, /String\(link\.internalSubscriptionId\).*String\(subscription\._id\)/);
+  assert.match(shared, /String\(link\.companyId\).*String\(subscription\.companyId\)/);
   assert.doesNotMatch(adapter, /startsWith\("subscription:"\)/);
 });

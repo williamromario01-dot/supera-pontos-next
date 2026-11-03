@@ -10,6 +10,7 @@ import { getPricingQuote } from "@/lib/plans";
 import { activeSchoolFilter } from "@/lib/schools";
 import { normalizeBillingExemption } from "@/lib/billing-exemption";
 import { nextReactivationDueDate } from "@/lib/subscription-reactivation";
+import { billingLinkBelongsToSubscription, legacyBillingSubscriptionReference } from "@/lib/billing-subscription-reference";
 
 export class ExemptionError extends Error {
   constructor(public readonly code: string, public readonly status = 409) { super(code); }
@@ -44,7 +45,7 @@ function safeReason(value: unknown): string {
 export async function exemptionLink(db: Db, sub: Document): Promise<Document | null> {
   const environment = getAsaasEnvironment();
   const links = await db.collection("billingProviderLinks").find({ provider: "asaas", internalSubscriptionId: sub._id }).toArray();
-  if (links.some(l => String(l.companyId) !== String(sub.companyId)) || links.length > 1 || links.some(l => l.environment !== environment)) {
+  if (links.length > 1 || links.some(l => !billingLinkBelongsToSubscription(sub, l, environment))) {
     throw new ExemptionError("EXEMPTION_PROVIDER_ENVIRONMENT_CONFLICT");
   }
   const link = links[0];
@@ -58,7 +59,12 @@ export async function exemptionLink(db: Db, sub: Document): Promise<Document | n
 
 function assertRemote(sub: Document, link: Document, remote: Awaited<ReturnType<typeof getAsaasSubscription>>) {
   if (remote.id !== link.providerSubscriptionId || remote.customer !== link.providerCustomerId ||
-    remote.externalReference !== `subscription:${sub._id}` || remote.cycle !== "MONTHLY") {
+    remote.cycle !== "MONTHLY") {
+    throw new ExemptionError("EXEMPTION_REMOTE_SCOPE_CONFLICT");
+  }
+  const legacyReference = legacyBillingSubscriptionReference(sub, link, getAsaasEnvironment());
+  if (remote.externalReference !== `subscription:${sub._id}` &&
+    (legacyReference === undefined || remote.externalReference !== legacyReference)) {
     throw new ExemptionError("EXEMPTION_REMOTE_SCOPE_CONFLICT");
   }
 }

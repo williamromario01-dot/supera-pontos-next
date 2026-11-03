@@ -24,7 +24,7 @@ function matches(obj, filter) {
 function fixture(options = {}) {
   const sub = { _id: subscriptionId, companyId, updatedAt: new Date("2026-11-02Z"), status: "past_due", requestedMaxUnits: 1, maxUnits: 0, unitCount: 0, totalMonthlyCents: 11990,
     billingExemption: { ...grant(), status: "pending_provider_action" }, ...options.sub };
-  const link = { _id: new ObjectId(), companyId, internalSubscriptionId: subscriptionId, environment: options.linkEnvironment ?? "sandbox", provider: "asaas", providerCustomerId: "cus_fixture", providerSubscriptionId: "sub_fixture" };
+  const link = { _id: new ObjectId(), companyId, internalSubscriptionId: subscriptionId, environment: options.linkEnvironment ?? "sandbox", provider: "asaas", providerCustomerId: "cus_fixture", providerSubscriptionId: "sub_fixture", ...options.link };
   const remote = { id: "sub_fixture", customer: "cus_fixture", externalReference: `subscription:${subscriptionId}`, cycle: "MONTHLY", status: "ACTIVE", value: 119.90, nextDueDate: "2026-10-24", ...options.remote };
   const payments = options.payments ?? [];
   const audits = [], calls = [], receipts = [], billingEvents = [];
@@ -52,18 +52,67 @@ function fixture(options = {}) {
     "@/lib/asaas-production": { assertAsaasMutationAllowed: () => { if (options.gateBlocked) throw Error("blocked"); } },
     "@/lib/asaas-subscriptions": {
       getAsaasSubscription: async () => { calls.push("getSubscription"); return { ...remote }; },
-      listAllAsaasSubscriptionPayments: async () => payments.map(p => ({ ...p })),
+      listAllAsaasSubscriptionPayments: async () => { calls.push("listPayments"); return payments.map(p => ({ ...p })); },
       getAsaasPayment: async id => ({ ...payments.find(p => p.id === id) }),
       suspendAsaasSubscription: async () => { calls.push("suspend"); if (failSuspend) { failSuspend = false; if (options.lostSuspendResponse) remote.status = "INACTIVE"; throw Error("secret raw provider error"); } remote.status = "INACTIVE"; },
       reactivateAsaasSubscription: async (id, input) => { calls.push(["resume", input]); if (failResume) { failResume = false; throw Error("failed"); } Object.assign(remote, input, { status: "ACTIVE" }); },
       removeAsaasExemptedPayment: async id => { calls.push(["remove", id]); payments.find(p => p.id === id).deleted = true; },
     } };
   const service = loadRoute("src/lib/billing-exemption-lifecycle.ts", mocks);
-  return { sub, remote, payments, db, calls, audits, service, mocks };
+  return { sub, link, remote, payments, db, calls, audits, service, mocks };
 }
 const payment = (status, id = "pay_fixture") => ({ id, customer: "cus_fixture", subscription: "sub_fixture", status, billingType: "PIX", value: 119.90, dueDate: "2026-10-24" });
 const preserve = { policy: "preserve", paymentIds: [] };
 const activate = (f, decision = preserve, g = grant()) => f.service.runExemption(f.db, f.sub, "fixture-super-admin", { grant: g, decision }, now);
+
+const historicalLinkId = new ObjectId("6adcde3ca7306aec6a6098fc");
+function historicalFixture(options = {}) {
+  return fixture({ environment: "production", linkEnvironment: "production",
+    payments: [payment("OVERDUE")], ...options,
+    link: { _id: historicalLinkId, ...options.link },
+    remote: { externalReference: `subscription:${historicalLinkId}`, ...options.remote },
+  });
+}
+
+test("exemption compatibility: canonical reference lists the historical overdue payment", async () => {
+  const f = historicalFixture({ remote: { externalReference: `subscription:${subscriptionId}` } });
+  const result = await f.service.inspectExemptionProvider(f.db, f.sub);
+  assert.equal(result.payments.length, 1); assert.equal(result.payments[0].status, "OVERDUE");
+  assert.deepEqual(f.calls, ["getSubscription", "listPayments"]);
+});
+test("exemption compatibility: exact owning legacy reference lists payments without mutations", async () => {
+  const f = historicalFixture(); const result = await f.service.inspectExemptionProvider(f.db, f.sub);
+  assert.equal(result.payments[0].id, "pay_fixture"); assert.equal(result.payments[0].value, 119.90);
+  assert.deepEqual(f.calls, ["getSubscription", "listPayments"]); assert.equal(f.sub.status, "past_due");
+  assert.deepEqual(f.audits, []);
+});
+test("exemption compatibility: legacy reference also works throughout suspension and explicit forgiveness", async () => {
+  const f = historicalFixture(); await activate(f, { policy: "forgive_selected", paymentIds: ["pay_fixture"] });
+  assert.equal(f.remote.status, "INACTIVE"); assert.equal(f.payments[0].deleted, true);
+  assert.equal(f.sub.billingExemption.status, "active"); assert.equal(f.sub.maxUnits, 1); assert.equal(f.sub.unitCount, 0);
+});
+for (const [label, options, code] of [
+  ["another provider-link reference", { remote: { externalReference: "subscription:aaaaaaaaaaaaaaaaaaaaaaaa" } }, "EXEMPTION_REMOTE_SCOPE_CONFLICT"],
+  ["arbitrary reference", { remote: { externalReference: "subscription:anything" } }, "EXEMPTION_REMOTE_SCOPE_CONFLICT"],
+  ["missing reference", { remote: { externalReference: undefined } }, "EXEMPTION_REMOTE_SCOPE_CONFLICT"],
+  ["different remote subscription", { remote: { id: "sub_other" } }, "EXEMPTION_REMOTE_SCOPE_CONFLICT"],
+  ["different remote customer", { remote: { customer: "cus_other" } }, "EXEMPTION_REMOTE_SCOPE_CONFLICT"],
+  ["different company", { link: { companyId: new ObjectId("aaaaaaaaaaaaaaaaaaaaaaaa") } }, "EXEMPTION_PROVIDER_ENVIRONMENT_CONFLICT"],
+  ["different internal subscription", { link: { internalSubscriptionId: new ObjectId("bbbbbbbbbbbbbbbbbbbbbbbb") } }, "EXEMPTION_PROVIDER_ENVIRONMENT_CONFLICT"],
+  ["different environment", { environment: "sandbox" }, "EXEMPTION_PROVIDER_ENVIRONMENT_CONFLICT"],
+  ["different cycle", { remote: { cycle: "YEARLY" } }, "EXEMPTION_REMOTE_SCOPE_CONFLICT"],
+]) test(`exemption compatibility blocks ${label} before payment listing`, async () => {
+  const f = historicalFixture(options);
+  await assert.rejects(f.service.inspectExemptionProvider(f.db, f.sub), error => error.code === code);
+  assert.ok(!f.calls.includes("listPayments")); assert.ok(!f.calls.includes("suspend"));
+});
+for (const foreign of [{ customer: "cus_other" }, { subscription: "sub_other" }]) {
+  test(`exemption compatibility still blocks foreign payment ${Object.keys(foreign)[0]}`, async () => {
+    const f = historicalFixture({ payments: [{ ...payment("OVERDUE"), ...foreign }] });
+    await assert.rejects(f.service.inspectExemptionProvider(f.db, f.sub), error => error.code === "EXEMPTION_PAYMENT_SCOPE_CONFLICT");
+    assert.ok(f.calls.includes("listPayments")); assert.ok(!f.calls.includes("suspend"));
+  });
+}
 
 test("real local fixture activates without a remote subscription and releases one unit", async () => {
   const f = fixture({ noLink: true }); const result = await activate(f);

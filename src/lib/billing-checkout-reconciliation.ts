@@ -4,6 +4,7 @@ import type { Db, Document } from "mongodb";
 import { getAsaasSubscription, listAsaasSubscriptionPayments } from "@/lib/asaas-subscriptions";
 import type { AsaasEnvironment } from "@/lib/asaas";
 import { upsertBillingProviderLink, type BillingProviderLink } from "@/lib/billing-provider-links";
+import { legacyBillingSubscriptionReference } from "@/lib/billing-subscription-reference";
 import {
   BillingReconciliationError,
   reconcileExistingCheckout,
@@ -19,12 +20,9 @@ export async function reconcileExistingBillingCheckout(input: {
 }) {
   let stage = "get_subscription";
   try {
-    const linkBelongsToSubscription =
-      input.link.internalSubscriptionId?.toString() === input.subscription._id.toString() &&
-      input.link.companyId?.toString() === input.subscription.companyId?.toString();
-    const legacyLinkExternalReference = linkBelongsToSubscription && input.link._id
-      ? `subscription:${input.link._id.toString()}`
-      : undefined;
+    const legacyLinkExternalReference = legacyBillingSubscriptionReference(
+      input.subscription, input.link, input.environment,
+    );
     const result = await reconcileExistingCheckout({
       link: input.link,
       externalReference: `subscription:${input.subscription._id.toString()}`,
