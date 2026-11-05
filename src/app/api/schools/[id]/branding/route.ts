@@ -18,6 +18,8 @@ const UNIT_PATCH_FIELDS = new Set([
   "primaryColor",
   "secondaryColor",
   "accentColor",
+  "brandGradientStart",
+  "brandGradientEnd",
   "displayName",
   "shortName",
 ]);
@@ -85,7 +87,7 @@ export async function PATCH(request: NextRequest, route: Context) {
   ) {
     return NextResponse.json({ error: "Campo de identidade não permitido." }, { status: 400 });
   }
-  const colorFields = ["primaryColor", "secondaryColor", "accentColor"];
+  const colorFields = ["primaryColor", "secondaryColor", "accentColor", "brandGradientStart", "brandGradientEnd"];
   const updatesColors = colorFields.some((key) => Object.hasOwn(input, key));
   const updatesDisplayName = Object.hasOwn(input, "displayName") || Object.hasOwn(input, "shortName");
   if (updatesColors && value.company.branding?.allowUnitBranding !== true) {

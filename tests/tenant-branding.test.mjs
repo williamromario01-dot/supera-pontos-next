@@ -20,6 +20,8 @@ test("branding follows platform, company and allowed unit inheritance", () => {
   assert.equal(platform.source, "platform");
   assert.equal(platform.primaryColor, "#f97316");
   assert.equal(platform.displayName, "SUPERPONTOS");
+  assert.equal(platform.brandGradientStart, "#f97316");
+  assert.equal(platform.brandGradientEnd, "#facc15");
 
   const company = { branding: { displayName: "Colégio Evolução", primaryColor: "#112233", logoUrl: "https://example.test/company.png" } };
   assert.equal(resolveEffectiveBranding(company, null).source, "company");
@@ -37,6 +39,26 @@ test("branding follows platform, company and allowed unit inheritance", () => {
   assert.equal(allowedUnit.primaryColor, "#445566");
   assert.equal(allowedUnit.logoUrl, "https://example.test/company.png");
   assert.equal(allowedUnit.displayName, "Unidade Centro");
+});
+
+test("brand gradient is tenant-isolated, inheritable and legacy-compatible", () => {
+  const supera = { branding: { brandGradientStart: "#f97316", brandGradientEnd: "#facc15", allowUnitBranding: true } };
+  const yagi = { branding: { brandGradientStart: "#2563eb", brandGradientEnd: "#7c3aed" } };
+  const unit = { branding: { brandGradientStart: "#10b981", brandGradientEnd: "#06b6d4" } };
+  assert.deepEqual(
+    [resolveEffectiveBranding(supera, null).brandGradientStart, resolveEffectiveBranding(supera, null).brandGradientEnd],
+    ["#f97316", "#facc15"],
+  );
+  assert.deepEqual(
+    [resolveEffectiveBranding(yagi, null).brandGradientStart, resolveEffectiveBranding(yagi, null).brandGradientEnd],
+    ["#2563eb", "#7c3aed"],
+  );
+  assert.deepEqual(
+    [resolveEffectiveBranding(supera, unit).brandGradientStart, resolveEffectiveBranding(supera, unit).brandGradientEnd],
+    ["#10b981", "#06b6d4"],
+  );
+  assert.equal(resolveEffectiveBranding({ branding: {} }, null).brandGradientEnd, "#facc15");
+  assert.equal(resolveEffectiveBranding({ branding: { shortName: "Yagi" } }, null).shortName, "Yagi");
 });
 
 test("product titles use explicit isolated short names and a safe default", () => {
@@ -101,6 +123,8 @@ test("company and unit branding routes enforce server-side tenant roles", async 
   assert.match(companyRoute, /branding\.displayName/);
   assert.match(companyRoute, /branding\.allowUnitDisplayName/);
   assert.match(companyRoute, /COMPANY_PATCH_FIELDS/);
+  assert.match(companyRoute, /"brandGradientStart"/);
+  assert.match(companyRoute, /"brandGradientEnd"/);
   assert.match(unitRoute, /auth\.role !== "admin"/);
   assert.match(unitRoute, /hasSchoolAccess\(result\.auth, id\)/);
   assert.match(unitRoute, /result\.auth\.companyId \? \{ companyId: result\.auth\.companyId \}/);
@@ -110,6 +134,17 @@ test("company and unit branding routes enforce server-side tenant roles", async 
   assert.doesNotMatch(unitRoute, /body\.schoolId|formData\.get\("schoolId"\)/);
   assert.match(unitRoute, /updatesDisplayName && value\.company\.branding\?\.allowUnitDisplayName !== true/);
   assert.match(unitRoute, /updatesColors && value\.company\.branding\?\.allowUnitBranding !== true/);
+  assert.match(unitRoute, /"brandGradientStart"/);
+  assert.match(unitRoute, /"brandGradientEnd"/);
+});
+
+test("authorized branding editor persists both gradient colors and previews the full name", async () => {
+  const settings = await read("src/components/BrandingSettings.tsx");
+  assert.match(settings, /Cor inicial do degradê do nome/);
+  assert.match(settings, /Cor final do degradê do nome/);
+  assert.match(settings, /brandGradientStart: branding\.brandGradientStart/);
+  assert.match(settings, /brandGradientEnd: branding\.brandGradientEnd/);
+  assert.match(settings, /tenant-platform-name block text-lg/);
 });
 
 test("educators, students and arbitrary tenant identifiers cannot update branding", async () => {

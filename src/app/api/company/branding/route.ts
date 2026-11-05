@@ -16,6 +16,8 @@ const COMPANY_PATCH_FIELDS = new Set([
   "primaryColor",
   "secondaryColor",
   "accentColor",
+  "brandGradientStart",
+  "brandGradientEnd",
   "displayName",
   "shortName",
   "allowUnitBranding",

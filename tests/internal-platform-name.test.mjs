@@ -35,6 +35,8 @@ test("name follows server-resolved authorized colors and names", () => {
   for (const [companyValue, school, color, name] of cases) {
     const markup = render(branding.resolveEffectiveBranding(companyValue, school));
     assert.ok(markup.includes(`--brand-primary:${color}`));
+    assert.ok(markup.includes(`--brand-gradient-start:`));
+    assert.ok(markup.includes(`--brand-gradient-end:`));
     assert.ok(markup.includes(`>${name}</span>`));
     assert.equal((markup.match(/<span/g) ?? []).length, 1);
   }
@@ -42,8 +44,8 @@ test("name follows server-resolved authorized colors and names", () => {
 test("resolved name remains escaped and uses the existing brand token", () => {
   assert.ok(render(branding.PLATFORM_BRANDING, { displayName: "<script>" }).includes("&lt;script&gt;"));
   const css = fs.readFileSync("src/app/globals.css", "utf8");
-  assert.match(css, /color: var\(--brand-primary\)/);
+  assert.match(css, /linear-gradient\(90deg, var\(--brand-gradient-start/);
   const nameRule = css.match(/\.tenant-platform-name \{[^}]+\}/)?.[0] ?? "";
-  assert.doesNotMatch(nameRule, /linear-gradient|#f97316/);
+  assert.match(nameRule, /brand-gradient-start/);
   assert.match(css, /forced-colors: active/);
 });

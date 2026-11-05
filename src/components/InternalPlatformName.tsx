@@ -14,5 +14,7 @@ export default function InternalPlatformName({
   const branding = useContext(TenantBrandingContext);
   return <span className={`tenant-platform-name ${className}`} style={{
     "--brand-primary": branding.primaryColor,
+    "--brand-gradient-start": branding.brandGradientStart,
+    "--brand-gradient-end": branding.brandGradientEnd,
   } as CSSProperties}>{displayName ?? branding.displayName}</span>;
 }

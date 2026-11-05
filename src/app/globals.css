@@ -361,7 +361,16 @@ body {
 /* Internal identity uses the existing resolved tenant token. */
 .tenant-platform-name {
   display: inline-block;
-  color: var(--brand-primary);
+  color: var(--brand-gradient-start, var(--brand-primary));
+}
+@supports ((background-clip: text) or (-webkit-background-clip: text)) {
+  .tenant-platform-name {
+    background-image: linear-gradient(90deg, var(--brand-gradient-start, #f97316), var(--brand-gradient-end, #facc15));
+    background-clip: text;
+    -webkit-background-clip: text;
+    color: transparent;
+    -webkit-text-fill-color: transparent;
+  }
 }
 @media (forced-colors: active) {
   .tenant-platform-name {

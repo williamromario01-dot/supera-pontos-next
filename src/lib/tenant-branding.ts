@@ -6,6 +6,8 @@ export const PLATFORM_BRANDING = {
   primaryColor: "#f97316",
   secondaryColor: "#0f172a",
   accentColor: "#2563eb",
+  brandGradientStart: "#f97316",
+  brandGradientEnd: "#facc15",
   source: "platform" as const,
   productName: OFFICIAL_PRODUCT_NAME,
   displayName: OFFICIAL_PRODUCT_NAME,
@@ -18,6 +20,8 @@ export type BrandingInput = {
   primaryColor?: string;
   secondaryColor?: string;
   accentColor?: string;
+  brandGradientStart?: string;
+  brandGradientEnd?: string;
   displayName?: string | null;
   shortName?: string | null;
 };
@@ -97,7 +101,7 @@ export function contrastText(color: string): "#ffffff" | "#0f172a" {
 export function sanitizeBrandingInput(value: unknown): BrandingInput | null {
   if (!value || typeof value !== "object") return null;
   const item = value as Record<string, unknown>;
-  const colors = ["primaryColor", "secondaryColor", "accentColor"] as const;
+  const colors = ["primaryColor", "secondaryColor", "accentColor", "brandGradientStart", "brandGradientEnd"] as const;
   const result: BrandingInput = {};
   for (const key of colors) {
     if (item[key] !== undefined) {
@@ -115,7 +119,7 @@ function validBranding(value: unknown): BrandingInput | null {
   if (typeof item.logoUrl === "string" && /^https:\/\//.test(item.logoUrl)) {
     result.logoUrl = item.logoUrl;
   }
-  for (const key of ["primaryColor", "secondaryColor", "accentColor"] as const) {
+  for (const key of ["primaryColor", "secondaryColor", "accentColor", "brandGradientStart", "brandGradientEnd"] as const) {
     if (isSafeBrandColor(item[key])) result[key] = item[key];
   }
   const displayName = validateDisplayName(item.displayName);
@@ -147,6 +151,8 @@ export function resolveEffectiveBranding(
     primaryColor: unitBranding?.primaryColor ?? companyBranding?.primaryColor ?? PLATFORM_BRANDING.primaryColor,
     secondaryColor: unitBranding?.secondaryColor ?? companyBranding?.secondaryColor ?? PLATFORM_BRANDING.secondaryColor,
     accentColor: unitBranding?.accentColor ?? companyBranding?.accentColor ?? PLATFORM_BRANDING.accentColor,
+    brandGradientStart: unitBranding?.brandGradientStart ?? companyBranding?.brandGradientStart ?? PLATFORM_BRANDING.brandGradientStart,
+    brandGradientEnd: unitBranding?.brandGradientEnd ?? companyBranding?.brandGradientEnd ?? PLATFORM_BRANDING.brandGradientEnd,
     source: unitBranding || unitDisplayName ? "unit" : companyBranding ? "company" : "platform",
     productName: PLATFORM_BRANDING.productName,
     displayName: unitDisplayName ?? companyBranding?.displayName ?? PLATFORM_BRANDING.displayName,

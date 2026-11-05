@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useState, type CSSProperties } from "react";
 import { Image as ImageIcon, RotateCcw, Save, Upload } from "lucide-react";
 import { contrastText } from "@/lib/tenant-branding";
 import { PROVIDER_IDENTITY } from "@/lib/product-identity";
@@ -11,6 +11,8 @@ type Branding = {
   primaryColor: string;
   secondaryColor: string;
   accentColor: string;
+  brandGradientStart: string;
+  brandGradientEnd: string;
   displayName: string;
   shortName: string;
 };
@@ -73,6 +75,8 @@ export default function BrandingSettings({
             primaryColor: branding.primaryColor,
             secondaryColor: branding.secondaryColor,
             accentColor: branding.accentColor,
+            brandGradientStart: branding.brandGradientStart,
+            brandGradientEnd: branding.brandGradientEnd,
           } : {}),
           ...(canEditDisplayName && displayName.trim() ? { displayName } : {}),
           ...(canEditDisplayName && shortName.trim() ? { shortName } : {}),
@@ -180,6 +184,10 @@ export default function BrandingSettings({
               <Color label="Cor secundária" value={branding.secondaryColor} onChange={(secondaryColor) => setBranding({ ...branding, secondaryColor })}/>
               <Color label="Destaque" value={branding.accentColor} onChange={(accentColor) => setBranding({ ...branding, accentColor })}/>
             </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Color label="Cor inicial do degradê do nome" value={branding.brandGradientStart} onChange={(brandGradientStart) => setBranding({ ...branding, brandGradientStart })}/>
+              <Color label="Cor final do degradê do nome" value={branding.brandGradientEnd} onChange={(brandGradientEnd) => setBranding({ ...branding, brandGradientEnd })}/>
+            </div>
           </>}
           {companyScope && <label className="flex items-center justify-between gap-4 rounded-2xl border p-4"><span><b className="block">Permitir personalização por unidade</b><span className="text-sm text-slate-500">Administradores poderão alterar somente a própria unidade.</span></span><input type="checkbox" checked={allowUnitBranding} onChange={(event) => setAllowUnitBranding(event.target.checked)} className="h-5 w-5"/></label>}
           {companyScope && <label className="flex items-center justify-between gap-4 rounded-2xl border p-4"><span><b className="block">Permitir que administradores das unidades personalizem o nome interno</b><span className="text-sm text-slate-500">Por padrão, as unidades herdam o nome interno da empresa.</span></span><input type="checkbox" checked={allowUnitDisplayName} onChange={(event) => setAllowUnitDisplayName(event.target.checked)} className="h-5 w-5"/></label>}
@@ -196,7 +204,7 @@ export default function BrandingSettings({
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src={branding.logoUrl} alt="Logo personalizada" className="h-12 w-12 rounded-xl bg-white object-contain p-1"/>
               </> : <span className="grid h-12 w-12 place-items-center rounded-xl bg-white/15"><ImageIcon/></span>}
-              <div><b className="block text-lg">{displayName.trim() || branding.displayName}</b><span className="text-xs opacity-80">{PROVIDER_IDENTITY.shortName}</span></div>
+              <div><b className="tenant-platform-name block text-lg" style={{ "--brand-gradient-start": branding.brandGradientStart, "--brand-gradient-end": branding.brandGradientEnd } as CSSProperties}>{displayName.trim() || branding.displayName}</b><span className="text-xs opacity-80">{PROVIDER_IDENTITY.shortName}</span></div>
             </div>
           </div>
           <div className="space-y-4 p-6">
