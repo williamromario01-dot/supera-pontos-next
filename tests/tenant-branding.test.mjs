@@ -7,7 +7,9 @@ import {
   contrastText,
   detectBrandingImageType,
   resolveEffectiveBranding,
+  productSectionTitle,
   validateDisplayName,
+  validateShortName,
 } from "../src/lib/tenant-branding.ts";
 import { PROVIDER_IDENTITY } from "../src/lib/product-identity.ts";
 
@@ -35,6 +37,26 @@ test("branding follows platform, company and allowed unit inheritance", () => {
   assert.equal(allowedUnit.primaryColor, "#445566");
   assert.equal(allowedUnit.logoUrl, "https://example.test/company.png");
   assert.equal(allowedUnit.displayName, "Unidade Centro");
+});
+
+test("product titles use explicit isolated short names and a safe default", () => {
+  const supera = resolveEffectiveBranding({ branding: { displayName: "Empresa Supera", shortName: "Supera" } }, null);
+  const yagi = resolveEffectiveBranding({ branding: { displayName: "Marketing Yagi", shortName: "Yagi" } }, null);
+  assert.equal(productSectionTitle(supera), "Produtos Supera");
+  assert.equal(productSectionTitle(yagi), "Produtos Yagi");
+  assert.equal(productSectionTitle(resolveEffectiveBranding({ branding: { displayName: "Nome sem regra" } }, null)), "Produtos Super");
+  assert.equal(validateShortName(" Yagi ").valid, true);
+  assert.equal(validateShortName("Y").valid, false);
+  assert.equal(validateShortName("<b>Yagi</b>").valid, false);
+});
+
+test("tenant theme clears stale identity and reloads without cache on navigation", async () => {
+  const source = await read("src/components/TenantTheme.tsx");
+  assert.match(source, /resolved\?\.key === requestKey \? resolved\.branding : PLATFORM_BRANDING/);
+  assert.match(source, /cache: "no-store"/);
+  assert.match(source, /\[requestKey\]/);
+  assert.match(source, /tenant-branding-changed/);
+  assert.match(source, /controller\.signal\.aborted/);
 });
 
 test("display-name inheritance restores company and platform defaults", () => {

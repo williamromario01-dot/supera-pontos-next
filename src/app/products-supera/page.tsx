@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useContext, useEffect, useRef, useState } from "react";
 import {
   ArrowLeft,
   Edit,
@@ -15,6 +15,8 @@ import {
   Loader2,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { TenantBrandingContext } from "@/components/TenantTheme";
+import { productSectionTitle } from "@/lib/tenant-branding";
 
 type User = {
   id: string;
@@ -54,6 +56,8 @@ type ProductForm = {
 
 export default function ProductsSuperaPage() {
   const router = useRouter();
+  const branding = useContext(TenantBrandingContext);
+  const productsTitle = productSectionTitle(branding);
 
   const [user, setUser] = useState<User | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
@@ -820,7 +824,7 @@ export default function ProductsSuperaPage() {
           <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-4 border-orange-200 border-t-orange-600" />
 
           <p className="text-gray-600">
-            Carregando Produtos Supera...
+            Carregando {productsTitle}...
           </p>
         </div>
       </main>
@@ -852,7 +856,7 @@ export default function ProductsSuperaPage() {
                 />
 
                 <h1 className="text-xl font-bold text-gray-900 sm:text-2xl">
-                  Produtos Supera
+                  {productsTitle}
                 </h1>
               </div>
 

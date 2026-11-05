@@ -1,6 +1,7 @@
 "use client";
 
 import InternalPlatformName from "@/components/InternalPlatformName";
+import ProductsBrandTitle from "@/components/ProductsBrandTitle";
 
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { useRouter } from "next/navigation";
@@ -785,7 +786,7 @@ export default function DashboardPage() {
                       className="flex-shrink-0 flex items-center gap-2 px-4 py-2.5 rounded-xl text-slate-500 hover:bg-slate-100 text-sm font-bold transition"
                     >
                       <ShoppingCart size={17} />
-                      Produtos Supera
+                      <ProductsBrandTitle />
                     </button>
                   </>
                 )}
@@ -1081,7 +1082,7 @@ export default function DashboardPage() {
                       className="flex items-center gap-3 px-4 py-3 rounded-xl text-slate-600 hover:bg-slate-100 font-bold text-sm"
                     >
                       <ShoppingCart size={18} />
-                      Produtos Supera
+                      <ProductsBrandTitle />
                     </button>
                   </>
                 )}
@@ -2118,7 +2119,7 @@ export default function DashboardPage() {
                 </div>
 
                 <h3 className="font-black text-slate-800">
-                  Produtos Supera
+                  <ProductsBrandTitle />
                 </h3>
 
                 <p className="text-xs text-slate-400 mt-1">

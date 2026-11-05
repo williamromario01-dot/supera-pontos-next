@@ -9,6 +9,7 @@ export const PLATFORM_BRANDING = {
   source: "platform" as const,
   productName: OFFICIAL_PRODUCT_NAME,
   displayName: OFFICIAL_PRODUCT_NAME,
+  shortName: "Super",
 };
 
 export type BrandingInput = {
@@ -18,6 +19,7 @@ export type BrandingInput = {
   secondaryColor?: string;
   accentColor?: string;
   displayName?: string | null;
+  shortName?: string | null;
 };
 
 export type EffectiveBranding = Omit<typeof PLATFORM_BRANDING, "source" | "displayName"> & {
@@ -29,6 +31,7 @@ export const BRANDING_LOGO_MAX_BYTES = 512 * 1024;
 export const BRANDING_ALLOWED_MIME = ["image/png", "image/jpeg", "image/webp"] as const;
 export const DISPLAY_NAME_MIN_LENGTH = 2;
 export const DISPLAY_NAME_MAX_LENGTH = 60;
+export const SHORT_NAME_MAX_LENGTH = 24;
 
 export type DisplayNameValidation =
   | { valid: true; value: string | null }
@@ -53,6 +56,21 @@ export function validateDisplayName(value: unknown): DisplayNameValidation {
     return { valid: false, error: "O nome interno deve ser texto simples, sem HTML." };
   }
   return { valid: true, value: normalized };
+}
+
+export function validateShortName(value: unknown): DisplayNameValidation {
+  if (value === null) return { valid: true, value: null };
+  if (typeof value !== "string") return { valid: false, error: "Nome curto inválido." };
+  const normalized = value.trim();
+  if (normalized.length < DISPLAY_NAME_MIN_LENGTH || normalized.length > SHORT_NAME_MAX_LENGTH) {
+    return { valid: false, error: `O nome curto deve ter entre ${DISPLAY_NAME_MIN_LENGTH} e ${SHORT_NAME_MAX_LENGTH} caracteres.` };
+  }
+  if (/[<>]/.test(normalized)) return { valid: false, error: "O nome curto deve ser texto simples, sem HTML." };
+  return { valid: true, value: normalized };
+}
+
+export function productSectionTitle(branding: Pick<EffectiveBranding, "shortName">): string {
+  return `Produtos ${branding.shortName || PLATFORM_BRANDING.shortName}`;
 }
 
 export function isSafeBrandColor(value: unknown): value is string {
@@ -102,6 +120,8 @@ function validBranding(value: unknown): BrandingInput | null {
   }
   const displayName = validateDisplayName(item.displayName);
   if (displayName.valid && displayName.value) result.displayName = displayName.value;
+  const shortName = validateShortName(item.shortName);
+  if (shortName.valid && shortName.value) result.shortName = shortName.value;
   return Object.keys(result).length ? result : null;
 }
 
@@ -119,6 +139,9 @@ export function resolveEffectiveBranding(
   const unitDisplayName = unitDisplayNameAllowed
     ? validBranding(school?.branding)?.displayName
     : null;
+  const unitShortName = unitDisplayNameAllowed
+    ? validBranding(school?.branding)?.shortName
+    : null;
   return {
     logoUrl: unitBranding?.logoUrl ?? companyBranding?.logoUrl ?? PLATFORM_BRANDING.logoUrl,
     primaryColor: unitBranding?.primaryColor ?? companyBranding?.primaryColor ?? PLATFORM_BRANDING.primaryColor,
@@ -127,6 +150,7 @@ export function resolveEffectiveBranding(
     source: unitBranding || unitDisplayName ? "unit" : companyBranding ? "company" : "platform",
     productName: PLATFORM_BRANDING.productName,
     displayName: unitDisplayName ?? companyBranding?.displayName ?? PLATFORM_BRANDING.displayName,
+    shortName: unitShortName ?? companyBranding?.shortName ?? PLATFORM_BRANDING.shortName,
   };
 }
 

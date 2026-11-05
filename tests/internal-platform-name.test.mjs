@@ -17,12 +17,12 @@ function load(path, dependencies) {
     });
   return compiledModule.exports;
 }
-const theme = load("src/components/TenantTheme.tsx", { react: React, "@/lib/tenant-branding": branding });
+const theme = load("src/components/TenantTheme.tsx", { react: React, "next/navigation": { usePathname: () => "/" }, "@/lib/tenant-branding": branding });
 const Name = load("src/components/InternalPlatformName.tsx", { react: React, "@/components/TenantTheme": theme }).default;
 function render(value, props) {
   return renderToStaticMarkup(React.createElement(theme.TenantBrandingContext.Provider, { value }, React.createElement(Name, props)));
 }
-test("gradient follows server-resolved authorized colors and names", () => {
+test("name follows server-resolved authorized colors and names", () => {
   const company = { branding: { primaryColor: "#2563eb", displayName: "Col\u00e9gio Evolu\u00e7\u00e3o" } };
   const unit = { branding: { primaryColor: "#16a34a", displayName: "Unidade Centro" } };
   const cases = [
@@ -42,6 +42,8 @@ test("gradient follows server-resolved authorized colors and names", () => {
 test("resolved name remains escaped and uses the existing brand token", () => {
   assert.ok(render(branding.PLATFORM_BRANDING, { displayName: "<script>" }).includes("&lt;script&gt;"));
   const css = fs.readFileSync("src/app/globals.css", "utf8");
-  assert.match(css, /linear-gradient\(90deg, #000 0%, var\(--brand-primary\) 100%\)/);
+  assert.match(css, /color: var\(--brand-primary\)/);
+  const nameRule = css.match(/\.tenant-platform-name \{[^}]+\}/)?.[0] ?? "";
+  assert.doesNotMatch(nameRule, /linear-gradient|#f97316/);
   assert.match(css, /forced-colors: active/);
 });

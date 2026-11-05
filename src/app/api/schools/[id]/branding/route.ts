@@ -10,6 +10,7 @@ import {
   resolveEffectiveBranding,
   sanitizeBrandingInput,
   validateDisplayName,
+  validateShortName,
 } from "@/lib/tenant-branding";
 
 type Context = { params: Promise<{ id: string }> };
@@ -18,6 +19,7 @@ const UNIT_PATCH_FIELDS = new Set([
   "secondaryColor",
   "accentColor",
   "displayName",
+  "shortName",
 ]);
 
 async function routeContext(request: NextRequest, route: Context) {
@@ -85,7 +87,7 @@ export async function PATCH(request: NextRequest, route: Context) {
   }
   const colorFields = ["primaryColor", "secondaryColor", "accentColor"];
   const updatesColors = colorFields.some((key) => Object.hasOwn(input, key));
-  const updatesDisplayName = Object.hasOwn(input, "displayName");
+  const updatesDisplayName = Object.hasOwn(input, "displayName") || Object.hasOwn(input, "shortName");
   if (updatesColors && value.company.branding?.allowUnitBranding !== true) {
     return NextResponse.json({ error: "A empresa não permite cores personalizadas por unidade." }, { status: 403 });
   }
@@ -94,10 +96,12 @@ export async function PATCH(request: NextRequest, route: Context) {
   }
   const branding = sanitizeBrandingInput(body);
   if (!branding) return NextResponse.json({ error: "Cores inválidas." }, { status: 400 });
-  const displayName = updatesDisplayName ? validateDisplayName(input.displayName) : null;
+  const displayName = Object.hasOwn(input, "displayName") ? validateDisplayName(input.displayName) : null;
+  const shortName = Object.hasOwn(input, "shortName") ? validateShortName(input.shortName) : null;
   if (displayName && !displayName.valid) {
     return NextResponse.json({ error: displayName.error }, { status: 400 });
   }
+  if (shortName && !shortName.valid) return NextResponse.json({ error: shortName.error }, { status: 400 });
   const now = new Date();
   const fields: Record<string, unknown> = {
     ...Object.fromEntries(Object.entries(branding).map(([key, item]) => [`branding.${key}`, item])),
@@ -108,6 +112,7 @@ export async function PATCH(request: NextRequest, route: Context) {
   if (displayName?.valid && displayName.value) {
     fields["branding.displayName"] = displayName.value;
   }
+  if (shortName?.valid && shortName.value) fields["branding.shortName"] = shortName.value;
   const update: {
     $set: Record<string, unknown>;
     $unset?: Record<string, "">;
@@ -115,6 +120,7 @@ export async function PATCH(request: NextRequest, route: Context) {
   if (displayName?.valid && displayName.value === null) {
     update.$unset = { "branding.displayName": "" };
   }
+  if (shortName?.valid && shortName.value === null) update.$unset = { ...update.$unset, "branding.shortName": "" };
   await value.db.collection("schools").updateOne(
     { _id: value.schoolId, companyId: value.school.companyId },
     update,

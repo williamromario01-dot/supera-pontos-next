@@ -12,6 +12,7 @@ type Branding = {
   secondaryColor: string;
   accentColor: string;
   displayName: string;
+  shortName: string;
 };
 
 export default function BrandingSettings({
@@ -29,6 +30,7 @@ export default function BrandingSettings({
   const [allowUnitBranding, setAllowUnitBranding] = useState(false);
   const [allowUnitDisplayName, setAllowUnitDisplayName] = useState(false);
   const [displayName, setDisplayName] = useState("");
+  const [shortName, setShortName] = useState("");
   const [canEditVisualBranding, setCanEditVisualBranding] = useState(companyScope);
   const [canEditDisplayName, setCanEditDisplayName] = useState(companyScope);
   const [file, setFile] = useState<File | null>(null);
@@ -44,6 +46,7 @@ export default function BrandingSettings({
     setAllowUnitBranding(body.allowUnitBranding === true);
     setAllowUnitDisplayName(body.allowUnitDisplayName === true);
     setDisplayName(typeof body.branding?.displayName === "string" ? body.branding.displayName : "");
+    setShortName(typeof body.branding?.shortName === "string" ? body.branding.shortName : "");
     setCanEditVisualBranding(companyScope || body.permissions?.canEditVisualBranding === true);
     setCanEditDisplayName(companyScope || body.permissions?.canEditDisplayName === true);
   }
@@ -72,6 +75,7 @@ export default function BrandingSettings({
             accentColor: branding.accentColor,
           } : {}),
           ...(canEditDisplayName && displayName.trim() ? { displayName } : {}),
+          ...(canEditDisplayName && shortName.trim() ? { shortName } : {}),
           ...(companyScope ? { allowUnitBranding, allowUnitDisplayName } : {}),
         }),
       });
@@ -87,6 +91,7 @@ export default function BrandingSettings({
       setFile(null);
       setMessage("Identidade visual salva.");
       await load();
+      window.dispatchEvent(new Event("tenant-branding-changed"));
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Não foi possível salvar.");
     } finally {
@@ -106,6 +111,7 @@ export default function BrandingSettings({
       if (!response.ok) throw new Error(body.error);
       setMessage(companyScope ? "Nome padrão SUPERPONTOS restaurado." : "A unidade voltou a usar o nome da empresa.");
       await load();
+      window.dispatchEvent(new Event("tenant-branding-changed"));
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Não foi possível restaurar o nome.");
     } finally {
@@ -123,6 +129,7 @@ export default function BrandingSettings({
       setMessage(body.message);
       setFile(null);
       await load();
+      window.dispatchEvent(new Event("tenant-branding-changed"));
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Não foi possível restaurar.");
     } finally {
@@ -151,6 +158,10 @@ export default function BrandingSettings({
                 className="mt-2 block w-full rounded-xl border p-3 font-normal"
               />
             </label>
+            <label className="mt-4 block text-sm font-bold">Nome curto da marca
+              <input type="text" minLength={2} maxLength={24} value={shortName} placeholder="Ex.: Yagi" onChange={(event) => setShortName(event.target.value)} className="mt-2 block w-full rounded-xl border p-3 font-normal" />
+            </label>
+            <p className="mt-2 text-xs text-slate-500">Usado em títulos como “Produtos {shortName.trim() || branding.shortName}”. Sem personalização, o padrão é “Produtos Super”.</p>
             <p className="mt-2 text-xs text-slate-500">
               {companyScope
                 ? "Este nome será exibido internamente para os usuários da sua empresa. A marca oficial do aplicativo continua sendo SUPERPONTOS e a identificação GFarS permanece fixa."
