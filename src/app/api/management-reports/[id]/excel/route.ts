@@ -11,6 +11,7 @@ import {
   weeklyReportExcelFilename,
 } from "@/lib/weekly-management-report-excel";
 import type { WeeklyReport } from "@/lib/weekly-management-report-types";
+import { loadAttendanceComplement } from "@/lib/weekly-management-report-attendance";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -30,7 +31,7 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
     const report = await reports.findOne({ _id: id, schoolId: access.schoolId, status: "CLOSED" });
     if (!report) return NextResponse.json({ error: "Relatório não encontrado." }, { status: 404 });
     const previous = typeof report.weekStart === "string" ? await reports.findOne({ schoolId: access.schoolId, weekStart: addCivilDays(report.weekStart, -7), status: "CLOSED" }) : null;
-    const typedReport = report as unknown as WeeklyReport;
+    const typedReport = await loadAttendanceComplement((await clientPromise).db(DB_NAME), access.schoolId, report as unknown as WeeklyReport);
     const buffer = await generateWeeklyManagementReportExcel({ report: typedReport, previous: previous as unknown as WeeklyReport | null });
     const filename = weeklyReportExcelFilename(typedReport);
     return new NextResponse(new Uint8Array(buffer), {

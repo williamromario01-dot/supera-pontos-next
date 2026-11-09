@@ -226,12 +226,12 @@ function addDetailSheets(workbook: ExcelJS.Workbook, report: WeeklyReportV1) {
     { header: "Diminuíram", key: "declined", width: 14 }, { header: "Sem dados suficientes", key: "insufficient", width: 22 }, { header: "Atingiram meta", key: "goals", width: 18 }, { header: "% atingiram meta", key: "goalPercentage", width: 19, format: PERCENT_FORMAT },
   ], [...report.categoryMetrics].sort((a, b) => a.categoryName.localeCompare(b.categoryName, "pt-BR")).map((category) => ({ name: category.categoryName, weeklyGoal: category.weeklyGoal, comparable: category.comparableStudents, evolved: category.evolvedStudents, evolvedPercentage: percentValue(category.evolvedPercentage), maintained: category.maintainedStudents, declined: category.declinedStudents, insufficient: category.insufficientDataStudents, goals: category.goalReachedStudents, goalPercentage: percentValue(category.goalReachedPercentage) })));
 
-  const educators = workbook.addWorksheet("Educadores"); applyIdentity(educators, report, 11); sectionTitle(educators, 8, "EDUCADORES", 11);
+  const educators = workbook.addWorksheet("Educadores"); applyIdentity(educators, report, 12); sectionTitle(educators, 8, "EDUCADORES", 12);
   addTable(educators, 10, [
-    { header: "Educador", key: "name", width: 28 }, { header: "Alunos acompanhados", key: "students", width: 20 }, { header: "Turmas atendidas", key: "classes", width: 18 }, { header: "Alunos com registros", key: "records", width: 20 },
+    { header: "Educador", key: "name", width: 28 }, { header: "Alunos acompanhados", key: "students", width: 20 }, { header: "Turmas atendidas", key: "classes", width: 18 }, { header: "Faltas", key: "absences", width: 12 }, { header: "Alunos com registros", key: "records", width: 20 },
     { header: "Cobertura", key: "coverage", width: 14, format: PERCENT_FORMAT }, { header: "Categorias trabalhadas", key: "categories", width: 22 }, { header: "Metas atingidas", key: "goals", width: 17 },
     { header: "Evoluíram", key: "evolved", width: 14 }, { header: "Mantiveram", key: "maintained", width: 14 }, { header: "Diminuíram", key: "declined", width: 14 }, { header: "Registros realizados", key: "recordCount", width: 20 },
-  ], [...report.educatorMetrics].sort((a, b) => a.educatorName.localeCompare(b.educatorName, "pt-BR")).map((educator) => ({ name: educator.educatorName, students: educator.students, classes: educator.classIds.length, records: educator.studentsWithRecords, coverage: percentValue(educator.pedagogicalCoveragePercentage), categories: educator.categoriesWorked, goals: educator.goalReachedStudents, evolved: educator.evolvedStudents, maintained: educator.maintainedStudents, declined: educator.declinedStudents, recordCount: educator.recordCount })));
+  ], [...report.educatorMetrics].sort((a, b) => a.educatorName.localeCompare(b.educatorName, "pt-BR")).map((educator) => ({ name: educator.educatorName, students: educator.students, classes: educator.classIds.length, absences: educator.absences ?? 0, records: educator.studentsWithRecords, coverage: percentValue(educator.pedagogicalCoveragePercentage), categories: educator.categoriesWorked, goals: educator.goalReachedStudents, evolved: educator.evolvedStudents, maintained: educator.maintainedStudents, declined: educator.declinedStudents, recordCount: educator.recordCount })));
 
   const classes = workbook.addWorksheet("Turmas"); applyIdentity(classes, report, 9); sectionTitle(classes, 8, "TURMAS", 9);
   addTable(classes, 10, [
@@ -278,8 +278,9 @@ export async function generateWeeklyManagementReportExcel(input: { report: Weekl
     attendance.addRow(["SUPERPONTOS", report.schoolName, report.weekStart, report.weekEnd]);
     attendance.addRow(["Chamadas", "Presenças", "Faltas", "Frequência (%)"]);
     attendance.addRow([report.attendanceMetrics.totalSessions, report.attendanceMetrics.presences, report.attendanceMetrics.absences, report.attendanceMetrics.percentage ?? null]);
-    attendance.addRow(["Turma", "Aluno faltante", "Data", "Sessão"]);
-    for (const item of report.attendanceMetrics.absentees || []) attendance.addRow([item.className, item.studentName, item.date, item.session]);
+    attendance.addRow(["Turma", "Aluno faltante", "Data", "Sessão", "Educador"]);
+    for (const item of report.attendanceMetrics.absentees || []) attendance.addRow([item.className, item.studentName, item.date, item.session, item.educatorName || "Não identificado"]);
+    attendance.addRow(["Faltas sem educador identificado", report.attendanceMetrics.unidentifiedAbsences || 0]);
     attendance.columns.forEach((column) => { column.width = 30; });
   } else addUnavailableSheet(workbook, "Frequência", report, ["Sem registros de frequência no período", "Esta ausência de informação não representa zero faltas ou 100% de presença."]);
   addUnavailableSheet(workbook, "Vendas", report, ["Os dados históricos de vendas ainda não estão disponíveis nesta versão do SUPERPONTOS.", "A ausência de estrutura histórica não representa ausência de vendas."]);

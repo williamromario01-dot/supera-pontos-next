@@ -1,5 +1,5 @@
 export type AttendanceStudent = { studentId: string; studentName: string; present: boolean };
-export type AttendanceSession = { classId: string; className: string; date: string; session: string; students: AttendanceStudent[] };
+export type AttendanceSession = { classId: string; className: string; date: string; session: string; students: AttendanceStudent[]; responsibleEducatorId?: string | null; responsibleEducatorName?: string | null };
 export type AttendanceClass = { classId: string; className: string; educatorId?: string | null; educatorName?: string | null };
 
 export function validAttendanceDate(value: unknown, today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" })) {
@@ -29,7 +29,7 @@ export function validatePresentStudentIds(expected: string[], entries: unknown):
 }
 
 export function summarizeAttendance(sessions: AttendanceSession[]) {
-  const absentees = sessions.flatMap((session) => session.students.filter((student) => !student.present).map((student) => ({ ...student, classId: session.classId, className: session.className, date: session.date, session: session.session })));
+  const absentees = sessions.flatMap((session) => session.students.filter((student) => !student.present).map((student) => ({ ...student, classId: session.classId, className: session.className, date: session.date, session: session.session, educatorId: session.responsibleEducatorId ?? null, educatorName: session.responsibleEducatorName ?? null })));
   const opportunities = sessions.reduce((sum, session) => sum + session.students.length, 0);
   const absences = absentees.length;
   const presences = opportunities - absences;
@@ -47,8 +47,11 @@ export function summarizeAttendanceByClasses(sessions: AttendanceSession[], clas
   const classAttendance = classes.map((classItem) => {
     const classSessions = sessionsByClass.get(String(classItem.classId)) || [];
     const classSummary = summarizeAttendance(classSessions);
+    const responsible = [...new Map(classSessions.filter((item) => item.responsibleEducatorId).map((item) => [item.responsibleEducatorId, { educatorId: item.responsibleEducatorId!, educatorName: item.responsibleEducatorName ?? null }])).values()];
     return {
       ...classItem,
+      educatorId: responsible.length === 1 ? responsible[0].educatorId : classItem.educatorId ?? null,
+      educatorName: responsible.length === 1 ? responsible[0].educatorName : classItem.educatorName ?? null,
       status: classSessions.length ? "RECORDED" as const : "NO_ATTENDANCE_RECORDED" as const,
       scheduleStatus: "INSUFFICIENT_SCHEDULE_DATA" as const,
       totalSessions: classSummary.totalSessions,
@@ -67,8 +70,8 @@ export function summarizeAttendanceByClasses(sessions: AttendanceSession[], clas
     classAttendance.push({
       classId,
       className: classSessions[0]?.className || "Turma histórica",
-      educatorId: null,
-      educatorName: null,
+      educatorId: classSessions[0]?.responsibleEducatorId ?? null,
+      educatorName: classSessions[0]?.responsibleEducatorName ?? null,
       status: "RECORDED",
       scheduleStatus: "INSUFFICIENT_SCHEDULE_DATA",
       totalSessions: classSummary.totalSessions,

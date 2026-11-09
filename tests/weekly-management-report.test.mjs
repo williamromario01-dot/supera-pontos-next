@@ -18,6 +18,7 @@ import {
   scheduledCloseAt,
 } from "../src/lib/weekly-management-report-core.ts";
 import { resolveWeeklyReportSchool } from "../src/lib/weekly-management-report-access.ts";
+import { complementAttendanceSnapshot } from "../src/lib/weekly-management-report-attendance.ts";
 
 const root = process.cwd();
 const read = (file) => fs.readFile(path.join(root, file), "utf8");
@@ -152,6 +153,44 @@ test("cron remains closed without its dedicated secret", async () => {
   assert.match(route, /CRON_SECRET/);
   assert.match(route, /authorization.*Bearer/);
   assert.match(route, /process\.env\.CRON_SECRET/);
+});
+
+test("historical attendance details recover four absences without mutating the closed snapshot", () => {
+  const report = {
+    weekStart: "2026-11-02", weekEnd: "2026-11-08",
+    attendanceMetrics: { available: true, totalSessions: 1, presences: 4, absences: 4, percentage: 50, absentees: ["1", "2", "3", "4"].map((studentId) => ({ classId: "class-a", className: "Turma A", studentId, studentName: `Aluno ${studentId}`, present: false, date: "2026-11-05", session: "Aula 1" })) },
+    educatorMetrics: [{ educatorId: "educator-a", educatorName: "Educadora A" }, { educatorId: "educator-b", educatorName: "Educadora B" }],
+    classMetrics: [{ classId: "class-a", className: "Turma A", educatorId: "educator-a", educatorName: "Educadora A" }, { classId: "class-b", className: "Turma B", educatorId: "educator-b", educatorName: "Educadora B" }],
+  };
+  const before = JSON.stringify(report);
+  const sessions = [{ classId: "class-a", className: "Turma A", date: "2026-11-05", session: "Aula 1", createdBy: "educator-a", students: ["1", "2", "3", "4"].map((studentId) => ({ studentId, studentName: `Aluno ${studentId}`, present: false })).concat(["5", "6", "7", "8"].map((studentId) => ({ studentId, studentName: `Aluno ${studentId}`, present: true }))) }];
+  const view = complementAttendanceSnapshot(report, sessions);
+  assert.equal(JSON.stringify(report), before);
+  assert.equal(view.attendanceMetrics.detailsSource, "RECOVERED_FROM_ATTENDANCE_SESSIONS");
+  assert.equal(view.attendanceMetrics.classAttendance.length, 2);
+  assert.equal(view.attendanceMetrics.classAttendance[1].status, "NO_ATTENDANCE_RECORDED");
+  assert.equal(view.educatorMetrics[0].absences, 4);
+  assert.equal(view.educatorMetrics[1].absences, 0);
+  assert.equal(view.attendanceMetrics.unidentifiedAbsences, 0);
+});
+
+test("unproved educator remains unidentified and inconsistent originals are never presented", () => {
+  const base = { weekStart: "2026-11-02", weekEnd: "2026-11-08", attendanceMetrics: { totalSessions: 1, presences: 0, absences: 1, absentees: [{ classId: "c", studentId: "s", studentName: "Aluno", date: "2026-11-05", session: "Aula 1" }] }, educatorMetrics: [{ educatorId: "e", educatorName: "Educador" }], classMetrics: [{ classId: "c", className: "Turma", educatorId: "e", educatorName: "Educador" }] };
+  const session = { classId: "c", className: "Turma", date: "2026-11-05", session: "Aula 1", createdBy: "admin", students: [{ studentId: "s", studentName: "Aluno", present: false }] };
+  const recovered = complementAttendanceSnapshot(base, [session]);
+  assert.equal(recovered.educatorMetrics[0].absences, 0);
+  assert.equal(recovered.attendanceMetrics.unidentifiedAbsences, 1);
+  const inconsistent = complementAttendanceSnapshot({ ...base, attendanceMetrics: { ...base.attendanceMetrics, absences: 2 } }, [session]);
+  assert.equal(inconsistent.attendanceMetrics.detailsSource, "UNAVAILABLE");
+  assert.equal(inconsistent.attendanceMetrics.classAttendance, undefined);
+});
+
+test("attendance cards expose recovered students, dates, sessions and educator identity", async () => {
+  const source = await read("src/components/WeeklyManagementReportView.tsx");
+  assert.match(source, /RECOVERED_FROM_ATTENDANCE_SESSIONS/);
+  assert.match(source, /student\.educatorName/);
+  assert.match(source, /Faltas sem educador identificado/);
+  assert.match(source, /Sem chamada registrada/);
 });
 
 test("Vercel cron checks daily at 09:00 UTC for Monday closure and missed-run recovery", async () => {

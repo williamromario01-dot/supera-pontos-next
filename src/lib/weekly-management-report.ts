@@ -142,9 +142,10 @@ export async function buildWeeklyReportSnapshot(db: Db, schoolId: ObjectId, peri
     const educatorClasses = classes.filter((item) => id(item.educatorId) === id(educator._id));
     const memberIds = [...new Set(educatorClasses.flatMap((item) => (Array.isArray(item.studentIds) ? item.studentIds : []).map(id)))];
     const educatorEvents = currentEvents.filter((event) => id(event.educatorId || event.awardedBy) === id(educator._id) && event.categoryId instanceof ObjectId);
+    const educatorId = id(educator._id);
     const educatorClassIds = new Set(educatorClasses.map((item) => id(item._id)));
     const attendance = attendanceMetrics.classAttendance.filter((item) => educatorClassIds.has(item.classId));
-    return { educatorId: id(educator._id), educatorName: name(educator.name, "Educador"), classIds: educatorClasses.map((item) => id(item._id)), classNames: educatorClasses.map((item) => name(item.name, "Turma")), categoriesWorked: [...new Set(educatorEvents.map((event) => id(event.categoryId)))].length, recordCount: educatorEvents.length, absences: attendance.reduce((total, item) => total + item.absences, 0), attendanceSessions: attendance.reduce((total, item) => total + item.totalSessions, 0), pendingAttendanceSessions: null, ...metricForGroup(memberIds) };
+    return { educatorId, educatorName: name(educator.name, "Educador"), classIds: educatorClasses.map((item) => id(item._id)), classNames: educatorClasses.map((item) => name(item.name, "Turma")), categoriesWorked: [...new Set(educatorEvents.map((event) => id(event.categoryId)))].length, recordCount: educatorEvents.length, absences: attendanceMetrics.absentees.filter((item) => item.educatorId === educatorId).length, attendanceSessions: attendance.reduce((total, item) => total + item.totalSessions, 0), pendingAttendanceSessions: null, ...metricForGroup(memberIds) };
   });
 
   const inventoryProducts = [...pointProducts.map((product) => ({ source: "point_store", productId: id(product._id), productName: name(product.name, "Produto"), stock: Number(product.stock || 0), active: product.active !== false })), ...superaProducts.map((product) => ({ source: "products_supera", productId: id(product._id), productName: name(product.name, "Produto"), stock: Number(product.stock || 0), active: product.active !== false }))];
@@ -160,7 +161,7 @@ export async function buildWeeklyReportSnapshot(db: Db, schoolId: ObjectId, peri
     salesMetrics: { available: false, reason: "O sistema não persiste vendas concluídas; o contato via WhatsApp não comprova uma venda." },
     redemptionMetrics: { available: true, count: redemptions.length, pointsSpent: redemptions.reduce((total, item) => total + Number(item.pointsSpent || 0), 0), items: redemptions.map((item) => ({ redemptionId: id(item._id), studentId: id(item.studentId), productId: id(item.productId), productName: name(item.productName, "Produto"), pointsSpent: Number(item.pointsSpent || 0), status: name(item.status, "unknown"), createdAt: item.createdAt })) },
     inventoryMetrics: { available: true, snapshotOnly: true, movementAvailable: false, lowStockAvailable: false, reason: "Não há ledger de entradas/ajustes nem limite confiável de estoque baixo.", products: inventoryProducts, outOfStockProducts: inventoryProducts.filter((product) => product.active && product.stock === 0).length },
-    attendanceMetrics,
+    attendanceMetrics: { ...attendanceMetrics, detailsSource: "SNAPSHOT", unidentifiedAbsences: attendanceMetrics.absentees.filter((item) => !item.educatorId).length },
   };
 }
 

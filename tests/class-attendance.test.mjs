@@ -136,6 +136,8 @@ test("attendance denies unauthorized roles, unassigned educator and foreign rost
 test("assigned educators can call; super_admin must select the exact school", async () => {
   const educator = fixture("educator"); educator.data.classes[0].educatorId = educator.educatorId;
   assert.equal((await educator.route.POST(educator.request(educator.body()), educator.context)).status, 200);
+  assert.equal(String(educator.data.attendanceSessions[0].responsibleEducatorId), String(educator.educatorId));
+  assert.equal(educator.data.attendanceSessions[0].responsibleEducatorName, "Educador");
   const f = fixture("super_admin"); f.data.users[2].role = "super_admin";
   const wrong = f.request(f.body()); wrong.nextUrl = new URL(`http://local?schoolId=${new ObjectId()}`);
   assert.equal((await f.route.POST(wrong, f.context)).status, 403);

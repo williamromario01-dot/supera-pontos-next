@@ -87,8 +87,9 @@ async function save(request: NextRequest, context: Context, correction: boolean)
           const categoryId = await activeAttendanceId(db, schoolId, transaction);
           if (!categoryId) throw new Error("ATTENDANCE_CATEGORY_NOT_CONFIGURED");
           let category = categoryId ? await db.collection("categories").findOne({ _id: new ObjectId(categoryId) }, { session: transaction }) : null;
+          const responsibleEducator = classData.educatorId ? await db.collection("users").findOne({ _id: new ObjectId(String(classData.educatorId)), role: "educator", schoolId: { $in: [schoolId, String(schoolId)] } }, { projection: { name: 1 }, session: transaction }) : null;
           if (category && isSharedCategory(category)) category = { ...category, ...await categoryOverride(db, schoolId, category._id, transaction), _id: category._id };
-          await collection.insertOne({ ...filter, companyId: school.companyId ?? null, className: String(classData.name), categoryId: categoryId ? new ObjectId(categoryId) : null, categoryName: category?.name ?? null, students, status: "FINALIZED", finalizedAt: now, finalizedBy: auth.userId, version: 1, createdAt: now, updatedAt: now, createdBy: auth.userId, audit: [{ actorId: auth.userId, at: now, reason: "Chamada finalizada", after: students }] }, { session: transaction });
+          await collection.insertOne({ ...filter, companyId: school.companyId ?? null, className: String(classData.name), categoryId: categoryId ? new ObjectId(categoryId) : null, categoryName: category?.name ?? null, responsibleEducatorId: responsibleEducator?._id ?? null, responsibleEducatorName: responsibleEducator?.name ? String(responsibleEducator.name) : null, students, status: "FINALIZED", finalizedAt: now, finalizedBy: auth.userId, version: 1, createdAt: now, updatedAt: now, createdBy: auth.userId, audit: [{ actorId: auth.userId, at: now, reason: "Chamada finalizada", after: students }] }, { session: transaction });
         });
       } finally { await transaction.endSession(); }
     }

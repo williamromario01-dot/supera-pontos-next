@@ -3,6 +3,8 @@ import { ObjectId, type Document } from "mongodb";
 import clientPromise from "@/lib/mongodb";
 import { authenticateRequest } from "@/lib/auth";
 import { resolveWeeklyReportSchool } from "@/lib/weekly-management-report-access";
+import { loadAttendanceComplement } from "@/lib/weekly-management-report-attendance";
+import type { WeeklyReport } from "@/lib/weekly-management-report-types";
 
 const DB_NAME = "supera_pontos";
 
@@ -13,7 +15,9 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
   if (!access.allowed) return NextResponse.json({ error: access.error }, { status: access.status });
   const { id } = await context.params;
   if (!id || id.length > 100) return NextResponse.json({ error: "Relatório inválido." }, { status: 400 });
-  const report = await (await clientPromise).db(DB_NAME).collection<Document & { _id: string; schoolId: ObjectId }>("weeklyReports").findOne({ _id: id, schoolId: access.schoolId, status: "CLOSED" });
+  const db = (await clientPromise).db(DB_NAME);
+  const report = await db.collection<Document & { _id: string; schoolId: ObjectId }>("weeklyReports").findOne({ _id: id, schoolId: access.schoolId, status: "CLOSED" });
   if (!report) return NextResponse.json({ error: "Relatório não encontrado." }, { status: 404 });
-  return NextResponse.json({ report }, { headers: { "Cache-Control": "no-store" } });
+  const view = await loadAttendanceComplement(db, access.schoolId, report as unknown as WeeklyReport);
+  return NextResponse.json({ report: view }, { headers: { "Cache-Control": "no-store" } });
 }
