@@ -35,10 +35,10 @@ export async function GET(request: NextRequest) {
 
     const schools = await Promise.all(schoolDocs.map(async (school) => {
       const [students, educators, classes, studentDocs] = await Promise.all([
-        db.collection("users").countDocuments({ schoolId: school._id, role: "student" }),
+        db.collection("users").countDocuments({ schoolId: school._id, role: "student", active: { $ne: false } }),
         db.collection("users").countDocuments({ schoolId: school._id, role: "educator" }),
         db.collection("classes").countDocuments({ schoolId: school._id }),
-        db.collection("users").find({ schoolId: school._id, role: "student" }, { projection: { _id: 1 } }).toArray(),
+        db.collection("users").find({ schoolId: school._id, role: "student", active: { $ne: false } }, { projection: { _id: 1 } }).toArray(),
       ]);
       const studentIds = studentDocs.map((student) => student._id);
       const totals = studentIds.length

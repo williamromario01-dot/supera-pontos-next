@@ -1,9 +1,10 @@
 import { lockCategorySchool, CategoryConflict, operationalCategories } from "@/lib/category-management";
-import { summarizeAttendance, type AttendanceSession } from "@/lib/attendance-core";
+import { summarizeAttendanceByClasses, type AttendanceSession } from "@/lib/attendance-core";
 import { ObjectId, type Db, type Document } from "mongodb";
 import { getCategoryScopeFilter } from "@/lib/category-scope";
 import {
   WEEKLY_REPORT_TIME_ZONE,
+  WEEKLY_REPORT_FIRST_PROTECTED_WEEK,
   WEEKLY_REPORT_VERSION,
   addCivilDays,
   average,
@@ -14,6 +15,7 @@ import {
   performancePercentage,
   periodForWeekStart,
   reportDocumentId,
+  scheduledCloseAt,
   type EvolutionStatus,
   type WeeklyReportPeriod,
 } from "@/lib/weekly-management-report-core";
@@ -53,7 +55,7 @@ function countStatuses(values: Document[], field: string) {
 
 export async function buildWeeklyReportSnapshot(db: Db, schoolId: ObjectId, period: WeeklyReportPeriod, now = new Date(), generatedBy: "automatic" | "recovery" = generationMode(now)) {
   // A ausência de pontos não é falta; apenas chamadas explícitas compõem o snapshot.
-  const attendanceSessions = await db.collection("attendanceSessions").find({ schoolId: SCHOOL_ID(schoolId), date: { $gte: period.weekStart, $lte: period.weekEnd } }).toArray();
+  const attendanceSessions = await db.collection("attendanceSessions").find({ schoolId: SCHOOL_ID(schoolId), date: { $gte: period.weekStart, $lte: period.weekEnd }, $or: [{ status: "FINALIZED" }, { status: { $exists: false } }] }).toArray();
   const previous = periodForWeekStart(addCivilDays(period.weekStart, -7));
   const school = await db.collection("schools").findOne({ _id: schoolId });
   if (!school) throw new Error("SCHOOL_NOT_FOUND");
@@ -132,11 +134,17 @@ export async function buildWeeklyReportSnapshot(db: Db, schoolId: ObjectId, peri
   };
 
   const classMetrics = classes.map((classItem) => ({ classId: id(classItem._id), className: name(classItem.name, "Turma"), educatorId: id(classItem.educatorId) || null, educatorName: educators.find((item) => id(item._id) === id(classItem.educatorId)) ? name(educators.find((item) => id(item._id) === id(classItem.educatorId))!.name, "Educador") : null, ...metricForGroup((Array.isArray(classItem.studentIds) ? classItem.studentIds : []).map(id)) }));
+  const attendanceMetrics = summarizeAttendanceByClasses(attendanceSessions as unknown as AttendanceSession[], classes.map((classItem) => {
+    const educator = educators.find((item) => id(item._id) === id(classItem.educatorId));
+    return { classId: id(classItem._id), className: name(classItem.name, "Turma"), educatorId: id(classItem.educatorId) || null, educatorName: educator ? name(educator.name, "Educador") : null };
+  }));
   const educatorMetrics = educators.map((educator) => {
     const educatorClasses = classes.filter((item) => id(item.educatorId) === id(educator._id));
     const memberIds = [...new Set(educatorClasses.flatMap((item) => (Array.isArray(item.studentIds) ? item.studentIds : []).map(id)))];
     const educatorEvents = currentEvents.filter((event) => id(event.educatorId || event.awardedBy) === id(educator._id) && event.categoryId instanceof ObjectId);
-    return { educatorId: id(educator._id), educatorName: name(educator.name, "Educador"), classIds: educatorClasses.map((item) => id(item._id)), classNames: educatorClasses.map((item) => name(item.name, "Turma")), categoriesWorked: [...new Set(educatorEvents.map((event) => id(event.categoryId)))].length, recordCount: educatorEvents.length, ...metricForGroup(memberIds) };
+    const educatorClassIds = new Set(educatorClasses.map((item) => id(item._id)));
+    const attendance = attendanceMetrics.classAttendance.filter((item) => educatorClassIds.has(item.classId));
+    return { educatorId: id(educator._id), educatorName: name(educator.name, "Educador"), classIds: educatorClasses.map((item) => id(item._id)), classNames: educatorClasses.map((item) => name(item.name, "Turma")), categoriesWorked: [...new Set(educatorEvents.map((event) => id(event.categoryId)))].length, recordCount: educatorEvents.length, absences: attendance.reduce((total, item) => total + item.absences, 0), attendanceSessions: attendance.reduce((total, item) => total + item.totalSessions, 0), pendingAttendanceSessions: null, ...metricForGroup(memberIds) };
   });
 
   const inventoryProducts = [...pointProducts.map((product) => ({ source: "point_store", productId: id(product._id), productName: name(product.name, "Produto"), stock: Number(product.stock || 0), active: product.active !== false })), ...superaProducts.map((product) => ({ source: "products_supera", productId: id(product._id), productName: name(product.name, "Produto"), stock: Number(product.stock || 0), active: product.active !== false }))];
@@ -145,14 +153,14 @@ export async function buildWeeklyReportSnapshot(db: Db, schoolId: ObjectId, peri
   return {
     _id: reportDocumentId(schoolId.toString(), period.weekStart), companyId: school.companyId, schoolId,
     companyName: company ? name(company.tradeName || company.legalName, "Empresa") : null, schoolName: name(school.name, "Unidade"), weekStart: period.weekStart, weekEnd: period.weekEnd,
-    periodStartAt: period.startAt, nextWeekStartAt: period.nextWeekStartAt, closedAt: now, status: "CLOSED", reportVersion: WEEKLY_REPORT_VERSION, generatedBy, timezone: WEEKLY_REPORT_TIME_ZONE,
+    periodStartAt: period.startAt, nextWeekStartAt: period.nextWeekStartAt, scheduledCloseAt: scheduledCloseAt(period), executedAt: now, closedAt: now, status: "CLOSED", reportVersion: WEEKLY_REPORT_VERSION, generatedBy, timezone: WEEKLY_REPORT_TIME_ZONE,
     summary: { activeStudents: students.length, activeEducators: educators.length, activeClasses: classes.length, pointsAwarded: pedagogicalPoints.reduce((total, event) => total + Number(event.points || 0), 0), pointsRedeemed: redemptions.reduce((total, item) => total + Number(item.pointsSpent || 0), 0), redemptions: redemptions.length, comparableStudents, evolvedStudents, maintainedStudents: statusCount("MAINTAINED"), declinedStudents: statusCount("DECLINED"), insufficientDataStudents: statusCount("INSUFFICIENT_DATA"), evolvedAmongAllActiveStudentsPercentage: percentage(evolvedStudents, students.length), evolvedAmongComparableStudentsPercentage: percentage(evolvedStudents, comparableStudents), studentsWithPedagogicalRecords: studentsWithRecords, studentsWithoutPedagogicalRecords: students.length - studentsWithRecords, pedagogicalCoveragePercentage: percentage(studentsWithRecords, students.length) },
     studentMetrics, categoryMetrics, educatorMetrics, classMetrics,
     referralMetrics: { available: true, total: referrals.length, byStatus: countStatuses(referrals, "status"), byAttendanceStatus: countStatuses(referrals, "attendanceStatus") },
     salesMetrics: { available: false, reason: "O sistema não persiste vendas concluídas; o contato via WhatsApp não comprova uma venda." },
     redemptionMetrics: { available: true, count: redemptions.length, pointsSpent: redemptions.reduce((total, item) => total + Number(item.pointsSpent || 0), 0), items: redemptions.map((item) => ({ redemptionId: id(item._id), studentId: id(item.studentId), productId: id(item.productId), productName: name(item.productName, "Produto"), pointsSpent: Number(item.pointsSpent || 0), status: name(item.status, "unknown"), createdAt: item.createdAt })) },
     inventoryMetrics: { available: true, snapshotOnly: true, movementAvailable: false, lowStockAvailable: false, reason: "Não há ledger de entradas/ajustes nem limite confiável de estoque baixo.", products: inventoryProducts, outOfStockProducts: inventoryProducts.filter((product) => product.active && product.stock === 0).length },
-    attendanceMetrics: summarizeAttendance(attendanceSessions as unknown as AttendanceSession[]),
+    attendanceMetrics,
   };
 }
 
@@ -192,7 +200,9 @@ export async function closeLatestEligibleReports(db: Db, now = new Date()) {
     const last = await db.collection("weeklyReports").find({ schoolId: school._id, status: "CLOSED" }, { projection: { weekStart: 1 } }).sort({ weekStart: -1 }).limit(1).next();
     const starts: string[] = [];
     if (typeof last?.weekStart === "string" && last.weekStart < latestPeriod.weekStart) {
-      for (let cursor = addCivilDays(last.weekStart, 7); cursor <= latestPeriod.weekStart && starts.length < 12; cursor = addCivilDays(cursor, 7)) starts.push(cursor);
+      for (let cursor = addCivilDays(last.weekStart, 7); cursor <= latestPeriod.weekStart && starts.length < 12; cursor = addCivilDays(cursor, 7)) {
+        if (cursor >= WEEKLY_REPORT_FIRST_PROTECTED_WEEK) starts.push(cursor);
+      }
     } else if (!last || last.weekStart === latestPeriod.weekStart) starts.push(latestPeriod.weekStart);
     for (const weekStart of starts) {
       try {

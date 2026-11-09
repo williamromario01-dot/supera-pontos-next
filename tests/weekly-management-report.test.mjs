@@ -10,9 +10,12 @@ import {
   average,
   classifyEvolution,
   generationMode,
+  isProtectedWeeklyDate,
   latestEligiblePeriod,
+  periodForWeekStart,
   performancePercentage,
   reportDocumentId,
+  scheduledCloseAt,
 } from "../src/lib/weekly-management-report-core.ts";
 import { resolveWeeklyReportSchool } from "../src/lib/weekly-management-report-access.ts";
 
@@ -31,16 +34,29 @@ test("previous week uses Monday through Sunday in America/Sao_Paulo", () => {
   assert.equal(period.nextWeekStartAt.toISOString(), "2026-10-26T03:00:00.000Z");
 });
 
-test("Monday 13:00 is the closing boundary", () => {
-  assert.equal(latestEligiblePeriod(new Date("2026-10-26T15:59:59.999Z")).weekStart, "2026-10-12");
-  assert.equal(latestEligiblePeriod(new Date("2026-10-26T16:00:00.000Z")).weekStart, "2026-10-19");
-  assert.equal(generationMode(new Date("2026-10-26T16:00:00.000Z")), "automatic");
+test("Monday 06:00 America/Sao_Paulo is the closing boundary", () => {
+  assert.equal(latestEligiblePeriod(new Date("2026-11-09T08:59:59.999Z")).weekStart, "2026-10-26");
+  assert.equal(latestEligiblePeriod(new Date("2026-11-09T09:00:00.000Z")).weekStart, "2026-11-02");
+  assert.equal(latestEligiblePeriod(new Date("2026-11-09T09:01:00.000Z")).weekStart, "2026-11-02");
+  assert.equal(generationMode(new Date("2026-11-09T09:00:00.000Z")), "automatic");
+  assert.equal(scheduledCloseAt(periodForWeekStart("2026-11-02")).toISOString(), "2026-11-09T09:00:00.000Z");
+});
+
+test("temporal protection starts with week 45 and does not touch week 44", () => {
+  const before = new Date("2026-11-09T08:59:59.999Z");
+  const boundary = new Date("2026-11-09T09:00:00.000Z");
+  const after = new Date("2026-11-09T09:01:00.000Z");
+  assert.equal(isProtectedWeeklyDate("2026-11-08", before), false);
+  assert.equal(isProtectedWeeklyDate("2026-11-08", boundary), true);
+  assert.equal(isProtectedWeeklyDate("2026-11-08", after), true);
+  assert.equal(isProtectedWeeklyDate("2026-11-01", after), false);
+  assert.equal(isProtectedWeeklyDate("2026-11-09", after), false);
 });
 
 test("a missed Monday close is recovered with the original period", () => {
-  const tuesday = new Date("2026-10-27T14:00:00.000Z");
+  const tuesday = new Date("2026-11-10T14:00:00.000Z");
   assert.equal(generationMode(tuesday), "recovery");
-  assert.equal(latestEligiblePeriod(tuesday).weekStart, "2026-10-19");
+  assert.equal(latestEligiblePeriod(tuesday).weekStart, "2026-11-02");
 });
 
 test("evolution boundaries use percentage points exactly", () => {
@@ -126,13 +142,33 @@ test("custom categories are data-driven and goalReached is separate from evoluti
 
 test("attendance is unavailable and is never inferred from missing points", async () => {
   const source = await read("src/lib/weekly-management-report.ts");
-  assert.match(source, /attendanceMetrics: summarizeAttendance/);
+  assert.match(source, /summarizeAttendanceByClasses/);
+  assert.match(source, /status: "FINALIZED"/);
   assert.match(source, /ausência de pontos não é falta/);
 });
 
 test("cron remains closed without its dedicated secret", async () => {
   const route = await read("src/app/api/cron/weekly-management-reports/route.ts");
-  assert.match(route, /WEEKLY_REPORT_CRON_SECRET/);
+  assert.match(route, /CRON_SECRET/);
   assert.match(route, /authorization.*Bearer/);
-  assert.doesNotMatch(route, /process\.env\.CRON_SECRET/);
+  assert.match(route, /process\.env\.CRON_SECRET/);
+});
+
+test("Vercel cron checks daily at 09:00 UTC for Monday closure and missed-run recovery", async () => {
+  const config = JSON.parse(await read("vercel.json"));
+  assert.deepEqual(config.crons, [{ path: "/api/cron/weekly-management-reports", schedule: "0 9 * * *" }]);
+});
+
+test("catch-up has an immutable floor at week 45", async () => {
+  const source = await read("src/lib/weekly-management-report.ts");
+  assert.match(source, /cursor >= WEEKLY_REPORT_FIRST_PROTECTED_WEEK/);
+  assert.doesNotMatch(source, /reports\.(replaceOne|updateOne|findOneAndUpdate)/);
+});
+
+test("historical mutation APIs enforce the temporal backend lock", async () => {
+  for (const file of ["src/app/api/classes/[id]/attendance/route.ts", "src/app/api/referrals/[id]/route.ts"]) {
+    const source = await read(file);
+    assert.match(source, /isProtectedWeeklyDate/);
+    assert.match(source, /WEEKLY_PERIOD_CLOSED/);
+  }
 });

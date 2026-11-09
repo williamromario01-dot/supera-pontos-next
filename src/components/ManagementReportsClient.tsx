@@ -7,6 +7,7 @@ import { ReportPageShell, WeeklyManagementReportView } from "@/components/Weekly
 import type { ReportListItem, WeeklyReport } from "@/lib/weekly-management-report-types";
 
 type User = { role: string; schoolId: string | null };
+type PendingReport = { weekStart: string; weekEnd: string; scheduledCloseAt: string; status: "PENDING" };
 
 export default function ManagementReportsClient({ schoolId, reportId }: { schoolId?: string; reportId?: string }) {
   const [loading, setLoading] = useState(true);
@@ -15,6 +16,7 @@ export default function ManagementReportsClient({ schoolId, reportId }: { school
   const [previous, setPrevious] = useState<WeeklyReport | null>(null);
   const [history, setHistory] = useState<ReportListItem[]>([]);
   const [user, setUser] = useState<User | null>(null);
+  const [pending, setPending] = useState<PendingReport | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -31,7 +33,7 @@ export default function ManagementReportsClient({ schoolId, reportId }: { school
         const listBody = await listResponse.json();
         if (!listResponse.ok) throw new Error(listBody.error || "REPORTS_FAILED");
         const items = (listBody.reports || []) as ReportListItem[];
-        if (cancelled) return; setHistory(items);
+        if (cancelled) return; setHistory(items); setPending(listBody.pending || null);
         const selectedId = reportId || items[0]?.reportId;
         if (!selectedId) return;
         const selectedIndex = items.findIndex((item) => item.reportId === selectedId);
@@ -55,5 +57,5 @@ export default function ManagementReportsClient({ schoolId, reportId }: { school
   const backHref = reportId ? `/management-reports${query}` : user?.role === "super_admin" ? `/schools/${encodeURIComponent(schoolId || "")}` : "/dashboard";
   const backLabel = reportId ? "Voltar aos relatórios" : user?.role === "super_admin" ? "Voltar à unidade" : "Voltar ao painel";
 
-  return <ReportPageShell backHref={backHref} backLabel={backLabel}>{loading ? <div className="flex min-h-64 items-center justify-center gap-3 text-slate-500"><Loader2 className="animate-spin"/><span>Carregando snapshots semanais...</span></div> : error ? <div className="rounded-3xl border border-amber-200 bg-amber-50 p-8 text-center"><AlertTriangle className="mx-auto text-amber-600"/><h2 className="mt-3 text-xl font-black text-amber-900">Não foi possível abrir os relatórios</h2><p className="mt-2 text-sm text-amber-800">{error}</p>{error.includes("Selecione") && <Link href="/schools" className="mt-5 inline-flex rounded-xl bg-orange-500 px-4 py-3 text-sm font-bold text-white">Selecionar unidade</Link>}</div> : <WeeklyManagementReportView report={report} previous={previous} history={history} schoolId={schoolId} detailMode={Boolean(reportId)} />}</ReportPageShell>;
+  return <ReportPageShell backHref={backHref} backLabel={backLabel}>{loading ? <div className="flex min-h-64 items-center justify-center gap-3 text-slate-500"><Loader2 className="animate-spin"/><span>Carregando snapshots semanais...</span></div> : error ? <div className="rounded-3xl border border-amber-200 bg-amber-50 p-8 text-center"><AlertTriangle className="mx-auto text-amber-600"/><h2 className="mt-3 text-xl font-black text-amber-900">Não foi possível abrir os relatórios</h2><p className="mt-2 text-sm text-amber-800">{error}</p>{error.includes("Selecione") && <Link href="/schools" className="mt-5 inline-flex rounded-xl bg-orange-500 px-4 py-3 text-sm font-bold text-white">Selecionar unidade</Link>}</div> : <div className="space-y-4">{pending && <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900"><strong>Fechamento pendente:</strong> período de {pending.weekStart} a {pending.weekEnd}. A recuperação automática ocorrerá na próxima execução autorizada.</div>}<WeeklyManagementReportView report={report} previous={previous} history={history} schoolId={schoolId} detailMode={Boolean(reportId)} /></div>}</ReportPageShell>;
 }

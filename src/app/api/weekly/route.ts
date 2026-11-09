@@ -447,6 +447,7 @@ export async function GET(request: NextRequest) {
         .find(
           {
             role: "student",
+            active: { $ne: false },
             schoolId: unitSchoolId,
           },
           {
@@ -574,6 +575,7 @@ export async function GET(request: NextRequest) {
     const student = await students.findOne({
       _id: studentId,
       role: "student",
+      active: { $ne: false },
     });
 
     if (!student) {

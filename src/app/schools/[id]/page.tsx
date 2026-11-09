@@ -770,7 +770,7 @@ export default function SchoolPage() {
     student: Student
   ) {
     const confirmed = window.confirm(
-      `Deseja realmente excluir o aluno "${student.name}"?`
+      `Deseja excluir definitivamente o vínculo de "${student.name}"? O acesso e o saldo operacional serão encerrados; um futuro recadastro começará com zero pontos.`
     );
 
     if (!confirmed) {

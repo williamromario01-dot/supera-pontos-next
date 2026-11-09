@@ -230,7 +230,7 @@ export default function StudentsPage() {
     }
 
     const confirmed = window.confirm(
-      `Tem certeza que deseja excluir o aluno "${student.name}"?\n\nEssa ação removerá o acesso do aluno ao sistema.`
+      `Tem certeza que deseja excluir definitivamente o vínculo de "${student.name}"?\n\nO acesso e o saldo operacional serão encerrados. Os históricos serão preservados, e um futuro recadastro começará com zero pontos.`
     );
 
     if (!confirmed) {

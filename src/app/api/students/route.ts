@@ -63,6 +63,7 @@ export async function GET(request: NextRequest) {
 
     const filter: Record<string, unknown> = {
       role: "student",
+      active: { $ne: false },
     };
 
     if (currentUser.role === "super_admin") {

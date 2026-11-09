@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { ObjectId } from "mongodb";
+import { ObjectId, type Document } from "mongodb";
 import clientPromise from "@/lib/mongodb";
 import { getOperationalAccessForAuth, subscriptionPastDueResponseForAccess } from "@/lib/subscription-access";
 
@@ -49,8 +49,7 @@ export async function DELETE(request: NextRequest, props: { params: Promise<{ id
     // podem excluir alunos.
     if (
       user.role !== "super_admin" &&
-      user.role !== "admin" &&
-      user.role !== "educator"
+      user.role !== "admin"
     ) {
       return NextResponse.json(
         {
@@ -121,18 +120,30 @@ export async function DELETE(request: NextRequest, props: { params: Promise<{ id
     }
 
     const now = new Date();
-    await db.collection("users").updateOne(
-      { _id: new ObjectId(studentId), role: "student" },
-      { $set: { active: false, archivedAt: now, archivedBy: user._id, updatedAt: now } },
-    );
+    const studentObjectId = new ObjectId(studentId);
+    const originalEmail = String(student.originalEmail || student.email || "").trim().toLowerCase();
+    const retiredEmail = `deleted+${studentId}@invalid.superpontos.local`;
+    const transaction = client.startSession();
+    try {
+      await transaction.withTransaction(async () => {
+        const retired = await db.collection("users").updateOne(
+          { _id: studentObjectId, role: "student", active: { $ne: false } },
+          { $set: { active: false, points: 0, deletedPermanently: true, deletedAt: now, deletedBy: user._id, archivedAt: now, archivedBy: user._id, originalEmail, email: retiredEmail, updatedAt: now }, $unset: { passwordHash: "", password: "" } },
+          { session: transaction },
+        );
+        if (retired.matchedCount === 1) await db.collection<{ _id: string } & Document>("studentDeletionTombstones").updateOne(
+          { _id: `${String(student.schoolId)}:${originalEmail}` },
+          { $setOnInsert: { schoolId: student.schoolId, companyId: student.companyId ?? null, studentId: studentObjectId, originalEmail, deletedAt: now, deletedBy: user._id } },
+          { upsert: true, session: transaction },
+        );
+        await db.collection("classes").updateMany({ schoolId: student.schoolId, studentIds: studentObjectId }, { $pull: { studentIds: studentObjectId }, $set: { updatedAt: now } } as Document, { session: transaction });
+        await db.collection("sessions").deleteMany({ userId: studentObjectId }, { session: transaction });
+      });
+    } finally { await transaction.endSession(); }
 
     // Encerra todas as sessões do aluno excluído.
-    await db.collection("sessions").deleteMany({
-      userId: new ObjectId(studentId),
-    });
-
     return NextResponse.json({
-      message: "Aluno arquivado com sucesso. O histórico relacionado foi preservado.",
+      message: "Vínculo excluído definitivamente. Um futuro recadastro começará com zero pontos; históricos permanecem preservados.",
     });
   } catch (error) {
     console.error("Erro ao excluir aluno:", error);

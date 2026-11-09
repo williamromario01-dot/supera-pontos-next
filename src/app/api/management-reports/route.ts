@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import clientPromise from "@/lib/mongodb";
 import { authenticateRequest } from "@/lib/auth";
 import { resolveWeeklyReportSchool } from "@/lib/weekly-management-report-access";
+import { WEEKLY_REPORT_FIRST_PROTECTED_WEEK, latestEligiblePeriod, scheduledCloseAt } from "@/lib/weekly-management-report-core";
 
 const DB_NAME = "supera_pontos";
 
@@ -14,5 +15,9 @@ export async function GET(request: NextRequest) {
     { schoolId: access.schoolId, status: "CLOSED" },
     { projection: { weekStart: 1, weekEnd: 1, closedAt: 1, status: 1, reportVersion: 1 } },
   ).sort({ weekStart: -1 }).limit(104).toArray();
-  return NextResponse.json({ reports: reports.map((report) => ({ reportId: String(report._id), weekStart: report.weekStart, weekEnd: report.weekEnd, closedAt: report.closedAt, status: report.status, reportVersion: report.reportVersion })) }, { headers: { "Cache-Control": "no-store" } });
+  const eligible = latestEligiblePeriod();
+  const pending = eligible.weekStart >= WEEKLY_REPORT_FIRST_PROTECTED_WEEK && !reports.some((report) => report.weekStart === eligible.weekStart)
+    ? { weekStart: eligible.weekStart, weekEnd: eligible.weekEnd, scheduledCloseAt: scheduledCloseAt(eligible), status: "PENDING" }
+    : null;
+  return NextResponse.json({ pending, reports: reports.map((report) => ({ reportId: String(report._id), weekStart: report.weekStart, weekEnd: report.weekEnd, closedAt: report.closedAt, status: report.status, reportVersion: report.reportVersion })) }, { headers: { "Cache-Control": "no-store" } });
 }

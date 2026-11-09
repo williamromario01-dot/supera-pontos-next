@@ -80,6 +80,9 @@ export type EducatorMetric = GroupMetric & {
   classNames: string[];
   categoriesWorked: number;
   recordCount: number;
+  absences?: number;
+  attendanceSessions?: number;
+  pendingAttendanceSessions?: number | null;
 };
 
 export type ClassMetric = GroupMetric & {
@@ -109,7 +112,7 @@ export type WeeklyReport = {
   salesMetrics: { available: boolean; reason?: string };
   redemptionMetrics: { available: boolean; count: number; pointsSpent: number; items: Array<{ redemptionId: string; studentId?: string; productId?: string; productName: string; pointsSpent: number; status: string; createdAt?: string | Date }> };
   inventoryMetrics: { available: boolean; snapshotOnly: boolean; movementAvailable: boolean; lowStockAvailable: boolean; reason?: string; products: Array<{ source: string; productId: string; productName: string; stock: number; active: boolean }>; outOfStockProducts: number };
-  attendanceMetrics: { available: boolean; reason?: string } & Partial<ReturnType<typeof summarizeAttendance>>;
+  attendanceMetrics: ({ available: boolean; reason?: string } & Partial<ReturnType<typeof summarizeAttendance>> & { classAttendance?: Array<{ classId: string; className: string; educatorId?: string | null; educatorName?: string | null; status: "RECORDED" | "NO_ATTENDANCE_RECORDED"; scheduleStatus: "INSUFFICIENT_SCHEDULE_DATA"; totalSessions: number; opportunities: number; presences: number; absences: number; percentage: number | null; absentees: Array<{ studentId: string; studentName: string; present: boolean; classId: string; className: string; date: string; session: string }>; pendingDates: string[] }> });
 };
 
 export type WeeklyReportV1 = WeeklyReport & { reportVersion: 1 };

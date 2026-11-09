@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { ObjectId, MongoServerError } from "mongodb";
 import { loadRoute } from "./helpers/load-route.mjs";
-import { summarizeAttendance, validAttendanceDate, validateAttendanceStudents, eligibleEducator, canAssignEducator } from "../src/lib/attendance-core.ts";
+import { summarizeAttendance, summarizeAttendanceByClasses, validAttendanceDate, validateAttendanceStudents, validatePresentStudentIds, eligibleEducator, canAssignEducator } from "../src/lib/attendance-core.ts";
 
 const equal = (a, b) => String(a) === String(b);
 function matches(doc, filter) {
@@ -20,7 +20,8 @@ function fixture(role = "admin") {
   const users = ["Ana", "Bia"].map(name => ({ _id: new ObjectId(), name, schoolId, companyId, active: true, role: "student", points: 100 }));
   users.push({ _id: educatorId, name: "Educador", schoolId, companyId, role: "educator", active: true });
   const auth = { role, schoolId, companyId, userId: educatorId, user: { _id: educatorId, role, schoolId, companyId } };
-  const data = { schools: [{ _id: schoolId, companyId, active: true }], classes: [{ _id: classId, schoolId, name: "Turma A", studentIds: users.slice(0, 2).map(user => user._id), active: true }], users, attendanceSessions: [], categories: [], sessions: [{ token: "fixture", userId: educatorId, expiresAt: new Date(Date.now() + 600000) }], pointEvents: [{ points: 100 }] };
+  const attendanceCategory = { _id: new ObjectId(), schoolId, name: "Frequência" };
+  const data = { schools: [{ _id: schoolId, companyId, active: true, attendanceCategoryId: attendanceCategory._id }], classes: [{ _id: classId, schoolId, name: "Turma A", studentIds: users.slice(0, 2).map(user => user._id), active: true }], users, attendanceSessions: [], categories: [attendanceCategory], sessions: [{ token: "fixture", userId: educatorId, expiresAt: new Date(Date.now() + 600000) }], pointEvents: [{ points: 100 }] };
   let calls = [];
   const db = { collection(name) {
     assert.ok(name in data, `Unexpected collection ${name}`);
@@ -51,7 +52,7 @@ function fixture(role = "admin") {
   const assignment = loadRoute("src/app/api/classes/[id]/route.ts", mocks);
   const request = (body = {}, query = "") => ({ cookies: { get: () => ({ value: "fixture" }) }, nextUrl: new URL(`http://local?schoolId=${schoolId}${query}`), json: async () => body });
   const context = { params: Promise.resolve({ id: String(classId) }) };
-  const body = () => ({ date: "2026-10-28", session: "Aula 1", students: users.slice(0, 2).map((student, index) => ({ studentId: String(student._id), present: index === 0 })) });
+  const body = () => ({ date: "2026-10-28", session: "Aula 1", finalized: true, presentStudentIds: [String(users[0]._id)] });
   return { data, auth, route, assignment, request, context, body, schoolId, companyId, educatorId, calls };
 }
 
@@ -61,6 +62,8 @@ test("attendance validates real dates, future dates and complete unique rosters"
   assert.equal(validAttendanceDate("2026-10-28", "2026-11-03"), true);
   assert.equal(validateAttendanceStudents(["a", "b"], [{ studentId: "a", present: true }, { studentId: "a", present: false }]), false);
   assert.equal(validateAttendanceStudents(["a"], [{ studentId: "b", present: true }]), false);
+  assert.equal(validatePresentStudentIds(["a", "b"], ["a"]), true);
+  assert.equal(validatePresentStudentIds(["a", "b"], ["a", "a"]), false);
 });
 
 test("only admin and super_admin assign active educators in the same school/company", () => {
@@ -104,7 +107,7 @@ test("records explicit sessions; historical roster and names survive changes; au
   f.data.classes[0].studentIds = [];
   const record = f.data.attendanceSessions[0]; assert.equal(record.students.length, 2);
   assert.deepEqual(record.students.map(s => s.present), [true, false]);
-  const correction = { ...f.body(), version: 1, reason: "Conferência", students: record.students.map(s => ({ ...s, present: true })) };
+  const correction = { ...f.body(), version: 1, reason: "Conferência", presentStudentIds: record.students.map(s => s.studentId) };
   assert.equal((await f.route.PATCH(f.request(correction), f.context)).status, 200);
   assert.equal(record.audit.length, 2); assert.equal(record.audit[1].before[1].present, false);
   assert.equal((await f.route.PATCH(f.request(correction), f.context)).status, 409);
@@ -124,7 +127,7 @@ test("attendance denies unauthorized roles, unassigned educator and foreign rost
   for (const role of ["company_admin", "student", "educator"]) {
     const f = fixture(role); assert.equal((await f.route.POST(f.request(f.body()), f.context)).status, 403);
   }
-  const f = fixture(); const body = f.body(); body.students[0].studentId = String(new ObjectId());
+  const f = fixture(); const body = f.body(); body.presentStudentIds[0] = String(new ObjectId());
   assert.equal((await f.route.POST(f.request(body), f.context)).status, 400);
   f.auth.schoolId = new ObjectId();
   assert.equal((await f.route.POST(f.request(f.body()), f.context)).status, 403);
@@ -147,6 +150,20 @@ test("frequency counts only recorded opportunities, with names, dates and separa
   const summary = summarizeAttendance([session]);
   assert.equal(summary.totalSessions, 1); assert.equal(summary.presences, 1); assert.equal(summary.absences, 1); assert.equal(summary.percentage, 50);
   assert.equal(summary.absentees[0].studentName, "Bia"); assert.equal(summary.absentees[0].date, "2026-10-28");
+});
+
+test("unfinalized calls create no absences and all active classes remain visible", async () => {
+  const f = fixture();
+  const response = await f.route.POST(f.request({ ...f.body(), finalized: false }), f.context);
+  assert.equal(response.status, 400);
+  assert.equal(f.data.attendanceSessions.length, 0);
+  const classes = [{ classId: "a", className: "Turma A", educatorId: "e" }, { classId: "b", className: "Turma B", educatorId: "e" }];
+  const session = { classId: "a", className: "Turma A", date: "2026-10-28", session: "Aula 1", students: [{ studentId: "1", studentName: "Ana", present: true }, { studentId: "2", studentName: "Bia", present: false }] };
+  const summary = summarizeAttendanceByClasses([session], classes);
+  assert.equal(summary.classAttendance.length, 2);
+  assert.equal(summary.classAttendance[0].absences, 1);
+  assert.equal(summary.classAttendance[1].status, "NO_ATTENDANCE_RECORDED");
+  assert.equal(summary.classAttendance[1].absences, 0);
 });
 
 test("new attendance sessions snapshot selected category while corrections keep original category", async () => {

@@ -5,7 +5,8 @@ import clientPromise from "@/lib/mongodb";
 import { authenticateRequest, hasSchoolAccess } from "@/lib/auth";
 import { getOperationalAccessForAuth, subscriptionPastDueResponseForAccess } from "@/lib/subscription-access";
 import { isSchoolArchived } from "@/lib/schools";
-import { validAttendanceDate, validateAttendanceStudents } from "@/lib/attendance-core";
+import { validAttendanceDate, validatePresentStudentIds } from "@/lib/attendance-core";
+import { isProtectedWeeklyDate } from "@/lib/weekly-management-report-core";
 
 type Context = { params: Promise<{ id: string }> };
 async function access(request: NextRequest, context: Context) {
@@ -52,8 +53,10 @@ async function save(request: NextRequest, context: Context, correction: boolean)
     if (!operational.canPerformOperationalMutation) return NextResponse.json(subscriptionPastDueResponseForAccess(operational), { status: 403 });
     if (isSchoolArchived(school) || school.active === false || classData.active === false) return NextResponse.json({ error: "Turma ou unidade inativa." }, { status: 409 });
     const body = await request.json();
+    if (body.finalized !== true) return NextResponse.json({ error: "Finalize explicitamente a chamada para registrar presenças e ausências." }, { status: 400 });
     const session = typeof body.session === "string" ? body.session.trim() : "";
     if (!validAttendanceDate(body.date) || !session || session.length > 80) return NextResponse.json({ error: "Informe data válida e identificação da sessão." }, { status: 400 });
+    if (isProtectedWeeklyDate(body.date)) return NextResponse.json({ error: "O período semanal está fechado e não aceita registros ou correções retroativas.", code: "WEEKLY_PERIOD_CLOSED" }, { status: 409 });
     const collection = db.collection("attendanceSessions");
     await collection.createIndex({ schoolId: 1, classId: 1, date: 1, session: 1 }, { unique: true, name: "attendance_session_identity" });
     const filter = { schoolId, classId: classData._id, date: body.date, session };
@@ -68,12 +71,13 @@ async function save(request: NextRequest, context: Context, correction: boolean)
       const students = await db.collection("users").find({ _id: { $in: ids.map((id: string) => new ObjectId(id)) }, role: "student", schoolId: { $in: [schoolId, String(schoolId)] }, active: { $ne: false } }).project({ name: 1, companyId: 1 }).toArray();
       expected = students.filter((student) => !student.companyId || String(student.companyId) === String(school.companyId)).map((student) => ({ studentId: String(student._id), studentName: String(student.name) }));
     }
-    if (!expected.length || !validateAttendanceStudents(expected.map((student) => student.studentId), body.students)) return NextResponse.json({ error: "A chamada deve conter exatamente os alunos esperados. Recarregue a turma." }, { status: 400 });
-    const entries = body.students as Array<{ studentId: string; present: boolean }>;
-    const students = expected.map((student) => ({ ...student, present: entries.find((item) => item.studentId === student.studentId)!.present }));
+    const expectedIds = expected.map((student) => student.studentId);
+    if (!expected.length || !validatePresentStudentIds(expectedIds, body.presentStudentIds)) return NextResponse.json({ error: "A lista de presenças contém alunos inválidos ou duplicados. Recarregue a turma." }, { status: 400 });
+    const presentIds = new Set(body.presentStudentIds as string[]);
+    const students = expected.map((student) => ({ ...student, present: presentIds.has(student.studentId) }));
     const now = new Date();
     if (existing) {
-      const updated = await collection.updateOne({ ...filter, version: body.version }, { $set: { students, updatedAt: now, audit: [...existing.audit, { actorId: auth.userId, at: now, reason: body.reason.trim(), before: existing.students, after: students }] }, $inc: { version: 1 } });
+      const updated = await collection.updateOne({ ...filter, version: body.version }, { $set: { students, status: "FINALIZED", finalizedAt: now, finalizedBy: auth.userId, updatedAt: now, audit: [...existing.audit, { actorId: auth.userId, at: now, reason: body.reason.trim(), before: existing.students, after: students }] }, $inc: { version: 1 } });
       if (!updated.modifiedCount) return NextResponse.json({ error: "Outra pessoa alterou esta chamada. Recarregue." }, { status: 409 });
     } else {
       const transaction = (await clientPromise).startSession();
@@ -81,14 +85,16 @@ async function save(request: NextRequest, context: Context, correction: boolean)
         await transaction.withTransaction(async () => {
           await lockCategorySchool(db, schoolId, transaction);
           const categoryId = await activeAttendanceId(db, schoolId, transaction);
+          if (!categoryId) throw new Error("ATTENDANCE_CATEGORY_NOT_CONFIGURED");
           let category = categoryId ? await db.collection("categories").findOne({ _id: new ObjectId(categoryId) }, { session: transaction }) : null;
           if (category && isSharedCategory(category)) category = { ...category, ...await categoryOverride(db, schoolId, category._id, transaction), _id: category._id };
-          await collection.insertOne({ ...filter, companyId: school.companyId ?? null, className: String(classData.name), categoryId: categoryId ? new ObjectId(categoryId) : null, categoryName: category?.name ?? null, students, version: 1, createdAt: now, updatedAt: now, createdBy: auth.userId, audit: [{ actorId: auth.userId, at: now, reason: "Registro inicial", after: students }] }, { session: transaction });
+          await collection.insertOne({ ...filter, companyId: school.companyId ?? null, className: String(classData.name), categoryId: categoryId ? new ObjectId(categoryId) : null, categoryName: category?.name ?? null, students, status: "FINALIZED", finalizedAt: now, finalizedBy: auth.userId, version: 1, createdAt: now, updatedAt: now, createdBy: auth.userId, audit: [{ actorId: auth.userId, at: now, reason: "Chamada finalizada", after: students }] }, { session: transaction });
         });
       } finally { await transaction.endSession(); }
     }
-    return NextResponse.json({ message: "Chamada salva. Nenhum ponto foi lançado." });
+    return NextResponse.json({ message: "Chamada finalizada. Ausências registradas automaticamente; nenhum ponto foi lançado." });
   } catch (error) {
+    if (error instanceof Error && error.message === "ATTENDANCE_CATEGORY_NOT_CONFIGURED") return NextResponse.json({ error: "Configure a categoria Frequência antes de finalizar chamadas." }, { status: 409 });
     if (error instanceof SyntaxError) return NextResponse.json({ error: "Dados enviados em formato inválido." }, { status: 400 });
     if (error instanceof MongoServerError && error.code === 11000) return NextResponse.json({ error: "Chamada já registrada." }, { status: 409 });
     console.error("Erro ao salvar chamada", error); return NextResponse.json({ error: "Não foi possível salvar a chamada." }, { status: 500 });

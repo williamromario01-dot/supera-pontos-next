@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { ObjectId, type Collection, type Document } from "mongodb";
 import clientPromise from "@/lib/mongodb";
 import { getOperationalAccessForAuth, subscriptionPastDueResponse } from "@/lib/subscription-access";
+import { isProtectedWeeklyDate } from "@/lib/weekly-management-report-core";
 import {
   canGrantReferralReward,
   isAttendanceStatus,
@@ -39,6 +40,7 @@ interface ReferralDocument {
   rewardPoints?: number;
   rewardEntryId?: ObjectId;
   updatedAt?: Date;
+  createdAt?: Date;
 }
 
 async function getAuthenticatedUser(request: NextRequest) {
@@ -221,6 +223,9 @@ export async function PATCH(request: NextRequest, props: { params: Promise<{ id:
     if (!referral) return NextResponse.json({ error: "Indicação não encontrada." }, { status: 404 });
     if (!hasReferralSchoolAccess(user, referral)) {
       return NextResponse.json({ error: "Você não tem acesso a esta indicação." }, { status: 403 });
+    }
+    if (referral.createdAt && isProtectedWeeklyDate(referral.createdAt)) {
+      return NextResponse.json({ error: "O período semanal está fechado e não aceita alterações retroativas.", code: "WEEKLY_PERIOD_CLOSED" }, { status: 409 });
     }
 
     if (action !== "attendance") {

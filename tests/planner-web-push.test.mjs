@@ -170,12 +170,12 @@ test("iPhone guidance combines feature checks with standalone detection", async 
   assert.match(component, /Tela de Início/);
 });
 
-test("PWA manifest remains configured without a Vercel cron schedule", async () => {
+test("PWA manifest remains configured alongside the weekly-report cron schedule", async () => {
   const manifest = await read("src/app/manifest.ts");
   const vercel = JSON.parse(await read("vercel.json"));
   assert.match(manifest, /name: "SUPERPONTOS"/);
   assert.match(manifest, /display: "standalone"/);
-  assert.equal(vercel.crons, undefined);
+  assert.deepEqual(vercel.crons, [{ path: "/api/cron/weekly-management-reports", schedule: "0 9 * * *" }]);
 });
 
 test("official PWA identity supports Android and iOS without a competing service worker", async () => {

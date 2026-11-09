@@ -1,6 +1,8 @@
 export const WEEKLY_REPORT_TIME_ZONE = "America/Sao_Paulo";
 export const WEEKLY_REPORT_VERSION = 1;
 export const WEEKLY_REPORT_ANALYTICAL_CAP = 200;
+export const WEEKLY_REPORT_CLOSE_TIME = "06:00";
+export const WEEKLY_REPORT_FIRST_PROTECTED_WEEK = "2026-11-02";
 
 export type EvolutionStatus = "EVOLVED" | "MAINTAINED" | "DECLINED" | "INSUFFICIENT_DATA";
 
@@ -54,10 +56,25 @@ export function periodForWeekStart(weekStart: string): WeeklyReportPeriod {
   };
 }
 
+export function scheduledCloseAt(period: WeeklyReportPeriod): Date {
+  return zonedDateTimeToUtc(addCivilDays(period.weekStart, 7), WEEKLY_REPORT_CLOSE_TIME);
+}
+
+export function weeklyProtectionBoundary(now = new Date()): Date {
+  return zonedDateTimeToUtc(mondayOnOrBefore(getCivilDateInTimeZone(now)), WEEKLY_REPORT_CLOSE_TIME);
+}
+
+export function isProtectedWeeklyDate(value: string | Date, now = new Date()): boolean {
+  const civilDate = value instanceof Date ? getCivilDateInTimeZone(value) : value;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(civilDate) || civilDate < WEEKLY_REPORT_FIRST_PROTECTED_WEEK) return false;
+  const currentMonday = mondayOnOrBefore(getCivilDateInTimeZone(now));
+  return now >= weeklyProtectionBoundary(now) && civilDate < currentMonday;
+}
+
 export function latestEligiblePeriod(now = new Date()): WeeklyReportPeriod {
   const today = getCivilDateInTimeZone(now);
   const currentMonday = mondayOnOrBefore(today);
-  const cutoff = zonedDateTimeToUtc(currentMonday, "13:00");
+  const cutoff = zonedDateTimeToUtc(currentMonday, WEEKLY_REPORT_CLOSE_TIME);
   const weekStart = addCivilDays(currentMonday, now >= cutoff ? -7 : -14);
   return periodForWeekStart(weekStart);
 }
@@ -65,7 +82,7 @@ export function latestEligiblePeriod(now = new Date()): WeeklyReportPeriod {
 export function generationMode(now = new Date()): "automatic" | "recovery" {
   const today = getCivilDateInTimeZone(now);
   const monday = mondayOnOrBefore(today);
-  const cutoff = zonedDateTimeToUtc(monday, "13:00");
+  const cutoff = zonedDateTimeToUtc(monday, WEEKLY_REPORT_CLOSE_TIME);
   return today === monday && now >= cutoff ? "automatic" : "recovery";
 }
 

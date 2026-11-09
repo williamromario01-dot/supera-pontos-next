@@ -175,6 +175,7 @@ export async function GET(request: NextRequest) {
         .find(
           {
             role: "student",
+            active: { $ne: false },
             $or: [
               { schoolId: schoolFilter },
               { schoolId: schoolFilter.toString() },
@@ -287,6 +288,7 @@ export async function GET(request: NextRequest) {
               $in: studentIds,
             },
             role: "student",
+            active: { $ne: false },
             ...(schoolFilter
               ? {
                   $or: [
@@ -437,6 +439,7 @@ export async function GET(request: NextRequest) {
               $in: studentIds,
             },
             role: "student",
+            active: { $ne: false },
             ...(schoolFilter
               ? {
                   $or: [

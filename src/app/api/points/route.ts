@@ -252,7 +252,7 @@ export async function POST(request: NextRequest) {
         await pointEvents.insertOne(pointEvent, { session });
 
         const updateResult = await users.updateOne(
-          { _id: studentObjectId, role: "student" },
+          { _id: studentObjectId, role: "student", active: { $ne: false } },
           {
             $inc: { points },
             $set: { updatedAt: now },
