@@ -4,6 +4,7 @@ import './globals.css';
 import TenantTheme from '@/components/TenantTheme';
 import LegalFooter from '@/components/LegalFooter';
 import PwaServiceWorkerRegistration from '@/components/PwaServiceWorkerRegistration';
+import AppNavigation from '@/components/AppNavigation';
 
 const inter = Inter({ subsets: ['latin'] });
 
@@ -39,7 +40,7 @@ export default function RootLayout({
     <html lang="pt-BR">
       <body className={`${inter.className} bg-slate-50 text-slate-900 min-h-screen`}>
         <PwaServiceWorkerRegistration />
-        <TenantTheme>{children}</TenantTheme>
+        <TenantTheme><AppNavigation />{children}</TenantTheme>
         <LegalFooter />
       </body>
     </html>

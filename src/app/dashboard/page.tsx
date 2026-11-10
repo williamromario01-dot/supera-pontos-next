@@ -250,6 +250,11 @@ export default function DashboardPage() {
       return;
     }
 
+    if (hash === "#evolucao-unidade") {
+      router.replace("/management-reports#evolucao-unidade");
+      return;
+    }
+
     const target = document.getElementById(
       hash.slice(1)
     );
@@ -259,7 +264,7 @@ export default function DashboardPage() {
         behavior: "smooth",
       });
     }
-  }, [loading, user, weekly]);
+  }, [loading, router, user, weekly]);
 
   async function loadDashboard() {
     try {
@@ -484,12 +489,9 @@ export default function DashboardPage() {
     ? `${ownUnitPath}#educadores`
     : "";
 
-  const canAccessUnitEvolution =
+  const canAccessManagementReports =
     user?.role === "admin" ||
     user?.role === "educator";
-
-  const canAccessManagementReports =
-    user?.role === "admin";
 
   const canManageCategories =
     user?.role === "super_admin" ||
@@ -676,7 +678,7 @@ export default function DashboardPage() {
                     onClick={() =>
                       router.push("/points")
                     }
-                    className="tenant-brand-bg flex-shrink-0 flex items-center gap-2 px-4 py-2.5 rounded-xl text-white text-sm font-bold transition shadow-sm"
+                    className="flex-shrink-0 flex items-center gap-2 px-4 py-2.5 rounded-xl text-slate-500 hover:bg-slate-100 text-sm font-bold transition"
                   >
                     <Award size={17} />
                     Pontuação
@@ -702,20 +704,6 @@ export default function DashboardPage() {
                   <Trophy size={17} />
                   Ranking
                 </button>
-
-                {canAccessUnitEvolution && (
-                  <button
-                    onClick={() =>
-                      router.push(
-                        "/dashboard#evolucao-unidade"
-                      )
-                    }
-                    className="flex-shrink-0 flex items-center gap-2 px-4 py-2.5 rounded-xl text-slate-500 hover:bg-slate-100 text-sm font-bold transition"
-                  >
-                    <TrendingUp size={17} />
-                    Evolução da unidade
-                  </button>
-                )}
 
                 {canAccessManagementReports && (
                   <button
@@ -963,7 +951,7 @@ export default function DashboardPage() {
                       setMenuOpen(false);
                       router.push("/points");
                     }}
-                    className="flex items-center gap-3 px-4 py-3 rounded-xl bg-orange-500 text-white hover:bg-orange-600 font-bold text-sm transition"
+                    className="flex items-center gap-3 px-4 py-3 rounded-xl text-slate-600 hover:bg-slate-100 font-bold text-sm transition"
                   >
                     <Award size={18} />
                     Pontuação
@@ -991,21 +979,6 @@ export default function DashboardPage() {
                   <Trophy size={18} />
                   Ranking
                 </button>
-
-                {canAccessUnitEvolution && (
-                  <button
-                    onClick={() => {
-                      setMenuOpen(false);
-                      router.push(
-                        "/dashboard#evolucao-unidade"
-                      );
-                    }}
-                    className="flex items-center gap-3 px-4 py-3 rounded-xl text-slate-600 hover:bg-slate-100 font-bold text-sm"
-                  >
-                    <TrendingUp size={18} />
-                    Evolução da unidade
-                  </button>
-                )}
 
                 {canAccessManagementReports && (
                   <button
@@ -1216,7 +1189,7 @@ export default function DashboardPage() {
             EVOLUÇÃO
         ========================================= */}
 
-        {weekly && (
+        {weekly && !isUnitWeekly && (
           <section
             id={
               isUnitWeekly
@@ -1882,38 +1855,6 @@ export default function DashboardPage() {
 
                 <p className="text-xs text-slate-400 mt-1">
                   Consulte as turmas já cadastradas na unidade.
-                </p>
-
-                <div className="mt-4 flex items-center gap-1 text-xs font-bold text-orange-500">
-                  Acessar
-                  <ChevronRight size={14} />
-                </div>
-
-              </button>
-            )}
-
-            {/* EVOLUÇÃO DA UNIDADE */}
-
-            {canAccessUnitEvolution && (
-              <button
-                onClick={() =>
-                  router.push(
-                    "/dashboard#evolucao-unidade"
-                  )
-                }
-                className="group bg-white border border-slate-200 rounded-2xl p-5 text-left hover:border-orange-200 hover:shadow-md transition"
-              >
-
-                <div className="w-11 h-11 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center mb-4">
-                  <TrendingUp size={21} />
-                </div>
-
-                <h3 className="font-black text-slate-800">
-                  Evolução da unidade
-                </h3>
-
-                <p className="text-xs text-slate-400 mt-1">
-                  Veja o desempenho semanal da unidade.
                 </p>
 
                 <div className="mt-4 flex items-center gap-1 text-xs font-bold text-orange-500">

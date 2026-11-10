@@ -5,6 +5,7 @@ import Link from "next/link";
 import { AlertTriangle, Loader2 } from "lucide-react";
 import { ReportPageShell, WeeklyManagementReportView } from "@/components/WeeklyManagementReportView";
 import type { ReportListItem, WeeklyReport } from "@/lib/weekly-management-report-types";
+import UnitEvolutionSection from "@/components/UnitEvolutionSection";
 
 type User = { role: string; schoolId: string | null };
 type PendingReport = { weekStart: string; weekEnd: string; scheduledCloseAt: string; status: "PENDING" };
@@ -26,7 +27,8 @@ export default function ManagementReportsClient({ schoolId, reportId }: { school
         if (!meResponse.ok) throw new Error("AUTH_REQUIRED");
         const me = await meResponse.json(); const currentUser = me.user as User;
         if (!cancelled) setUser(currentUser);
-        if (currentUser.role !== "admin" && currentUser.role !== "super_admin") throw new Error("FORBIDDEN");
+        if (!["admin", "educator", "super_admin"].includes(currentUser.role)) throw new Error("FORBIDDEN");
+        if (currentUser.role === "educator") return;
         if (currentUser.role === "super_admin" && !schoolId) throw new Error("SCHOOL_CONTEXT_REQUIRED");
         const query = schoolId ? `?schoolId=${encodeURIComponent(schoolId)}` : "";
         const listResponse = await fetch(`/api/management-reports${query}`, { credentials: "include", cache: "no-store" });
@@ -57,5 +59,5 @@ export default function ManagementReportsClient({ schoolId, reportId }: { school
   const backHref = reportId ? `/management-reports${query}` : user?.role === "super_admin" ? `/schools/${encodeURIComponent(schoolId || "")}` : "/dashboard";
   const backLabel = reportId ? "Voltar aos relatórios" : user?.role === "super_admin" ? "Voltar à unidade" : "Voltar ao painel";
 
-  return <ReportPageShell backHref={backHref} backLabel={backLabel}>{loading ? <div className="flex min-h-64 items-center justify-center gap-3 text-slate-500"><Loader2 className="animate-spin"/><span>Carregando snapshots semanais...</span></div> : error ? <div className="rounded-3xl border border-amber-200 bg-amber-50 p-8 text-center"><AlertTriangle className="mx-auto text-amber-600"/><h2 className="mt-3 text-xl font-black text-amber-900">Não foi possível abrir os relatórios</h2><p className="mt-2 text-sm text-amber-800">{error}</p>{error.includes("Selecione") && <Link href="/schools" className="mt-5 inline-flex rounded-xl bg-orange-500 px-4 py-3 text-sm font-bold text-white">Selecionar unidade</Link>}</div> : <div className="space-y-4">{pending && <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900"><strong>Fechamento pendente:</strong> período de {pending.weekStart} a {pending.weekEnd}. A recuperação automática ocorrerá na próxima execução autorizada.</div>}<WeeklyManagementReportView report={report} previous={previous} history={history} schoolId={schoolId} detailMode={Boolean(reportId)} /></div>}</ReportPageShell>;
+  return <ReportPageShell backHref={backHref} backLabel={backLabel}>{loading ? <div className="flex min-h-64 items-center justify-center gap-3 text-slate-500"><Loader2 className="animate-spin"/><span>Carregando Gestão &amp; Relatórios...</span></div> : error ? <div className="rounded-3xl border border-amber-200 bg-amber-50 p-8 text-center"><AlertTriangle className="mx-auto text-amber-600"/><h2 className="mt-3 text-xl font-black text-amber-900">Não foi possível abrir os relatórios</h2><p className="mt-2 text-sm text-amber-800">{error}</p>{error.includes("Selecione") && <Link href="/schools" className="mt-5 inline-flex rounded-xl bg-orange-500 px-4 py-3 text-sm font-bold text-white">Selecionar unidade</Link>}</div> : <div className="space-y-6">{user && ["admin", "educator"].includes(user.role) && !reportId && <UnitEvolutionSection/>}{user?.role === "educator" ? <div className="rounded-2xl border border-slate-200 bg-white p-5 text-sm text-slate-600">Os relatórios semanais fechados permanecem disponíveis apenas para administradores.</div> : <>{pending && <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900"><strong>Fechamento pendente:</strong> período de {pending.weekStart} a {pending.weekEnd}. A recuperação automática ocorrerá na próxima execução autorizada.</div>}<WeeklyManagementReportView report={report} previous={previous} history={history} schoolId={schoolId} detailMode={Boolean(reportId)} /></>}</div>}</ReportPageShell>;
 }
