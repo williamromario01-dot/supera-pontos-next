@@ -216,11 +216,13 @@ export function buildActivitySubmissionPersistencePlan(input: {
   activity: ActivityRecord;
   configurationSnapshot: WeeklyScoringConfigurationSnapshot;
   actorId: ObjectId;
+  actorRole?: "student" | "educator";
   auditEventId?: ObjectId;
   now?: Date;
 }): ActivitySubmissionPersistencePlan {
   requireObjectId(input.actorId, "actorId");
-  if (!sameId(input.actorId, input.activity.studentId)) {
+  const actorRole = input.actorRole ?? "student";
+  if (actorRole === "student" && !sameId(input.actorId, input.activity.studentId)) {
     throw new ActivityPersistenceScopeError("submission actor must be the activity student");
   }
   if (input.activity.status !== "pending" || input.activity.revision !== 0) {
@@ -252,7 +254,7 @@ export function buildActivitySubmissionPersistencePlan(input: {
       weekStart: input.activity.weekStart,
       type: "submitted",
       actorId: input.actorId,
-      actorRole: "student",
+      actorRole,
       idempotencyKey: input.activity.submissionIdempotencyKey,
       before: null,
       after: { status: "pending", approvedQuantity: null, revision: 0 },

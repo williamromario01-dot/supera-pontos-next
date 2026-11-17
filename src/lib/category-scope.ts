@@ -1,5 +1,4 @@
 import { ObjectId, type Document, type Filter } from "mongodb";
-import { getSchoolObjectId } from "@/lib/auth";
 
 export const LEGACY_CATEGORY_SCHOOL_ID =
   "6ab7dd70428f96c0cae8f35c";
@@ -16,6 +15,11 @@ const legacyCategoryIdSet = new Set<string>(LEGACY_CATEGORY_IDS);
 const legacyCategoryObjectIds = LEGACY_CATEGORY_IDS.map(
   (id) => new ObjectId(id),
 );
+
+function getSchoolObjectId(value: unknown): ObjectId | null {
+  if (value instanceof ObjectId) return value;
+  return typeof value === "string" && ObjectId.isValid(value) ? new ObjectId(value) : null;
+}
 
 export function isProtectedLegacyCategory(
   category: Pick<Document, "_id">,
