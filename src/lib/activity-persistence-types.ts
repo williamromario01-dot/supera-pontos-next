@@ -6,6 +6,7 @@ export const ACTIVITY_COLLECTIONS = {
   records: "activityRecords",
   ledgers: "weeklyScoreLedgers",
   auditEvents: "activityAuditEvents",
+  adjustmentPendencies: "activityAdjustmentPendencies",
 } as const;
 
 export type ActivityStatus = "pending" | "approved" | "corrected" | "rejected";
@@ -51,7 +52,7 @@ export interface WeeklyScoreLedger {
   readonly configurationSnapshot: WeeklyScoringConfigurationSnapshot;
   readonly approvedQuantity: number;
   readonly calculatedPoints: number;
-  /** Remains zero until automatic credits are explicitly enabled in a later stage. */
+  /** Total already materialized in pointEvents and users.points. */
   readonly creditedPoints: number;
   readonly revision: number;
   readonly createdAt: Date;
@@ -80,6 +81,8 @@ export interface ActivityAuditEvent {
   readonly after: ActivityAuditSnapshot;
   readonly quantityDelta: number;
   readonly calculatedPointsDelta: number;
+  readonly creditedPointsDelta: number;
+  readonly pointEventId: ObjectId | null;
   readonly occurredAt: Date;
 }
 
@@ -100,4 +103,37 @@ export interface ActivityDecisionPlan {
   readonly auditEvent: ActivityAuditEvent;
   readonly nextActivity: ActivityRecord;
   readonly nextLedger: WeeklyScoreLedger;
+}
+
+export interface ActivityAdjustmentPendency {
+  readonly _id: ObjectId;
+  readonly companyId: ObjectId;
+  readonly schoolId: ObjectId;
+  readonly studentId: ObjectId;
+  readonly categoryId: ObjectId;
+  readonly activityRecordId: ObjectId;
+  readonly weeklyScoreLedgerId: ObjectId;
+  readonly requestedBy: ObjectId;
+  readonly idempotencyKey: string;
+  readonly requestedStatus: Exclude<ActivityStatus, "pending">;
+  readonly requestedApprovedQuantity: number;
+  readonly requiredPointsReversal: number;
+  readonly balanceAtRequest: number;
+  readonly status: "open" | "resolved" | "cancelled";
+  readonly createdAt: Date;
+  readonly updatedAt: Date;
+  readonly resolvedAt: Date | null;
+  readonly resolvedBy: ObjectId | null;
+  readonly resolutionNote: string | null;
+}
+
+export interface ActivitySubmissionPersistencePlan {
+  readonly activity: ActivityRecord;
+  readonly ledgerOnInsert: WeeklyScoreLedger;
+  readonly ledgerUpsert: {
+    readonly filter: Readonly<Record<string, unknown>>;
+    readonly update: Readonly<Record<string, unknown>>;
+    readonly options: { readonly upsert: true };
+  };
+  readonly auditEvent: ActivityAuditEvent;
 }

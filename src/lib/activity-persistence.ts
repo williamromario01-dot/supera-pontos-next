@@ -10,6 +10,7 @@ import {
   type ActivityDecisionPlan,
   type ActivityPersistenceIndex,
   type ActivityRecord,
+  type ActivitySubmissionPersistencePlan,
   type ActivityStatus,
   type WeeklyScoreLedger,
 } from "./activity-persistence-types.ts";
@@ -27,6 +28,8 @@ export const ACTIVITY_PERSISTENCE_INDEXES: readonly ActivityPersistenceIndex[] =
   { collection: ACTIVITY_COLLECTIONS.ledgers, keys: { companyId: 1, schoolId: 1, weekStart: 1 }, options: { name: "weekly_ledger_company_school_week" } },
   { collection: ACTIVITY_COLLECTIONS.auditEvents, keys: { schoolId: 1, idempotencyKey: 1 }, options: { name: "activity_audit_idempotency", unique: true } },
   { collection: ACTIVITY_COLLECTIONS.auditEvents, keys: { schoolId: 1, activityRecordId: 1, occurredAt: 1 }, options: { name: "activity_audit_record_timeline" } },
+  { collection: ACTIVITY_COLLECTIONS.adjustmentPendencies, keys: { schoolId: 1, idempotencyKey: 1 }, options: { name: "activity_adjustment_idempotency", unique: true } },
+  { collection: ACTIVITY_COLLECTIONS.adjustmentPendencies, keys: { schoolId: 1, status: 1, createdAt: 1 }, options: { name: "activity_adjustment_school_status" } },
 ];
 
 export async function ensureActivityPersistenceIndexes(db: Pick<Db, "collection">): Promise<void> {
@@ -205,6 +208,63 @@ export function buildWeeklyLedgerUpsert(ledger: WeeklyScoreLedger) {
   };
 }
 
+/**
+ * Contract for the future submission service. Activity insert, ledger upsert and
+ * submitted audit must be applied in one transaction before the activity is exposed.
+ */
+export function buildActivitySubmissionPersistencePlan(input: {
+  activity: ActivityRecord;
+  configurationSnapshot: WeeklyScoringConfigurationSnapshot;
+  actorId: ObjectId;
+  auditEventId?: ObjectId;
+  now?: Date;
+}): ActivitySubmissionPersistencePlan {
+  requireObjectId(input.actorId, "actorId");
+  if (!sameId(input.actorId, input.activity.studentId)) {
+    throw new ActivityPersistenceScopeError("submission actor must be the activity student");
+  }
+  if (input.activity.status !== "pending" || input.activity.revision !== 0) {
+    throw new ActivityPersistenceConflictError("only a new pending activity can be submitted");
+  }
+  const now = input.now ?? input.activity.createdAt;
+  requireDate(now, "now");
+  const ledger = buildWeeklyLedgerInsert({
+    companyId: input.activity.companyId,
+    schoolId: input.activity.schoolId,
+    studentId: input.activity.studentId,
+    categoryId: input.activity.categoryId,
+    weekStart: input.activity.weekStart,
+    weekEnd: input.activity.weekEnd,
+    configurationSnapshot: input.configurationSnapshot,
+    now,
+  });
+  return {
+    activity: input.activity,
+    ledgerOnInsert: ledger,
+    ledgerUpsert: buildWeeklyLedgerUpsert(ledger),
+    auditEvent: {
+      _id: input.auditEventId ?? new ObjectId(),
+      companyId: input.activity.companyId,
+      schoolId: input.activity.schoolId,
+      studentId: input.activity.studentId,
+      categoryId: input.activity.categoryId,
+      activityRecordId: input.activity._id,
+      weekStart: input.activity.weekStart,
+      type: "submitted",
+      actorId: input.actorId,
+      actorRole: "student",
+      idempotencyKey: input.activity.submissionIdempotencyKey,
+      before: null,
+      after: { status: "pending", approvedQuantity: null, revision: 0 },
+      quantityDelta: 0,
+      calculatedPointsDelta: 0,
+      creditedPointsDelta: 0,
+      pointEventId: null,
+      occurredAt: new Date(now),
+    },
+  };
+}
+
 export function assertFrozenConfiguration(
   ledger: WeeklyScoreLedger,
   proposed: WeeklyScoringConfigurationSnapshot,
@@ -308,6 +368,8 @@ export function buildActivityDecisionPlan(input: {
     after: { status, approvedQuantity: input.approvedQuantity, revision: nextActivity.revision },
     quantityDelta,
     calculatedPointsDelta,
+    creditedPointsDelta: 0,
+    pointEventId: null,
     occurredAt: new Date(now),
   };
 

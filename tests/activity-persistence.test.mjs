@@ -10,6 +10,7 @@ import {
   assertFrozenConfiguration,
   buildActivityDecisionPlan,
   buildActivityRecord,
+  buildActivitySubmissionPersistencePlan,
   buildWeeklyLedgerInsert,
   buildWeeklyLedgerUpsert,
   ensureActivityPersistenceIndexes,
@@ -80,7 +81,7 @@ test("index declarations cover tenant queries, idempotency and unique ledger ide
   assert.ok(ACTIVITY_PERSISTENCE_INDEXES.every((index) => "schoolId" in index.keys));
 });
 
-test("index helper targets only the three new collections", async () => {
+test("index helper targets only the activity-system collections", async () => {
   const calls = [];
   const db = { collection: (collection) => ({ createIndex: async (keys, options) => calls.push({ collection, keys, options }) }) };
   await ensureActivityPersistenceIndexes(db);
@@ -96,6 +97,16 @@ test("weekly ledger upsert freezes configuration only on first insert", () => {
   assert.deepEqual(upsert.options, { upsert: true });
   assert.doesNotThrow(() => assertFrozenConfiguration(ledger, snapshot));
   assert.throws(() => assertFrozenConfiguration(ledger, { ...snapshot, maximumPoints: 200 }), ActivityPersistenceConflictError);
+});
+
+test("submission contract freezes the snapshot while the activity is still pending", () => {
+  const { activity, snapshot } = fixture();
+  const plan = buildActivitySubmissionPersistencePlan({ activity, configurationSnapshot: snapshot, actorId: activity.studentId, now });
+  assert.equal(plan.activity.status, "pending");
+  assert.equal(plan.ledgerUpsert.update.$setOnInsert.configurationSnapshot.targetQuantity, 10);
+  assert.equal(plan.auditEvent.type, "submitted");
+  assert.equal(plan.auditEvent.after.status, "pending");
+  assert.equal(plan.auditEvent.pointEventId, null);
 });
 
 test("approval updates only accumulated ledger projections and creates an audit event", () => {

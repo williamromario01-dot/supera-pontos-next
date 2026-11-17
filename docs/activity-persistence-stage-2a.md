@@ -12,6 +12,8 @@ artefatos ainda.
   com snapshot imutável de meta/teto e pontos apenas calculados.
 - `activityAuditEvents`: trilha append-only de decisões, quantidades anteriores e
   posteriores, diferenças calculadas, ator e chave de idempotência.
+- `activityAdjustmentPendencies`: solicitações de correção que não puderam ser
+  efetivadas sem tornar o saldo negativo.
 
 ## Concorrência, isolamento e idempotência
 
@@ -26,7 +28,7 @@ artefatos ainda.
 
 ## Limites desta etapa
 
-`calculatedPoints` representa apenas a projeção proporcional. `creditedPoints`
-permanece zero: não há escrita em `users.points`, `pointEvents`, ranking, loja,
-resgates ou relatórios. A execução transacional dos planos, autorização em rota
-e ativação de créditos dependem de etapas futuras expressamente autorizadas.
+O contrato `buildActivitySubmissionPersistencePlan` prepara o congelamento na
+primeira submissão ainda pendente. A garantia somente estará ativa quando um
+futuro serviço aplicar, na mesma transação, o registro, o `$setOnInsert` do
+ledger e a auditoria `submitted`. Nenhuma rota faz essa integração atualmente.
