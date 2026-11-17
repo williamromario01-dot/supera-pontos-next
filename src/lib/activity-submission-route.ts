@@ -4,6 +4,12 @@ import { ObjectId } from "mongodb";
 import type { AuthenticatedUser } from "./auth.ts";
 import { getSchoolObjectId } from "./auth.ts";
 import {
+  ActivityApprovalAuthorizationError,
+  ActivityApprovalClosedWeekError,
+  ActivityApprovalDisabledError,
+  ActivityApprovalNotFoundError,
+} from "./activity-approval-service.ts";
+import {
   ActivitySubmissionAuthorizationError,
   ActivitySubmissionClosedWeekError,
   ActivitySubmissionNotFoundError,
@@ -41,6 +47,9 @@ export function activityRouteError(error: unknown) {
   if (error instanceof ActivitySubmissionAuthorizationError || error instanceof ActivityPersistenceScopeError) return NextResponse.json({ error: "Operação não autorizada." }, { status: 403 });
   if (error instanceof ActivitySubmissionNotFoundError) return NextResponse.json({ error: "Registro não encontrado." }, { status: 404 });
   if (error instanceof ActivitySubmissionClosedWeekError || error instanceof ActivityPersistenceConflictError) return NextResponse.json({ error: error.message }, { status: 409 });
+  if (error instanceof ActivityApprovalAuthorizationError) return NextResponse.json({ error: "OperaÃ§Ã£o nÃ£o autorizada." }, { status: 403 });
+  if (error instanceof ActivityApprovalNotFoundError) return NextResponse.json({ error: "Registro nÃ£o encontrado." }, { status: 404 });
+  if (error instanceof ActivityApprovalClosedWeekError || error instanceof ActivityApprovalDisabledError) return NextResponse.json({ error: error.message }, { status: 409 });
   console.error("Activity submission error", error);
   return NextResponse.json({ error: "Não foi possível processar a atividade." }, { status: 500 });
 }

@@ -4,6 +4,8 @@ import { ObjectId } from "mongodb";
 
 import {
   ActivityApprovalClosedWeekError,
+  ActivityApprovalDisabledError,
+  ActivityApprovalAuthorizationError,
   ActivityApprovalNotFoundError,
   processActivityApproval,
 } from "../src/lib/activity-approval-service.ts";
@@ -17,6 +19,7 @@ function matches(document, filter) {
       if ("$in" in expected) return expected.$in.some((value) => equal(actual, value));
       if ("$ne" in expected) return !equal(actual, expected.$ne);
       if ("$gte" in expected) return actual >= expected.$gte;
+      if ("$lte" in expected) return actual <= expected.$lte;
     }
     return equal(actual, expected);
   });
@@ -51,6 +54,7 @@ function fixture({ reportedQuantity = 3, balance = 0 } = {}) {
     users: [{ _id: studentId, companyId, schoolId, role: "student", active: true, points: balance }],
     categories: [{ _id: categoryId, schoolId, active: true, weeklyGoal: 10, defaultPoints: 100 }],
     pointEvents: [],
+    schoolScoringModeChanges: [{ _id: new ObjectId(), companyId, schoolId, previousMode: "legacy", futureMode: "automatic", requestedBy: educatorId, requestedByRole: "admin", requestedAt: new Date("2026-11-15T12:00:00Z"), effectiveAt: new Date("2026-11-16T03:00:00Z"), idempotencyKey: "mode-change-fixture" }],
   };
   let queue = Promise.resolve();
   let failAuditInsert = false;
@@ -98,6 +102,7 @@ function fixture({ reportedQuantity = 3, balance = 0 } = {}) {
     idempotencyKey: "approval-request-001",
     expectedActivityRevision: 0,
     now: new Date("2026-11-19T12:00:00Z"),
+    automaticScoringEnabled: true,
     ...overrides,
   });
   return { state, client, db, input, activity, companyId, schoolId, studentId, categoryId, educatorId, setFailAudit: (value) => { failAuditInsert = value; } };
@@ -112,6 +117,28 @@ test("simple approval atomically credits the proportional difference", async () 
   assert.equal(f.state.weeklyScoreLedgers[0].creditedPoints, 30);
   assert.equal(f.state.activityRecords[0].status, "approved");
   assert.equal(f.state.activityAuditEvents.length, 1);
+});
+
+test("automatic approval fails closed when activation is off or school is legacy", async () => {
+  const disabled = fixture();
+  await assert.rejects(() => processActivityApproval(disabled.client, disabled.db, disabled.input({ automaticScoringEnabled: false })), ActivityApprovalDisabledError);
+  assert.equal(disabled.state.pointEvents.length, 0);
+  const legacy = fixture();
+  legacy.state.schoolScoringModeChanges.length = 0;
+  await assert.rejects(() => processActivityApproval(legacy.client, legacy.db, legacy.input()), ActivityApprovalDisabledError);
+  assert.equal(legacy.state.pointEvents.length, 0);
+});
+
+test("rejection is audited without credit and company administrators cannot decide", async () => {
+  const rejected = fixture();
+  const result = await processActivityApproval(rejected.client, rejected.db, rejected.input({ decision: "rejected", approvedQuantity: 0 }));
+  assert.equal(result.pointsDifference, 0);
+  assert.equal(result.approvedQuantity, 0);
+  assert.equal(rejected.state.activityRecords[0].status, "rejected");
+  assert.equal(rejected.state.activityAuditEvents[0].type, "rejected");
+  assert.equal(rejected.state.pointEvents.length, 0);
+  const forbidden = fixture();
+  await assert.rejects(() => processActivityApproval(forbidden.client, forbidden.db, forbidden.input({ actorRole: "company_admin" })), ActivityApprovalAuthorizationError);
 });
 
 test("two simultaneous approvals with the same expected revision cannot both apply", async () => {

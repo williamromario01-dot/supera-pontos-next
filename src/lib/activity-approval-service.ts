@@ -22,12 +22,18 @@ import {
 } from "./activity-persistence.ts";
 import { getActivityWeek } from "./weekly-calendar.ts";
 import { calculatePointsDifference } from "./weekly-scoring.ts";
+import {
+  automaticActivityScoringEnabled,
+  requireSchoolScoringMode,
+  ScoringModeConflictError,
+} from "./school-scoring-mode.ts";
 
 export type ActivityApprovalRole = "educator" | "admin" | "super_admin" | "company_admin";
 
 export class ActivityApprovalAuthorizationError extends Error {}
 export class ActivityApprovalClosedWeekError extends Error {}
 export class ActivityApprovalNotFoundError extends Error {}
+export class ActivityApprovalDisabledError extends Error {}
 
 export interface ActivityApprovalResult {
   readonly state: "applied" | "duplicate" | "pending_adjustment";
@@ -40,6 +46,10 @@ export interface ActivityApprovalResult {
   readonly activityRevision: number;
   readonly ledgerRevision: number;
   readonly adjustmentPendencyId: ObjectId | null;
+  readonly approvedQuantity: number;
+  readonly targetQuantity: number;
+  readonly maximumPoints: number;
+  readonly calculatedPoints: number;
 }
 
 export interface ActivityApprovalInput {
@@ -53,6 +63,8 @@ export interface ActivityApprovalInput {
   readonly idempotencyKey: string;
   readonly expectedActivityRevision: number;
   readonly now?: Date;
+  /** Must be supplied by the trusted server entry point; defaults fail closed. */
+  readonly automaticScoringEnabled?: boolean;
 }
 
 type ServiceClient = Pick<MongoClient, "startSession">;
@@ -108,6 +120,10 @@ function resultFromAudit(audit: ActivityAuditEvent, ledger: WeeklyScoreLedger, b
     activityRevision: audit.after.revision,
     ledgerRevision: ledger.revision,
     adjustmentPendencyId: null,
+    approvedQuantity: ledger.approvedQuantity,
+    targetQuantity: ledger.configurationSnapshot.targetQuantity,
+    maximumPoints: ledger.configurationSnapshot.maximumPoints,
+    calculatedPoints: ledger.calculatedPoints,
   };
 }
 
@@ -131,6 +147,9 @@ export async function processActivityApproval(
   const now = input.now ?? new Date();
   if (!(now instanceof Date) || !Number.isFinite(now.getTime())) {
     throw new ActivityPersistenceValidationError("now must be a valid Date");
+  }
+  if (!(input.automaticScoringEnabled ?? automaticActivityScoringEnabled())) {
+    throw new ActivityApprovalDisabledError("automatic activity scoring is disabled");
   }
 
   const session = client.startSession();
@@ -179,6 +198,10 @@ async function processInTransaction(
       activityRevision: input.expectedActivityRevision,
       ledgerRevision: pendingLedger.revision,
       adjustmentPendencyId: pendingAdjustment._id,
+      approvedQuantity: pendingLedger.approvedQuantity,
+      targetQuantity: pendingLedger.configurationSnapshot.targetQuantity,
+      maximumPoints: pendingLedger.configurationSnapshot.maximumPoints,
+      calculatedPoints: pendingLedger.calculatedPoints,
     };
   }
 
@@ -201,6 +224,12 @@ async function processInTransaction(
   }
   const activityWeek = getActivityWeek(activity.activityAt);
   if (now >= activityWeek.closesAt) throw new ActivityApprovalClosedWeekError("activity week is already closed");
+  try {
+    await requireSchoolScoringMode(db, input.schoolId, "automatic", now, session);
+  } catch (error) {
+    if (error instanceof ScoringModeConflictError) throw new ActivityApprovalDisabledError(error.message);
+    throw error;
+  }
 
   const student = await users.findOne({
     _id: activity.studentId,
@@ -292,6 +321,10 @@ async function processInTransaction(
       activityRevision: activity.revision,
       ledgerRevision: ledger.revision,
       adjustmentPendencyId: pendingAdjustment._id,
+      approvedQuantity: ledger.approvedQuantity,
+      targetQuantity: ledger.configurationSnapshot.targetQuantity,
+      maximumPoints: ledger.configurationSnapshot.maximumPoints,
+      calculatedPoints: ledger.calculatedPoints,
     };
   }
 
@@ -341,5 +374,9 @@ async function processInTransaction(
     activityRevision: plan.nextActivity.revision,
     ledgerRevision: plan.nextLedger.revision,
     adjustmentPendencyId: null,
+    approvedQuantity: plan.nextLedger.approvedQuantity,
+    targetQuantity: plan.nextLedger.configurationSnapshot.targetQuantity,
+    maximumPoints: plan.nextLedger.configurationSnapshot.maximumPoints,
+    calculatedPoints: plan.nextLedger.calculatedPoints,
   };
 }

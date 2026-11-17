@@ -12,6 +12,7 @@ import {
 import { categoryBelongsToSchool } from "@/lib/category-scope";
 import { isSchoolArchived } from "@/lib/schools";
 import { getOperationalAccessForAuth, subscriptionPastDueResponseForAccess } from "@/lib/subscription-access";
+import { requireSchoolScoringMode, resolveSpecialPointBonusIdempotencyKey, ScoringModeConflictError, SpecialPointBonusValidationError } from "@/lib/school-scoring-mode";
 
 const DB_NAME = "supera_pontos";
 
@@ -231,22 +232,54 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Common pedagogical credits are mutually exclusive with the automatic engine.
+    // Explicit 100-point special bonuses remain outside both engines.
+    let specialBonusIdempotencyKey: string | null;
+    try {
+      specialBonusIdempotencyKey = resolveSpecialPointBonusIdempotencyKey(
+        category,
+        points,
+        request.headers.get("idempotency-key") ?? body.idempotencyKey,
+      );
+    } catch (error) {
+      if (error instanceof SpecialPointBonusValidationError) return NextResponse.json({ error: error.message }, { status: 400 });
+      throw error;
+    }
+    const specialPointBonus = specialBonusIdempotencyKey !== null;
     const now = new Date();
+    if (!specialPointBonus) {
+      try {
+        await requireSchoolScoringMode(db, effectiveSchoolId, "legacy", now);
+      } catch (error) {
+        if (error instanceof ScoringModeConflictError) {
+          return NextResponse.json({ error: "A escola utiliza aprovaÃ§Ã£o automÃ¡tica para crÃ©ditos pedagÃ³gicos.", code: "WRONG_SCORING_ENGINE" }, { status: 409 });
+        }
+        throw error;
+      }
+    }
+
     const session = client.startSession();
 
     try {
       // 8. Registrar o evento e atualizar o saldo na mesma transação
       await session.withTransaction(async () => {
+        if (!specialPointBonus) await requireSchoolScoringMode(db, effectiveSchoolId, "legacy", now, session);
         await lockCategorySchool(db, effectiveSchoolId, session);
         const current = await categories.findOne({ _id: categoryObjectId }, { session });
         if (!current || current.active === false || !categoryBelongsToSchool(current, effectiveSchoolId)) throw new CategoryConflict("Categoria indisponivel. Recarregue a lista.");
         if (isSharedCategory(current) && (await categoryOverride(db, effectiveSchoolId, categoryObjectId, session))?.active === false) throw new CategoryConflict("Categoria arquivada nesta unidade.");
+        if (specialPointBonus) {
+          resolveSpecialPointBonusIdempotencyKey(current, points, specialBonusIdempotencyKey);
+          const duplicate = await pointEvents.findOne({ schoolId: effectiveSchoolId, source: "special_bonus", idempotencyKey: specialBonusIdempotencyKey }, { session, projection: { _id: 1 } });
+          if (duplicate) throw new CategoryConflict("Este bÃ´nus especial jÃ¡ foi lanÃ§ado.");
+        }
         const pointEvent = {
           studentId: studentObjectId,
           categoryId: categoryObjectId,
           educatorId: auth.userId,
           points,
           createdAt: now,
+          ...(specialPointBonus ? { companyId: student.companyId, schoolId: effectiveSchoolId, source: "special_bonus", idempotencyKey: specialBonusIdempotencyKey } : {}),
         };
 
         await pointEvents.insertOne(pointEvent, { session });
@@ -289,6 +322,7 @@ export async function POST(request: NextRequest) {
     );
   } catch (error) {
     if (error instanceof CategoryConflict) return NextResponse.json({ error: error.message }, { status: 409 });
+    if (error instanceof ScoringModeConflictError) return NextResponse.json({ error: "O modo de pontuaÃ§Ã£o da escola mudou. Recarregue e tente novamente.", code: "WRONG_SCORING_ENGINE" }, { status: 409 });
     console.error("Erro ao lançar pontos:", error);
 
     return NextResponse.json(

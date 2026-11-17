@@ -4,6 +4,7 @@ import { MongoClient, ObjectId } from "mongodb";
 
 import { processActivityApproval } from "../src/lib/activity-approval-service.ts";
 import { buildActivityRecord, ensureActivityPersistenceIndexes } from "../src/lib/activity-persistence.ts";
+import { SCORING_MODE_COLLECTION, SCORING_MODE_INDEXES } from "../src/lib/school-scoring-mode.ts";
 
 const testUri = process.env.MONGODB_ACTIVITY_TEST_URI;
 const enabled = typeof testUri === "string" && testUri.length > 0;
@@ -25,6 +26,7 @@ test("MongoDB replica-set integration: indexes, concurrency, idempotency and rol
     assert.ok(hello.setName, "MongoDB test instance must be a replica set with transaction support");
     await db.dropDatabase();
     await ensureActivityPersistenceIndexes(db);
+    await db.collection(SCORING_MODE_COLLECTION).createIndexes(SCORING_MODE_INDEXES.map((index) => ({ key: index.keys, ...index.options })));
 
     const companyId = new ObjectId(), schoolId = new ObjectId(), studentId = new ObjectId(), categoryId = new ObjectId(), educatorId = new ObjectId();
     const activity = buildActivityRecord({ companyId, schoolId, studentId, categoryId, activityAt: new Date("2026-11-18T15:00:00Z"), reportedQuantity: 3, submissionIdempotencyKey: "integration-submission-001", now: new Date("2026-11-18T16:00:00Z") });
@@ -32,8 +34,9 @@ test("MongoDB replica-set integration: indexes, concurrency, idempotency and rol
       db.collection("activityRecords").insertOne(activity),
       db.collection("users").insertOne({ _id: studentId, companyId, schoolId, role: "student", active: true, points: 0 }),
       db.collection("categories").insertOne({ _id: categoryId, schoolId, active: true, weeklyGoal: 10, defaultPoints: 100 }),
+      db.collection(SCORING_MODE_COLLECTION).insertOne({ _id: new ObjectId(), companyId, schoolId, previousMode: "legacy", futureMode: "automatic", requestedBy: educatorId, requestedByRole: "admin", requestedAt: new Date("2026-11-15T12:00:00Z"), effectiveAt: new Date("2026-11-16T03:00:00Z"), idempotencyKey: "integration-mode-001" }),
     ]);
-    const base = { activityId: activity._id, schoolId, educatorId, actorRole: "educator", authorizedStudentIds: [studentId], decision: "approved", approvedQuantity: 3, expectedActivityRevision: 0, now: new Date("2026-11-19T12:00:00Z") };
+    const base = { activityId: activity._id, schoolId, educatorId, actorRole: "educator", authorizedStudentIds: [studentId], decision: "approved", approvedQuantity: 3, expectedActivityRevision: 0, now: new Date("2026-11-19T12:00:00Z"), automaticScoringEnabled: true };
     const concurrent = await Promise.allSettled([
       processActivityApproval(client, db, { ...base, idempotencyKey: "integration-approval-a" }),
       processActivityApproval(client, db, { ...base, idempotencyKey: "integration-approval-b" }),

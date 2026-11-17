@@ -89,3 +89,7 @@ export function getActivityWeek(activityAt: Date): ActivityWeek {
   };
 }
 
+/** Next Monday at 00:00 in Sao Paulo. Changes never take effect retroactively. */
+export function getNextScoringModeEffectiveAt(requestedAt: Date): Date {
+  return getActivityWeek(requestedAt).endsAtExclusive;
+}
