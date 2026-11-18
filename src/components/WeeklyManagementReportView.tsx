@@ -64,6 +64,29 @@ function ExcelDownloadButton({ reportId, schoolId, compact = false }: { reportId
   return <div className={compact ? "text-right" : "mt-5"}><button type="button" onClick={download} disabled={downloading} className={`${compact ? "px-3 py-2 text-xs" : "px-4 py-3 text-sm"} inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 font-black text-white transition hover:bg-emerald-700 disabled:cursor-wait disabled:opacity-70`}><span aria-hidden="true">{downloading ? <Loader2 className="animate-spin" size={17}/> : <Download size={17}/>}</span>{downloading ? "Gerando Excel..." : "Baixar Excel"}</button>{error && <p className="mt-2 max-w-xs text-xs font-semibold text-rose-600" role="alert">{error}</p>}</div>;
 }
 
+function AutomaticActivitySection({ report }: { report: WeeklyReport }) {
+  return <Section
+    title={"Atividades pedag\u00f3gicas"}
+    description={"O cumprimento usa quantidades aprovadas e metas congeladas; pontos proporcionais e b\u00f4nus especiais permanecem separados."}
+  >
+    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <Kpi icon={<BookOpenCheck size={19}/>} label="Quantidade aprovada" value={number.format(report.summary.approvedQuantity || 0)} />
+      <Kpi icon={<BarChart3 size={19}/>} label="Pontos proporcionais" value={number.format(report.summary.pointsAwarded)} />
+      <Kpi icon={<Gift size={19}/>} label={"B\u00f4nus especiais"} value={number.format(report.summary.specialBonusPoints || 0)} />
+      <Kpi icon={<Target size={19}/>} label="Pendentes" value={number.format(report.summary.pendingActivities || 0)} detail={`${number.format(report.summary.correctedActivities || 0)} corrigidas - ${number.format(report.summary.rejectedActivities || 0)} rejeitadas`} />
+    </div>
+    <div className="mt-6 overflow-x-auto">
+      <table className="min-w-full text-left text-sm">
+        <thead><tr className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500"><th className="px-3 py-3">Aluno</th><th className="px-3 py-3">Categoria</th><th className="px-3 py-3">Meta</th><th className="px-3 py-3">Aprovado</th><th className="px-3 py-3">Cumprimento</th><th className="px-3 py-3">Pontos</th><th className="px-3 py-3">Pend.</th><th className="px-3 py-3">Corr.</th><th className="px-3 py-3">Rej.</th></tr></thead>
+        <tbody>{report.studentMetrics.flatMap((student) => student.categoryMetrics.map((metric) => <tr key={`${student.studentId}-${metric.categoryId}`} className="border-b border-slate-100"><th className="px-3 py-3 font-bold">{student.studentName}</th><td className="px-3 py-3">{metric.categoryName}</td><td className="px-3 py-3">{number.format(metric.goal)}</td><td className="px-3 py-3">{number.format(metric.realized)}</td><td className="px-3 py-3">{percent(metric.performancePercentage)}</td><td className="px-3 py-3">{number.format(metric.creditedPoints || 0)}</td><td className="px-3 py-3">{number.format(metric.pendingActivities || 0)}</td><td className="px-3 py-3">{number.format(metric.correctedActivities || 0)}</td><td className="px-3 py-3">{number.format(metric.rejectedActivities || 0)}</td></tr>))}</tbody>
+      </table>
+    </div>
+    <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+      {report.classMetrics.map((item) => <article key={item.classId} className="rounded-2xl border border-slate-200 p-4"><h3 className="font-black">{item.className}</h3><p className="mt-2 text-sm text-slate-600">Quantidade aprovada: <strong>{number.format(item.approvedQuantity || 0)}</strong> - Pontos: <strong>{number.format(item.creditedPoints || 0)}</strong></p><p className="mt-1 text-xs text-slate-500">{number.format(item.pendingActivities || 0)} pendentes - {number.format(item.correctedActivities || 0)} corrigidas - {number.format(item.rejectedActivities || 0)} rejeitadas</p></article>)}
+    </div>
+  </Section>;
+}
+
 export function WeeklyManagementReportView({ report, previous, history, schoolId, detailMode = false }: { report: WeeklyReport | null; previous: WeeklyReport | null; history: ReportListItem[]; schoolId?: string; detailMode?: boolean }) {
   if (!report) return <EmptyState />;
   const comparablePrevious = previous && immediatelyPrecedes(previous.weekStart, report.weekStart) ? previous : null;
@@ -76,6 +99,7 @@ export function WeeklyManagementReportView({ report, previous, history, schoolId
   const withoutRecords = report.studentMetrics.filter((student) => !student.hasPedagogicalRecords);
   const insufficient = report.studentMetrics.filter((student) => student.evolutionStatus === "INSUFFICIENT_DATA");
   const belowGoal = report.studentMetrics.filter((student) => student.goalReached === false);
+  const automatic = report.reportVersion >= 2 && report.scoringMode === "automatic";
   const query = schoolId ? `?schoolId=${encodeURIComponent(schoolId)}` : "";
   const referralLabels: Record<string, string> = { pending: "Novas", contacted: "Em contato", approved: "Aceitas", scheduled: "Agendadas", rejected: "Não convertidas" };
 
@@ -85,6 +109,8 @@ export function WeeklyManagementReportView({ report, previous, history, schoolId
     <section className="rounded-3xl border border-orange-100 bg-white p-6"><h2 className="text-xl font-bold">Frequência da unidade</h2><p className="mt-3">Chamadas finalizadas: {report.attendanceMetrics.totalSessions || 0} · Presenças: {report.attendanceMetrics.presences || 0} · Faltas: {report.attendanceMetrics.absences || 0} · Frequência: {report.attendanceMetrics.percentage == null ? "Sem oportunidades de presença" : percent(report.attendanceMetrics.percentage)}</p>{report.attendanceMetrics.detailsSource === "RECOVERED_FROM_ATTENDANCE_SESSIONS" && <p className="mt-2 text-xs font-semibold text-blue-700">Detalhes recuperados dos registros originais de chamadas; o snapshot fechado não foi alterado.</p>}<div className="mt-4 grid gap-3 md:grid-cols-2">{report.attendanceMetrics.classAttendance?.map((classItem) => <details key={classItem.classId} className={`rounded-2xl border p-4 ${classItem.status === "RECORDED" ? "border-amber-200 bg-amber-50" : "border-slate-200 bg-slate-50"}`}><summary className={`cursor-pointer font-bold ${classItem.status === "RECORDED" ? "text-amber-900" : "text-slate-700"}`}><span className="mr-2 inline-block">›</span>{classItem.className}<span className="ml-2 text-sm font-medium">· {classItem.absences} faltas · {classItem.totalSessions} chamadas</span></summary>{classItem.status === "RECORDED" ? <div className="mt-3 pl-6 text-sm text-amber-900">{classItem.absentees.length ? <ul className="space-y-2">{classItem.absentees.map((student, index) => <li key={`${student.studentId}-${student.date}-${student.session}-${index}`}><strong>{student.studentName}</strong> · {date(student.date)} · {student.session}{student.educatorName ? ` · ${student.educatorName}` : " · Educador não identificado"}</li>)}</ul> : <p>Nenhuma falta registrada nas chamadas finalizadas.</p>}</div> : <div className="mt-3 pl-6 text-sm text-slate-600"><p className="font-semibold">Sem chamada registrada</p>{classItem.educatorName && <p>Educador responsável no fechamento: {classItem.educatorName}</p>}<p>Não há agenda confiável para identificar quantas aulas estavam previstas no período.</p></div>}</details>)}</div>{!report.attendanceMetrics.classAttendance && <p className="mt-3 text-slate-500">{report.attendanceMetrics.detailsUnavailableReason || "Os detalhes históricos desta frequência não puderam ser recuperados com segurança."}</p>}{(report.attendanceMetrics.unidentifiedAbsences || 0) > 0 && <p className="mt-3 text-sm font-bold text-amber-800">Faltas sem educador identificado: {report.attendanceMetrics.unidentifiedAbsences}</p>}</section>
 
     {!comparablePrevious && <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800">Primeira semana disponível para comparação.</div>}
+
+    {automatic && <AutomaticActivitySection report={report} />}
 
     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
       <Kpi icon={<Users size={19}/>} label="Alunos ativos" value={number.format(report.summary.activeStudents)} />

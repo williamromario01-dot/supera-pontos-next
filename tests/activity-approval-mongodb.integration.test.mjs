@@ -20,6 +20,10 @@ import {
   submitActivity,
 } from "../src/lib/activity-submission-service.ts";
 import { SCORING_MODE_COLLECTION, SCORING_MODE_INDEXES } from "../src/lib/school-scoring-mode.ts";
+import { periodForWeekStart } from "../src/lib/weekly-management-report-core.ts";
+import { loadRoute } from "./helpers/load-route.mjs";
+
+const { closeWeeklyReport } = loadRoute("src/lib/weekly-management-report.ts");
 
 const DATABASE_NAME = "superpontos_activity_test";
 const ACTIVITY_AT = new Date("2026-11-18T15:00:00Z");
@@ -48,16 +52,17 @@ async function seedSchool({ automatic = true } = {}) {
   };
   await Promise.all([
     db.collection("schools").insertMany([
-      { _id: ids.schoolId, companyId: ids.companyId, active: true },
-      { _id: ids.otherSchoolId, companyId: ids.companyId, active: true },
+      { _id: ids.schoolId, companyId: ids.companyId, name: "Escola principal", active: true },
+      { _id: ids.otherSchoolId, companyId: ids.companyId, name: "Outra escola", active: true },
     ]),
+    db.collection("companies").insertOne({ _id: ids.companyId, tradeName: "Empresa teste" }),
     db.collection("users").insertOne({
       _id: ids.studentId, companyId: ids.companyId, schoolId: ids.schoolId,
       role: "student", active: true, points: 0,
     }),
     db.collection("categories").insertOne({
       _id: ids.categoryId, schoolId: ids.schoolId, active: true,
-      weeklyGoal: 10, defaultPoints: 100,
+      weeklyGoal: 10, defaultPoints: 100, participatesInRanking: true,
     }),
     db.collection("classes").insertOne({
       _id: new ObjectId(), schoolId: ids.schoolId, educatorId: ids.educatorId,
@@ -223,6 +228,67 @@ test("concurrent approval, idempotency, corrections and insufficient-balance pen
   const unchanged = await db.collection("activityRecords").findOne({ _id: submitted.activity._id });
   assert.equal(unchanged.revision, 2);
   assert.equal(unchanged.approvedQuantity, 5);
+});
+
+test("automatic weekly report separates quantities, proportional points, bonuses and statuses", async () => {
+  const ids = await seedSchool();
+  await db.collection(SCORING_MODE_COLLECTION).updateOne(
+    { schoolId: ids.schoolId },
+    { $set: { effectiveAt: new Date("2026-11-09T03:00:00Z") } },
+  );
+  await db.collection("weeklyScoreLedgers").insertOne({
+    _id: new ObjectId(), companyId: ids.companyId, schoolId: ids.schoolId,
+    studentId: ids.studentId, categoryId: ids.categoryId,
+    weekStart: "2026-11-09", weekEnd: "2026-11-15",
+    configurationSnapshot: {
+      schoolId: ids.schoolId.toHexString(), categoryId: ids.categoryId.toHexString(),
+      targetQuantity: 20, maximumPoints: 100, frozenAt: new Date("2026-11-09T12:00:00Z"),
+    },
+    approvedQuantity: 10, calculatedPoints: 50, creditedPoints: 50,
+    revision: 1, createdAt: new Date("2026-11-09T12:00:00Z"), updatedAt: new Date("2026-11-09T12:00:00Z"),
+  });
+  const submitted = await submitActivity(client, db, submission(ids));
+  await processActivityApproval(client, db, approval(ids, submitted.activity._id));
+  await db.collection("activityRecords").insertMany([
+    { _id: new ObjectId(), companyId: ids.companyId, schoolId: ids.schoolId, studentId: ids.studentId, categoryId: ids.categoryId, weekStart: "2026-11-16", status: "pending", reviewedByEducatorId: null, submissionIdempotencyKey: "report-pending" },
+    { _id: new ObjectId(), companyId: ids.companyId, schoolId: ids.schoolId, studentId: ids.studentId, categoryId: ids.categoryId, weekStart: "2026-11-16", status: "corrected", reviewedByEducatorId: ids.educatorId, submissionIdempotencyKey: "report-corrected" },
+    { _id: new ObjectId(), companyId: ids.companyId, schoolId: ids.schoolId, studentId: ids.studentId, categoryId: ids.categoryId, weekStart: "2026-11-16", status: "rejected", reviewedByEducatorId: ids.educatorId, submissionIdempotencyKey: "report-rejected" },
+  ]);
+  await db.collection("pointEvents").insertMany([
+    { _id: new ObjectId(), companyId: ids.companyId, schoolId: ids.schoolId, studentId: ids.studentId, categoryId: ids.categoryId, source: "special_bonus", points: 100, createdAt: new Date("2026-11-20T12:00:00Z") },
+    { _id: new ObjectId(), companyId: ids.companyId, schoolId: ids.schoolId, studentId: ids.studentId, categoryId: null, source: "referral", points: 50, createdAt: new Date("2026-11-20T13:00:00Z") },
+  ]);
+  await db.collection("categories").updateOne({ _id: ids.categoryId }, { $set: { weeklyGoal: 999, active: false } });
+
+  const period = periodForWeekStart("2026-11-16");
+  const closed = await closeWeeklyReport(db, ids.schoolId, period, new Date("2026-11-23T12:00:00Z"));
+  assert.equal(closed.created, true);
+  assert.equal(closed.report.reportVersion, 2);
+  assert.equal(closed.report.scoringMode, "automatic");
+  assert.equal(closed.report.summary.approvedQuantity, 10);
+  assert.equal(closed.report.summary.pointsAwarded, 100);
+  assert.equal(closed.report.summary.specialBonusPoints, 100);
+  assert.equal(closed.report.summary.pendingActivities, 1);
+  assert.equal(closed.report.summary.approvedActivities, 1);
+  assert.equal(closed.report.summary.correctedActivities, 1);
+  assert.equal(closed.report.summary.rejectedActivities, 1);
+  const metric = closed.report.studentMetrics[0].categoryMetrics[0];
+  assert.equal(metric.goal, 10);
+  assert.equal(metric.realized, 10);
+  assert.equal(metric.creditedPoints, 100);
+  assert.equal(metric.performancePercentage, 100);
+  assert.equal(metric.previousRealized, 10);
+  assert.equal(metric.previousPerformancePercentage, 50);
+  assert.equal(metric.evolutionDeltaPercentagePoints, 50);
+  assert.equal(closed.report.categoryMetrics[0].weeklyGoal, 10);
+  assert.equal(closed.report.classMetrics[0].approvedQuantity, 10);
+  assert.equal(closed.report.classMetrics[0].creditedPoints, 100);
+
+  const original = JSON.stringify(closed.report);
+  await db.collection("categories").updateOne({ _id: ids.categoryId }, { $set: { weeklyGoal: 1 } });
+  const repeated = await closeWeeklyReport(db, ids.schoolId, period, new Date("2026-11-23T13:00:00Z"));
+  assert.equal(repeated.created, false);
+  assert.equal(JSON.stringify(repeated.report), original);
 });
 
 test("forced rollback leaves no partial balance and legacy mode remains the default", async () => {

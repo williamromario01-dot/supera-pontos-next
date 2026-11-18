@@ -33,7 +33,7 @@ function fixture() {
     users: [{ _id: studentId, role: "student", schoolId, name: "Fixture student", points: 30, createdAt: new Date("2026-09-26Z") }],
     categories: [{ _id: categoryId, schoolId, name: "Fixture category", weeklyGoal: 10, participatesInRanking: true }],
     pointEvents: [{ _id: new ObjectId(), studentId, categoryId, points: 10, createdAt: new Date("2026-10-20T15:00Z") }, { _id: new ObjectId(), studentId, categoryId, points: 20, createdAt: new Date("2026-10-28T15:00Z") }],
-    attendanceSessions: [], classes: [], pointStoreRedemptions: [], referrals: [], pointStoreProducts: [], productsSupera: [], weeklyReports: [],
+    attendanceSessions: [], classes: [], pointStoreRedemptions: [], referrals: [], pointStoreProducts: [], productsSupera: [], weeklyReports: [], schoolScoringModeChanges: [],
   };
   const db = { client: { startSession: () => ({ withTransaction: async fn => fn(), endSession: async () => {} }) }, collection(name) {
     assert.ok(name in data, `Unexpected collection ${name}`);
@@ -66,6 +66,9 @@ test("legacy school becomes eligible after company linkage without invented conf
   assert.equal(result.results.length, 1); assert.equal(result.results[0].created, true);
   const report = f.data.weeklyReports[0];
   assert.equal(report.weekStart, "2026-10-26"); assert.equal(report.weekEnd, "2026-11-01");
+  assert.equal(report.reportVersion, 2); assert.equal(report.scoringMode, "legacy");
+  assert.equal(report.summary.pointsAwarded, 20);
+  assert.equal(report.studentMetrics[0].categoryMetrics[0].realized, 20);
   assert.equal(report.generatedBy, "recovery"); assert.equal(report.status, "CLOSED");
   assert.equal(String(report.schoolId), String(f.schoolId)); assert.equal(String(report.companyId), String(f.companyId));
   assert.equal(report.summary.activeStudents, 1); assert.equal(report.summary.pointsAwarded, 20);

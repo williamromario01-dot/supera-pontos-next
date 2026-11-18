@@ -1,5 +1,5 @@
 export const WEEKLY_REPORT_TIME_ZONE = "America/Sao_Paulo";
-export const WEEKLY_REPORT_VERSION = 1;
+export const WEEKLY_REPORT_VERSION = 2;
 export const WEEKLY_REPORT_ANALYTICAL_CAP = 200;
 export const WEEKLY_REPORT_CLOSE_TIME = "06:00";
 export const WEEKLY_REPORT_FIRST_PROTECTED_WEEK = "2026-11-02";

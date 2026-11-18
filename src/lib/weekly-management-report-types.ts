@@ -18,6 +18,12 @@ export type ReportSummary = {
   studentsWithPedagogicalRecords: number;
   studentsWithoutPedagogicalRecords: number;
   pedagogicalCoveragePercentage: number | null;
+  specialBonusPoints?: number;
+  approvedQuantity?: number;
+  pendingActivities?: number;
+  approvedActivities?: number;
+  correctedActivities?: number;
+  rejectedActivities?: number;
 };
 
 export type StudentCategoryMetric = {
@@ -32,6 +38,11 @@ export type StudentCategoryMetric = {
   previousPerformancePercentage: number | null;
   evolutionStatus: EvolutionStatus;
   evolutionDeltaPercentagePoints: number | null;
+  creditedPoints?: number;
+  approvedActivities?: number;
+  pendingActivities?: number;
+  correctedActivities?: number;
+  rejectedActivities?: number;
 };
 
 export type StudentMetric = {
@@ -60,6 +71,12 @@ export type CategoryMetric = {
   evolvedPercentage: number | null;
   goalReachedStudents: number;
   goalReachedPercentage: number | null;
+  approvedQuantity?: number;
+  creditedPoints?: number;
+  approvedActivities?: number;
+  pendingActivities?: number;
+  correctedActivities?: number;
+  rejectedActivities?: number;
 };
 
 export type GroupMetric = {
@@ -71,6 +88,12 @@ export type GroupMetric = {
   evolvedStudents: number;
   maintainedStudents: number;
   declinedStudents: number;
+  approvedQuantity?: number;
+  creditedPoints?: number;
+  approvedActivities?: number;
+  pendingActivities?: number;
+  correctedActivities?: number;
+  rejectedActivities?: number;
 };
 
 export type EducatorMetric = GroupMetric & {
@@ -103,6 +126,7 @@ export type WeeklyReport = {
   reportVersion: number;
   generatedBy: string;
   timezone: string;
+  scoringMode?: "legacy" | "automatic";
   summary: ReportSummary;
   studentMetrics: StudentMetric[];
   categoryMetrics: CategoryMetric[];
@@ -116,4 +140,5 @@ export type WeeklyReport = {
 };
 
 export type WeeklyReportV1 = WeeklyReport & { reportVersion: 1 };
+export type WeeklyReportV2 = WeeklyReport & { reportVersion: 2; scoringMode: "legacy" | "automatic" };
 export type ReportListItem = { reportId: string; weekStart: string; weekEnd: string; closedAt: string; status: string; reportVersion: number };

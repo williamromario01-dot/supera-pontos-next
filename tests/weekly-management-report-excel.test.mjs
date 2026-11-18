@@ -79,6 +79,44 @@ test("produces a valid XLSX exclusively from an immutable v1 CLOSED snapshot", a
   assert.equal(workbook.getWorksheet("Resgates").getCell("D12").numFmt, "dd/mm/yyyy");
 });
 
+test("v2 automatic export keeps quantities, points, bonuses and statuses in separate columns", async () => {
+  const base = fixture();
+  const report = {
+    ...base,
+    reportVersion: 2,
+    scoringMode: "automatic",
+    summary: {
+      ...base.summary,
+      approvedQuantity: 12,
+      pointsAwarded: 25,
+      specialBonusPoints: 100,
+      pendingActivities: 1,
+      approvedActivities: 1,
+      correctedActivities: 1,
+      rejectedActivities: 1,
+    },
+    studentMetrics: base.studentMetrics.map((student, index) => index ? student : {
+      ...student,
+      categoryMetrics: student.categoryMetrics.map((metric) => ({
+        ...metric, creditedPoints: 25, pendingActivities: 1, approvedActivities: 1,
+        correctedActivities: 1, rejectedActivities: 1,
+      })),
+    }),
+  };
+  const workbook = await loadWorkbook(await generateWeeklyManagementReportExcel({ report }));
+  const sheet = workbook.getWorksheet("Atividades");
+  assert.ok(sheet);
+  assert.equal(sheet.getCell("B9").value, 12);
+  assert.equal(sheet.getCell("D9").value, 25);
+  assert.equal(sheet.getCell("F9").value, 100);
+  assert.equal(sheet.getCell("C12").value, 10);
+  assert.equal(sheet.getCell("D12").value, 12);
+  assert.equal(sheet.getCell("E12").value, 1.2);
+  assert.equal(sheet.getCell("F12").value, 25);
+  assert.equal(sheet.getCell("G12").value, 1);
+  assert.equal(sheet.getCell("J12").value, 1);
+});
+
 test("uses only the exact previous CLOSED snapshot supplied for comparison", async () => {
   const current = fixture();
   const previous = fixture({ _id: "school-1:2026-10-05", weekStart: "2026-10-05", weekEnd: "2026-10-11", summary: { ...fixture().summary, pointsAwarded: 20 } });
@@ -90,7 +128,7 @@ test("uses only the exact previous CLOSED snapshot supplied for comparison", asy
 });
 
 test("rejects unknown report versions and non-CLOSED snapshots", async () => {
-  await assert.rejects(() => generateWeeklyManagementReportExcel({ report: fixture({ reportVersion: 2 }) }), UnsupportedWeeklyReportVersionError);
+  await assert.rejects(() => generateWeeklyManagementReportExcel({ report: fixture({ reportVersion: 3 }) }), UnsupportedWeeklyReportVersionError);
   await assert.rejects(() => generateWeeklyManagementReportExcel({ report: fixture({ status: "OPEN" }) }), /Snapshot semanal inválido/);
 });
 

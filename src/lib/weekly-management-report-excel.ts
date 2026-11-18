@@ -1,5 +1,5 @@
 import ExcelJS, { type CellValue, type Worksheet } from "exceljs";
-import type { EvolutionStatus, WeeklyReport, WeeklyReportV1 } from "./weekly-management-report-types.ts";
+import type { EvolutionStatus, WeeklyReport } from "./weekly-management-report-types.ts";
 import { calculateVariation, immediatelyPrecedes } from "./weekly-management-report-view.ts";
 
 const ORANGE = "FFF97316";
@@ -29,12 +29,13 @@ export class InvalidWeeklyReportSnapshotError extends Error {
   }
 }
 
-export function asWeeklyReportV1(report: WeeklyReport): WeeklyReportV1 {
-  if (report.reportVersion !== 1) throw new UnsupportedWeeklyReportVersionError(report.reportVersion);
+export function asSupportedWeeklyReport(report: WeeklyReport): WeeklyReport {
+  if (report.reportVersion !== 1 && report.reportVersion !== 2) throw new UnsupportedWeeklyReportVersionError(report.reportVersion);
   if (report.status !== "CLOSED" || !report.schoolName || !report.weekStart || !report.weekEnd || !report.summary || !Array.isArray(report.studentMetrics) || !Array.isArray(report.categoryMetrics) || !Array.isArray(report.educatorMetrics) || !Array.isArray(report.classMetrics)) {
     throw new InvalidWeeklyReportSnapshotError();
   }
-  return report as WeeklyReportV1;
+  if (report.reportVersion === 2 && report.scoringMode !== "legacy" && report.scoringMode !== "automatic") throw new InvalidWeeklyReportSnapshotError();
+  return report;
 }
 
 function civilDate(value: string): Date {
@@ -60,7 +61,7 @@ function safeDate(value: string | Date | undefined): Date | null {
   return Number.isNaN(result.getTime()) ? null : result;
 }
 
-function applyIdentity(sheet: Worksheet, report: WeeklyReportV1, width: number) {
+function applyIdentity(sheet: Worksheet, report: WeeklyReport, width: number) {
   sheet.views = [{ showGridLines: false }];
   sheet.mergeCells(1, 1, 1, width);
   sheet.getCell(1, 1).value = "SUPERPONTOS";
@@ -123,7 +124,7 @@ function comparisonText(current: number | null | undefined, previous: number | n
   return `${direction} de ${Math.abs(variation.value).toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })} ${variation.suffix}`;
 }
 
-function addExecutiveSummary(workbook: ExcelJS.Workbook, report: WeeklyReportV1, previous: WeeklyReportV1 | null) {
+function addExecutiveSummary(workbook: ExcelJS.Workbook, report: WeeklyReport, previous: WeeklyReport | null) {
   const sheet = workbook.addWorksheet("Resumo Executivo", { properties: { tabColor: { argb: ORANGE } } });
   applyIdentity(sheet, report, 6);
   sheet.getColumn(1).width = 38; sheet.getColumn(2).width = 18; sheet.getColumn(3).width = 4; sheet.getColumn(4).width = 38; sheet.getColumn(5).width = 18; sheet.getColumn(6).width = 20;
@@ -188,7 +189,7 @@ function addExecutiveSummary(workbook: ExcelJS.Workbook, report: WeeklyReportV1,
   sheet.pageSetup = { orientation: "landscape", fitToPage: true, fitToWidth: 1, fitToHeight: 0 };
 }
 
-function addUnavailableSheet(workbook: ExcelJS.Workbook, name: string, report: WeeklyReportV1, messages: string[]) {
+function addUnavailableSheet(workbook: ExcelJS.Workbook, name: string, report: WeeklyReport, messages: string[]) {
   const sheet = workbook.addWorksheet(name);
   applyIdentity(sheet, report, 6);
   sectionTitle(sheet, 8, name.toUpperCase(), 6);
@@ -202,7 +203,7 @@ function addUnavailableSheet(workbook: ExcelJS.Workbook, name: string, report: W
   for (let column = 2; column <= 6; column += 1) sheet.getColumn(column).width = 16;
 }
 
-function addDetailSheets(workbook: ExcelJS.Workbook, report: WeeklyReportV1) {
+function addDetailSheets(workbook: ExcelJS.Workbook, report: WeeklyReport) {
   const students = workbook.addWorksheet("Alunos"); applyIdentity(students, report, 8); sectionTitle(students, 8, "ALUNOS", 8);
   addTable(students, 10, [
     { header: "Aluno", key: "student", width: 30 }, { header: "Turma(s)", key: "classes", width: 30 },
@@ -258,14 +259,40 @@ function addDetailSheets(workbook: ExcelJS.Workbook, report: WeeklyReportV1) {
   addTable(inventory, 11, [{ header: "Produto", key: "product", width: 38 }, { header: "Origem", key: "source", width: 20 }, { header: "Estoque no fechamento", key: "stock", width: 22, format: "#,##0" }, { header: "Status", key: "status", width: 18 }], report.inventoryMetrics.products.map((product) => ({ product: product.productName, source: product.source === "point_store" ? "Loja de pontos" : "Produtos Supera", stock: product.stock, status: !product.active ? "Inativo" : product.stock === 0 ? "Sem estoque" : "Disponível" })));
 }
 
+function addAutomaticActivitySheet(workbook: ExcelJS.Workbook, report: WeeklyReport) {
+  if (report.reportVersion !== 2 || report.scoringMode !== "automatic") return;
+  const sheet = workbook.addWorksheet("Atividades");
+  applyIdentity(sheet, report, 11);
+  sectionTitle(sheet, 8, "ATIVIDADES PEDAG\u00d3GICAS", 11);
+  sheet.getRow(9).values = [
+    "Quantidade aprovada", report.summary.approvedQuantity || 0,
+    "Pontos proporcionais", report.summary.pointsAwarded,
+    "B\u00f4nus especiais", report.summary.specialBonusPoints || 0,
+  ];
+  addTable(sheet, 11, [
+    { header: "Aluno", key: "student", width: 28 }, { header: "Categoria", key: "category", width: 26 },
+    { header: "Meta congelada", key: "goal", width: 16, format: "#,##0" }, { header: "Quantidade aprovada", key: "approvedQuantity", width: 20, format: "#,##0" },
+    { header: "Cumprimento", key: "performance", width: 16, format: PERCENT_FORMAT }, { header: "Pontos proporcionais", key: "points", width: 20, format: "#,##0" },
+    { header: "Pendentes", key: "pending", width: 13 }, { header: "Aprovadas", key: "approved", width: 13 },
+    { header: "Corrigidas", key: "corrected", width: 13 }, { header: "Rejeitadas", key: "rejected", width: 13 },
+    { header: "Evolu\u00e7\u00e3o", key: "evolution", width: 22 },
+  ], report.studentMetrics.flatMap((student) => student.categoryMetrics.map((metric) => ({
+    student: student.studentName, category: metric.categoryName, goal: metric.goal,
+    approvedQuantity: metric.realized, performance: percentValue(metric.performancePercentage),
+    points: metric.creditedPoints || 0, pending: metric.pendingActivities || 0,
+    approved: metric.approvedActivities || 0, corrected: metric.correctedActivities || 0,
+    rejected: metric.rejectedActivities || 0, evolution: evolutionLabel(metric.evolutionStatus),
+  }))));
+}
+
 export function weeklyReportExcelFilename(report: WeeklyReport): string {
   const safeSchool = report.schoolName.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 60) || "Unidade";
   return `SUPERPONTOS_${safeSchool}_${report.weekStart}_a_${report.weekEnd}.xlsx`;
 }
 
 export async function generateWeeklyManagementReportExcel(input: { report: WeeklyReport; previous?: WeeklyReport | null }): Promise<Buffer> {
-  const report = asWeeklyReportV1(input.report);
-  const previous = input.previous && immediatelyPrecedes(input.previous.weekStart, report.weekStart) ? asWeeklyReportV1(input.previous) : null;
+  const report = asSupportedWeeklyReport(input.report);
+  const previous = input.previous && immediatelyPrecedes(input.previous.weekStart, report.weekStart) ? asSupportedWeeklyReport(input.previous) : null;
   const workbook = new ExcelJS.Workbook();
   workbook.creator = "SUPERPONTOS";
   workbook.created = safeDate(report.closedAt) || new Date(0);
@@ -273,6 +300,7 @@ export async function generateWeeklyManagementReportExcel(input: { report: Weekl
   workbook.calcProperties.fullCalcOnLoad = false;
   addExecutiveSummary(workbook, report, previous);
   addDetailSheets(workbook, report);
+  addAutomaticActivitySheet(workbook, report);
   if (report.attendanceMetrics.available) {
     const attendance = workbook.addWorksheet("Frequência");
     attendance.addRow(["SUPERPONTOS", report.schoolName, report.weekStart, report.weekEnd]);
