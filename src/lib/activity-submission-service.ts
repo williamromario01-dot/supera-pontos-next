@@ -10,11 +10,13 @@ import {
   buildActivitySubmissionPersistencePlan,
 } from "./activity-persistence.ts";
 import { getActivityWeek } from "./weekly-calendar.ts";
+import { requireSchoolScoringMode, ScoringModeConflictError } from "./school-scoring-mode.ts";
 
 export type ActivitySubmissionRole = "student" | "educator";
 export class ActivitySubmissionAuthorizationError extends Error {}
 export class ActivitySubmissionClosedWeekError extends Error {}
 export class ActivitySubmissionNotFoundError extends Error {}
+export class ActivitySubmissionModeError extends Error {}
 
 export function activitySubmissionsEnabled(
   environment: { readonly ACTIVITY_SUBMISSIONS_ENABLED?: string } = process.env as { readonly ACTIVITY_SUBMISSIONS_ENABLED?: string },
@@ -89,6 +91,8 @@ async function submitInTransaction(db: ServiceDb, input: SubmitActivityInput, ac
   const ledgers = db.collection<WeeklyScoreLedger>(ACTIVITY_COLLECTIONS.ledgers);
   const school = await db.collection("schools").findOne({ _id: input.schoolId, companyId: input.companyId, active: { $ne: false }, status: { $ne: "archived" } }, { session });
   if (!school) throw new ActivitySubmissionNotFoundError("school was not found or is inactive");
+  try { await requireSchoolScoringMode(db, input.schoolId, "automatic", now, session); }
+  catch (error) { if (error instanceof ScoringModeConflictError) throw new ActivitySubmissionModeError(error.message); throw error; }
   const duplicate = await activities.findOne({ schoolId: input.schoolId, submissionIdempotencyKey: input.idempotencyKey.trim() }, { session });
   if (duplicate) {
     if (!duplicate.studentId.equals(input.studentId) || !duplicate.categoryId.equals(input.categoryId)) throw new ActivityPersistenceConflictError("idempotency key belongs to another submission");

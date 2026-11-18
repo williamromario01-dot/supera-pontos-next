@@ -131,7 +131,7 @@ test("automatic approval fails closed when activation is off or school is legacy
 
 test("rejection is audited without credit and company administrators cannot decide", async () => {
   const rejected = fixture();
-  const result = await processActivityApproval(rejected.client, rejected.db, rejected.input({ decision: "rejected", approvedQuantity: 0 }));
+  const result = await processActivityApproval(rejected.client, rejected.db, rejected.input({ decision: "rejected", approvedQuantity: 0, justification: "Registro invÃ¡lido" }));
   assert.equal(result.pointsDifference, 0);
   assert.equal(result.approvedQuantity, 0);
   assert.equal(rejected.state.activityRecords[0].status, "rejected");
@@ -184,7 +184,7 @@ test("approved quantity above the target is capped at maximum points", async () 
 test("correction to a lower quantity creates a compensating negative event", async () => {
   const f = fixture({ reportedQuantity: 8 });
   await processActivityApproval(f.client, f.db, f.input());
-  const corrected = await processActivityApproval(f.client, f.db, f.input({ decision: "corrected", approvedQuantity: 3, idempotencyKey: "correction-request-01", expectedActivityRevision: 1 }));
+  const corrected = await processActivityApproval(f.client, f.db, f.input({ decision: "corrected", approvedQuantity: 3, justification: "Quantidade corrigida", idempotencyKey: "correction-request-01", expectedActivityRevision: 1 }));
   assert.equal(corrected.pointsDifference, -50);
   assert.equal(f.state.users[0].points, 30);
   assert.deepEqual(f.state.pointEvents.map((event) => event.points), [80, -50]);
@@ -196,7 +196,7 @@ test("reversal with insufficient balance aborts without partial writes", async (
   await processActivityApproval(f.client, f.db, f.input());
   f.state.users[0].points = 10;
   const before = JSON.stringify({ activity: f.state.activityRecords, ledger: f.state.weeklyScoreLedgers, points: f.state.pointEvents, user: f.state.users });
-  const request = f.input({ decision: "corrected", approvedQuantity: 3, idempotencyKey: "correction-request-01", expectedActivityRevision: 1 });
+  const request = f.input({ decision: "corrected", approvedQuantity: 3, justification: "Quantidade corrigida", idempotencyKey: "correction-request-01", expectedActivityRevision: 1 });
   const pending = await processActivityApproval(f.client, f.db, request);
   assert.equal(pending.state, "pending_adjustment");
   assert.equal(pending.pointsDifference, 0);

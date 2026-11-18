@@ -2,6 +2,7 @@
 
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import ActivityReviewPanel from "@/components/ActivityReviewPanel";
 import {
   ArrowLeft,
   Award,
@@ -22,6 +23,7 @@ interface Student {
   email?: string;
   points: number;
   avatar?: string | null;
+  className?: string;
 }
 
 interface Category {
@@ -679,6 +681,8 @@ function PointsPageContent() {
           </select>
         </div>
       )}
+
+      <ActivityReviewPanel role={currentUser?.role} schoolId={selectedSchoolId || currentUser?.schoolId || undefined} students={students} categories={categories} />
 
       <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
         {loading ? (

@@ -4,6 +4,7 @@ import { ObjectId } from "mongodb";
 import {
   ActivitySubmissionAuthorizationError,
   ActivitySubmissionClosedWeekError,
+  ActivitySubmissionModeError,
   activitySubmissionsEnabled,
   submitActivity,
 } from "../src/lib/activity-submission-service.ts";
@@ -23,6 +24,7 @@ function matches(row, filter) {
     if (expected && typeof expected === "object" && !(expected instanceof ObjectId) && !(expected instanceof Date)) {
       if ("$in" in expected) return Array.isArray(actual) ? actual.some((item) => expected.$in.some((value) => equal(item, value))) : expected.$in.some((value) => equal(actual, value));
       if ("$ne" in expected) return !equal(actual, expected.$ne);
+      if ("$lte" in expected) return actual <= expected.$lte;
     }
     return equal(actual, expected);
   });
@@ -42,6 +44,7 @@ function fixture(options = {}) {
     classes: [{ _id: new ObjectId(), schoolId, educatorId, studentIds: [studentId], active: true }],
     categories: [{ _id: categoryId, schoolId, active: true, weeklyGoal: 10, defaultPoints: 100 }],
     categoryOverrides: [], activityRecords: [], weeklyScoreLedgers: [], activityAuditEvents: [], pointEvents: [],
+    schoolScoringModeChanges: [{ _id: new ObjectId(), companyId, schoolId, previousMode: "legacy", futureMode: "automatic", requestedBy: educatorId, requestedByRole: "admin", requestedAt: new Date("2026-11-15T12:00:00Z"), effectiveAt: new Date("2026-11-16T03:00:00Z"), idempotencyKey: "submission-mode-fixture" }],
   };
   let queue = Promise.resolve();
   const db = { collection(name) { const rows = state[name]; assert.ok(rows, name); return {
@@ -62,6 +65,16 @@ test("student submits only own pending activity and freezes the first configurat
   assert.equal(result.ledger.configurationSnapshot.targetQuantity, 10); assert.equal(result.ledger.configurationSnapshot.maximumPoints, 100);
   assert.equal(f.state.activityAuditEvents[0].type, "submitted");
   assert.equal(f.state.users[0].points, 77); assert.equal(f.state.pointEvents.length, 0);
+});
+
+test("traditional mode rejects activity submissions without creating records or points", async () => {
+  const f = fixture();
+  f.state.schoolScoringModeChanges.length = 0;
+  await assert.rejects(() => submitActivity(f.client, f.db, f.input()), ActivitySubmissionModeError);
+  assert.equal(f.state.activityRecords.length, 0);
+  assert.equal(f.state.weeklyScoreLedgers.length, 0);
+  assert.equal(f.state.pointEvents.length, 0);
+  assert.equal(f.state.users[0].points, 77);
 });
 
 test("student cannot submit for another student", async () => {

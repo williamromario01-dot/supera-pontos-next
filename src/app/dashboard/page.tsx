@@ -2,6 +2,7 @@
 
 import InternalPlatformName from "@/components/InternalPlatformName";
 import ProductsBrandTitle from "@/components/ProductsBrandTitle";
+import StudentActivityPanel from "@/components/StudentActivityPanel";
 
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { useRouter } from "next/navigation";
@@ -2119,6 +2120,8 @@ export default function DashboardPage() {
         {/* =========================================
             FOOTER
         ========================================= */}
+
+        <StudentActivityPanel role={user.role} />
 
         <footer className="py-8 text-center">
 

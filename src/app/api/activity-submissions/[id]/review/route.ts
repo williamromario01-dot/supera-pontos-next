@@ -43,6 +43,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
       activityId: new ObjectId(id), schoolId, educatorId: auth.userId,
       actorRole: auth.role as "educator" | "admin" | "super_admin", authorizedStudentIds,
       decision, approvedQuantity, idempotencyKey, expectedActivityRevision,
+      justification: typeof body.justification === "string" ? body.justification : null,
       automaticScoringEnabled: true,
     });
     return NextResponse.json({

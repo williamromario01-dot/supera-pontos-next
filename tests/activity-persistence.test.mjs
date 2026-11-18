@@ -139,12 +139,21 @@ test("approval updates only accumulated ledger projections and creates an audit 
 test("correction can reduce quantity and retains a negative calculated delta", () => {
   const first = fixture();
   const approved = buildActivityDecisionPlan({ activity: first.activity, ledger: first.ledger, schoolId: first.identity.schoolId, educatorId: new ObjectId(), actorRole: "educator", decision: "approved", approvedQuantity: 8, decisionIdempotencyKey: "approval-0001", expectedActivityRevision: 0, expectedLedgerRevision: 0, now });
-  const corrected = buildActivityDecisionPlan({ activity: approved.nextActivity, ledger: approved.nextLedger, schoolId: first.identity.schoolId, educatorId: new ObjectId(), actorRole: "admin", decision: "corrected", approvedQuantity: 3, decisionIdempotencyKey: "correction-001", expectedActivityRevision: 1, expectedLedgerRevision: 1, now });
+  const corrected = buildActivityDecisionPlan({ activity: approved.nextActivity, ledger: approved.nextLedger, schoolId: first.identity.schoolId, educatorId: new ObjectId(), actorRole: "admin", decision: "corrected", approvedQuantity: 3, justification: "Quantidade corrigida", decisionIdempotencyKey: "correction-001", expectedActivityRevision: 1, expectedLedgerRevision: 1, now });
   assert.equal(corrected.nextActivity.status, "corrected");
   assert.equal(corrected.nextLedger.approvedQuantity, 3);
   assert.equal(corrected.auditEvent.quantityDelta, -5);
   assert.equal(corrected.auditEvent.calculatedPointsDelta, -50);
   assert.equal(corrected.nextLedger.creditedPoints, 0);
+});
+
+test("corrections and rejections require an auditable justification", () => {
+  const { identity, activity, ledger } = fixture();
+  const base = { activity, ledger, schoolId: identity.schoolId, educatorId: new ObjectId(), actorRole: "educator", approvedQuantity: 1, decisionIdempotencyKey: "decision-justification", expectedActivityRevision: 0, expectedLedgerRevision: 0, now };
+  assert.throws(() => buildActivityDecisionPlan({ ...base, decision: "corrected" }), ActivityPersistenceValidationError);
+  assert.throws(() => buildActivityDecisionPlan({ ...base, decision: "rejected", approvedQuantity: 0, justification: "  " }), ActivityPersistenceValidationError);
+  const rejected = buildActivityDecisionPlan({ ...base, decision: "rejected", approvedQuantity: 0, justification: "Registro inválido" });
+  assert.equal(rejected.auditEvent.justification, "Registro inválido");
 });
 
 test("school scope and stale revisions prevent cross-school or duplicate approval", () => {

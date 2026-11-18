@@ -7,6 +7,8 @@ import { ACTIVITY_COLLECTIONS } from "@/lib/activity-persistence-types";
 import { activitySubmissionsEnabled, activityVisibilityFilter, submitActivity } from "@/lib/activity-submission-service";
 import { activityRouteError, activitySubmissionsDisabledResponse, resolveActivitySchool, serializeActivity } from "@/lib/activity-submission-route";
 import { getOperationalAccessForAuth, subscriptionPastDueResponseForAccess } from "@/lib/subscription-access";
+import { getEffectiveSchoolScoringMode } from "@/lib/school-scoring-mode";
+import { getActivityWeek } from "@/lib/weekly-calendar";
 
 const DB_NAME = "supera_pontos";
 
@@ -47,8 +49,13 @@ export async function GET(request: NextRequest) {
     if (!schoolId) return NextResponse.json({ error: "Selecione uma escola válida." }, { status: 400 });
     const client = await clientPromise;
     const db = client.db(DB_NAME);
+    const automaticMode = (await getEffectiveSchoolScoringMode(db, schoolId)) === "automatic";
+    if (!automaticMode) return NextResponse.json({ automaticMode: false, activities: [], weeklyLedgers: [] });
     const filter = await activityVisibilityFilter(db, { actorId: result.auth.userId, actorRole: result.auth.role, schoolId });
     const activities = await db.collection(ACTIVITY_COLLECTIONS.records).find(filter).sort({ activityAt: -1 }).limit(100).toArray();
-    return NextResponse.json({ activities: activities.map(serializeActivity) });
+    const ledgerFilter: Record<string, unknown> = { schoolId, weekStart: getActivityWeek(new Date()).weekStart };
+    if (result.auth.role === "student") ledgerFilter.studentId = result.auth.userId;
+    const weeklyLedgers = await db.collection(ACTIVITY_COLLECTIONS.ledgers).find(ledgerFilter).limit(100).toArray();
+    return NextResponse.json({ automaticMode: true, activities: activities.map(serializeActivity), weeklyLedgers: weeklyLedgers.map((ledger) => ({ studentId: String(ledger.studentId), categoryId: String(ledger.categoryId), approvedQuantity: ledger.approvedQuantity, calculatedPoints: ledger.calculatedPoints, weeklyGoal: ledger.configurationSnapshot?.targetQuantity, maximumPoints: ledger.configurationSnapshot?.maximumPoints })) });
   } catch (error) { return activityRouteError(error); }
 }

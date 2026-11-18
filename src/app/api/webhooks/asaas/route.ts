@@ -25,7 +25,7 @@ function tokenMatches(expected: string | undefined, provided: string | null): bo
     timingSafeEqual(expectedBuffer, providedBuffer);
 }
 
-export function identifyWebhookEnvironment(
+function identifyWebhookEnvironment(
   provided: string | null,
   env: NodeJS.ProcessEnv = process.env,
 ): AsaasEnvironment | null {

@@ -262,6 +262,7 @@ export function buildActivitySubmissionPersistencePlan(input: {
       calculatedPointsDelta: 0,
       creditedPointsDelta: 0,
       pointEventId: null,
+      justification: null,
       occurredAt: new Date(now),
     },
   };
@@ -298,6 +299,7 @@ export function buildActivityDecisionPlan(input: {
   decision: "approved" | "corrected" | "rejected";
   approvedQuantity: number;
   decisionIdempotencyKey: string;
+  justification?: string | null;
   expectedActivityRevision: number;
   expectedLedgerRevision: number;
   auditEventId?: ObjectId;
@@ -314,6 +316,11 @@ export function buildActivityDecisionPlan(input: {
     throw new ActivityPersistenceConflictError("stale activity or weekly ledger revision");
   }
   const decisionIdempotencyKey = normalizeIdempotencyKey(input.decisionIdempotencyKey, "decisionIdempotencyKey");
+  const justification = typeof input.justification === "string" ? input.justification.trim() : "";
+  if ((input.decision === "corrected" || input.decision === "rejected") && justification.length < 3) {
+    throw new ActivityPersistenceValidationError("corrected or rejected activities require a justification");
+  }
+  if (justification.length > 500) throw new ActivityPersistenceValidationError("justification must contain at most 500 characters");
   if (activity.lastDecisionIdempotencyKey === decisionIdempotencyKey) {
     throw new ActivityPersistenceConflictError("activity decision was already applied");
   }
@@ -372,6 +379,7 @@ export function buildActivityDecisionPlan(input: {
     calculatedPointsDelta,
     creditedPointsDelta: 0,
     pointEventId: null,
+    justification: justification || null,
     occurredAt: new Date(now),
   };
 

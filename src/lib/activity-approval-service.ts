@@ -65,6 +65,7 @@ export interface ActivityApprovalInput {
   readonly now?: Date;
   /** Must be supplied by the trusted server entry point; defaults fail closed. */
   readonly automaticScoringEnabled?: boolean;
+  readonly justification?: string | null;
 }
 
 type ServiceClient = Pick<MongoClient, "startSession">;
@@ -278,6 +279,7 @@ async function processInTransaction(
     decision: input.decision,
     approvedQuantity: input.approvedQuantity,
     decisionIdempotencyKey: input.idempotencyKey,
+    justification: input.justification,
     expectedActivityRevision: activity.revision,
     expectedLedgerRevision: ledger.revision,
     now,

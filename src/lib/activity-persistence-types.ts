@@ -83,6 +83,7 @@ export interface ActivityAuditEvent {
   readonly calculatedPointsDelta: number;
   readonly creditedPointsDelta: number;
   readonly pointEventId: ObjectId | null;
+  readonly justification: string | null;
   readonly occurredAt: Date;
 }
 
