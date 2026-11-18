@@ -83,7 +83,7 @@ test("34. dados existentes não são alterados pela consulta", async () => {
 });
 test("35. nenhum segredo financeiro é exposto", async () => {
   const source = await read("src/app/api/company/onboarding/route.ts");
-  const response = source.split("return NextResponse.json({\n      state")[1];
+  const response = source.split(/return NextResponse\.json\(\{\r?\n\s+state/)[1];
   assert.doesNotMatch(response, /ASAAS_API_KEY|access_token|providerPaymentId\s*:|providerCustomerId\s*:|providerSubscriptionId\s*:/);
 });
 

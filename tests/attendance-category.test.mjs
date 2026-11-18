@@ -21,7 +21,7 @@ function fixture() {
   const schoolId = new ObjectId(), actorId = new ObjectId();
   const categories = ["DoaCao", "Outra categoria"].map(name => ({ _id: new ObjectId(), schoolId, name, categoryType: "official", active: true }));
   const auth = { role: "admin", schoolId, userId: actorId, user: { _id: actorId, schoolId, role: "admin" } };
-  const data = { categories, schools: [{ _id: schoolId, active: true }], categoryOverrides: [], attendanceSessions: [], pointEvents: [], weeklyReports: [], redemptions: [], users: [{ _id: new ObjectId(), schoolId, role: "student", active: true, points: 0 }] };
+  const data = { categories, schools: [{ _id: schoolId, active: true }], categoryOverrides: [], schoolScoringModeChanges: [], attendanceSessions: [], pointEvents: [], weeklyReports: [], redemptions: [], users: [{ _id: new ObjectId(), schoolId, role: "student", active: true, points: 0 }] };
   const indexes = [];
   const db = { listCollections: () => ({ toArray: async () => Object.keys(data).map(name => ({ name })) }), collection(name) {
     assert.ok(name in data, name);
@@ -57,7 +57,7 @@ function fixture() {
   const route = loadRoute("src/app/api/categories/[id]/route.ts", mocks);
   const points = loadRoute("src/app/api/points/route.ts", mocks);
   const list = loadRoute("src/app/api/categories/route.ts", mocks);
-  const request = body => ({ nextUrl: new URL(`http://local?schoolId=${auth.schoolId}`), json: async () => body });
+  const request = (body, headers = {}) => ({ nextUrl: new URL(`http://local?schoolId=${auth.schoolId}`), headers: new Headers(headers), json: async () => body });
   const context = category => ({ params: Promise.resolve({ id: String(category._id) }) });
   const mark = (category, isAttendance, expected = data.schools[0].attendanceCategoryId ? String(data.schools[0].attendanceCategoryId) : null) => route.PATCH(request({ isAttendance, expectedAttendanceCategoryId: expected }), context(category));
   const remove = category => route.DELETE(request({}), context(category));
