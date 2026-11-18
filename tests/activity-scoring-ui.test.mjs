@@ -47,6 +47,16 @@ test("review route requires every automatic-scoring activation gate", async () =
   assert.match(route, /automaticScoringEnabled: true/);
 });
 
+test("all four automatic-scoring feature flags are documented as disabled by default", async () => {
+  const environment = await read(".env.example");
+  for (const flag of [
+    "ACTIVITY_SUBMISSIONS_ENABLED",
+    "ACTIVITY_APPROVALS_ENABLED",
+    "AUTOMATIC_ACTIVITY_SCORING_ENABLED",
+    "SCORING_MODE_CONFIGURATION_ENABLED",
+  ]) assert.match(environment, new RegExp(`^${flag}=false$`, "m"));
+});
+
 test("responsive panels reuse existing navigation instead of adding menu entries", async () => {
   const [student, review, navigation] = await Promise.all([read("src/components/StudentActivityPanel.tsx"), read("src/components/ActivityReviewPanel.tsx"), read("src/components/AppNavigation.tsx")]);
   assert.match(student, /sm:grid-cols/);

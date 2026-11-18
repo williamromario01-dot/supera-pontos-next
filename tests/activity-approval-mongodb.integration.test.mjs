@@ -33,6 +33,22 @@ let replicaSet;
 let client;
 let db;
 
+const temporaryClientPromiseMock = {
+  __esModule: true,
+  default: Promise.resolve({
+    db: () => db,
+    startSession: (...args) => client.startSession(...args),
+  }),
+};
+
+function requestWithSession(url, token, body) {
+  return {
+    url,
+    cookies: { get: (name) => name === "supera_session" ? { value: token } : undefined },
+    json: async () => body,
+  };
+}
+
 async function createIndexes() {
   await ensureActivityPersistenceIndexes(db);
   await db.collection(SCORING_MODE_COLLECTION).createIndexes(
@@ -289,6 +305,91 @@ test("automatic weekly report separates quantities, proportional points, bonuses
   const repeated = await closeWeeklyReport(db, ids.schoolId, period, new Date("2026-11-23T13:00:00Z"));
   assert.equal(repeated.created, false);
   assert.equal(JSON.stringify(repeated.report), original);
+});
+
+test("automatic credits flow through ranking, history, store redemption and remain school-isolated", async () => {
+  const ids = await seedSchool();
+  await db.collection("users").updateOne(
+    { _id: ids.studentId },
+    { $set: { name: "Aluno integrado", email: "aluno@teste.local" } },
+  );
+  await db.collection("categories").updateOne(
+    { _id: ids.categoryId },
+    { $set: { name: "Leitura", weeklyGoal: 3, defaultPoints: 10 } },
+  );
+  const first = await submitActivity(client, db, submission(ids, {
+    reportedQuantity: 1, pageReached: 12, idempotencyKey: "integrated-submission-first",
+  }));
+  assert.equal(first.activity.pageReached, 12);
+  const firstApproval = await processActivityApproval(client, db, approval(ids, first.activity._id, {
+    approvedQuantity: 1, idempotencyKey: "integrated-approval-first",
+  }));
+  assert.equal(firstApproval.pointsDifference, 4, "one third of 10 rounds up");
+
+  const second = await submitActivity(client, db, submission(ids, {
+    reportedQuantity: 2, pageReached: 25, idempotencyKey: "integrated-submission-second",
+  }));
+  const secondApproval = await processActivityApproval(client, db, approval(ids, second.activity._id, {
+    approvedQuantity: 2, idempotencyKey: "integrated-approval-second",
+  }));
+  assert.equal(secondApproval.pointsDifference, 6);
+  assert.equal(secondApproval.calculatedPoints, 10, "accumulated credit stops at the configured maximum");
+  assert.equal((await db.collection("users").findOne({ _id: ids.studentId })).points, 10);
+
+  const token = `integration-session-${ids.studentId}`;
+  await db.collection("sessions").insertOne({
+    token, userId: ids.studentId, expiresAt: new Date("2030-01-01T00:00:00Z"),
+  });
+  const { GET: rankingGet } = loadRoute("src/app/api/rankings/route.ts", {
+    "@/lib/mongodb": temporaryClientPromiseMock,
+    "@/lib/auth": { schoolExists: async (schoolId) => schoolId.equals(ids.schoolId) },
+  });
+  const rankingResponse = await rankingGet(requestWithSession(
+    `http://localhost/api/rankings?categoryId=${ids.categoryId}`, token,
+  ));
+  assert.equal(rankingResponse.status, 200);
+  const ranking = await rankingResponse.json();
+  assert.equal(ranking.totalStudents, 1);
+  assert.equal(ranking.ranking[0].student.id, ids.studentId.toHexString());
+  assert.equal(ranking.ranking[0].points, 10);
+
+  const { GET: historyGet } = loadRoute("src/app/api/points/history/route.ts", {
+    "@/lib/mongodb": temporaryClientPromiseMock,
+  });
+  const historyResponse = await historyGet(requestWithSession("http://localhost/api/points/history", token));
+  assert.equal(historyResponse.status, 200);
+  const history = await historyResponse.json();
+  assert.equal(history.total, 2);
+  assert.deepEqual(history.history.map((event) => event.points).sort((a, b) => a - b), [4, 6]);
+
+  const productId = new ObjectId();
+  await db.collection("pointStoreProducts").insertOne({
+    _id: productId, schoolId: ids.schoolId, name: "Prêmio integrado", points: 7, stock: 1, active: true,
+  });
+  const { POST: redeemPost } = loadRoute("src/app/api/point-store/redeem/route.ts", {
+    "@/lib/mongodb": temporaryClientPromiseMock,
+    "@/lib/subscription-access": {
+      getOperationalAccessForAuth: async () => ({ canPerformOperationalMutation: true }),
+      subscriptionPastDueResponse: { error: "blocked" },
+    },
+  });
+  const redemptionResponse = await redeemPost(requestWithSession(
+    "http://localhost/api/point-store/redeem", token, { productId: productId.toHexString() },
+  ));
+  assert.equal(redemptionResponse.status, 201);
+  const redemption = await redemptionResponse.json();
+  assert.equal(redemption.redemption.remainingPoints, 3);
+  assert.equal((await db.collection("users").findOne({ _id: ids.studentId })).points, 3);
+  assert.equal((await db.collection("pointStoreProducts").findOne({ _id: productId })).stock, 0);
+  assert.equal(await db.collection("pointStoreRedemptions").countDocuments({ studentId: ids.studentId }), 1);
+  assert.equal(await db.collection("pointEvents").countDocuments({ studentId: ids.studentId, source: "point_store", points: -7 }), 1);
+
+  assert.equal(await db.collection("pointEvents").countDocuments({ schoolId: ids.otherSchoolId }), 0);
+  const foreignRankingResponse = await rankingGet(requestWithSession(
+    `http://localhost/api/rankings?categoryId=${ids.categoryId}&schoolId=${ids.otherSchoolId}`, token,
+  ));
+  assert.equal(foreignRankingResponse.status, 200, "student-provided schoolId cannot escape the session school");
+  assert.equal((await foreignRankingResponse.json()).ranking[0].points, 10, "store spending does not reduce pedagogical category ranking");
 });
 
 test("forced rollback leaves no partial balance and legacy mode remains the default", async () => {
