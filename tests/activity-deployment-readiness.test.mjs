@@ -32,9 +32,11 @@ test("pilot runbook keeps production, deploy and financial systems outside activ
 });
 
 test("local homologation stays isolated and visual checks fail on missing content", async () => {
-  const [environment, visual] = await Promise.all([
+  const [environment, visual, playwright, packageJson] = await Promise.all([
     read("scripts/local-activity-homologation.mjs"),
     read("scripts/local-visual-homologation.mjs"),
+    read("scripts/playwright-activity-homologation.mjs"),
+    read("package.json"),
   ]);
   assert.match(environment, /MongoMemoryReplSet\.create/);
   assert.match(environment, /127\\\.0\\\.0\\\.1/);
@@ -45,4 +47,11 @@ test("local homologation stays isolated and visual checks fail on missing conten
   assert.match(visual, /student-dashboard.*390.*844/s);
   assert.match(visual, /admin-school-tablet.*768.*1024/s);
   assert.match(visual, /admin-school-desktop.*1440.*1000/s);
+  assert.match(packageJson, /homologation:activity:visual/);
+  assert.match(playwright, /MongoMemoryReplSet\.create/);
+  assert.match(playwright, /chromium\.launch/);
+  assert.match(playwright, /report\.matrix\.length !== 9/);
+  assert.match(playwright, /student submitted three activities/);
+  assert.match(playwright, /educator approved, corrected and rejected/);
+  assert.match(playwright, /administrator scheduled.*traditional mode/);
 });

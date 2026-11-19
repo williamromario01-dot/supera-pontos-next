@@ -7,6 +7,7 @@
     "build": "next build",
     "test": "node --test tests/*.test.mjs",
     "indexes:activity:staging": "node scripts/ensure-activity-indexes.mjs",
+    "homologation:activity:visual": "node scripts/playwright-activity-homologation.mjs",
     "start": "next start",
     "lint": "eslint ."
   },
@@ -27,6 +28,7 @@
     "web-push": "^3.6.7"
   },
   "devDependencies": {
+    "@playwright/test": "^1.65.1",
     "@types/bcryptjs": "^2.4.6",
     "@types/node": "^20",
     "@types/react": "^18",

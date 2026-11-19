@@ -5,7 +5,7 @@ import { readFile } from "node:fs/promises";
 const read = (path) => readFile(path, "utf8");
 
 test("student activity UI is embedded in the dashboard and never accepts points", async () => {
-  const [dashboard, panel] = await Promise.all([read("src/app/dashboard/page.tsx"), read("src/components/StudentActivityPanel.tsx")]);
+  const [dashboard, panel, categories] = await Promise.all([read("src/app/dashboard/page.tsx"), read("src/components/StudentActivityPanel.tsx"), read("src/app/api/categories/route.ts")]);
   assert.match(dashboard, /<StudentActivityPanel role=\{user\.role\}/);
   assert.match(panel, /role !== "student"/);
   assert.match(panel, /activityData\.automaticMode !== true/);
@@ -15,6 +15,8 @@ test("student activity UI is embedded in the dashboard and never accepts points"
   assert.match(panel, /pontos oficiais só são calculados e concedidos pelo servidor/);
   assert.match(panel, /Aprovada:/);
   assert.doesNotMatch(panel, /body: JSON\.stringify\([^)]*points/s);
+  assert.match(categories, /READ_ROLES = \["super_admin", "admin", "educator", "student"\]/);
+  assert.match(categories, /hasRequiredRole\(auth, READ_ROLES\)/);
 });
 
 test("educator workflow stays inside the existing points screen", async () => {

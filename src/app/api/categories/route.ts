@@ -22,6 +22,7 @@ import { ensureCategoryManagementIndexes, CategoryConflict, activeAttendanceId, 
 
 const DB_NAME = "supera_pontos";
 const ALLOWED_ROLES = ["super_admin", "admin", "educator"] as const;
+const READ_ROLES = ["super_admin", "admin", "educator", "student"] as const;
 
 type CategoryType = "official" | "extra";
 
@@ -51,7 +52,7 @@ export async function GET(request: NextRequest) {
     }
 
     const { auth } = authResult;
-    if (!hasRequiredRole(auth, ALLOWED_ROLES)) {
+    if (!hasRequiredRole(auth, READ_ROLES)) {
       return NextResponse.json(
         {
           error: "Você não tem permissão para acessar as categorias.",
