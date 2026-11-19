@@ -1,12 +1,17 @@
 import type { Metadata, Viewport } from 'next';
-import { Inter } from 'next/font/google';
+import localFont from 'next/font/local';
 import './globals.css';
 import TenantTheme from '@/components/TenantTheme';
 import LegalFooter from '@/components/LegalFooter';
 import PwaServiceWorkerRegistration from '@/components/PwaServiceWorkerRegistration';
 import AppNavigation from '@/components/AppNavigation';
 
-const inter = Inter({ subsets: ['latin'] });
+const inter = localFont({
+  src: './fonts/inter/Inter-Variable.ttf',
+  weight: '100 900',
+  style: 'normal',
+  display: 'swap',
+});
 
 export const metadata: Metadata = {
   title: 'SUPERPONTOS',
