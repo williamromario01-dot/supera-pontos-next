@@ -631,7 +631,7 @@ export default function DashboardPage() {
                 {canAccessOwnUnit && (
                   <button
                     onClick={() =>
-                      router.push(ownUnitPath)
+                      router.push(ownUnitPath, { scroll: true })
                     }
                     className="flex-shrink-0 flex items-center gap-2 px-4 py-2.5 rounded-xl text-slate-500 hover:bg-slate-100 text-sm font-bold transition"
                   >
@@ -898,7 +898,7 @@ export default function DashboardPage() {
                   <button
                     onClick={() => {
                       setMenuOpen(false);
-                      router.push(ownUnitPath);
+                      router.push(ownUnitPath, { scroll: true });
                     }}
                     className="flex items-center gap-3 px-4 py-3 rounded-xl text-slate-600 hover:bg-slate-100 font-bold text-sm"
                   >
@@ -1811,7 +1811,7 @@ export default function DashboardPage() {
             {canAccessOwnUnit && (
               <button
                 onClick={() =>
-                  router.push(ownUnitPath)
+                  router.push(ownUnitPath, { scroll: true })
                 }
                 className="group bg-white border border-slate-200 rounded-2xl p-5 text-left hover:border-orange-200 hover:shadow-md transition"
               >
