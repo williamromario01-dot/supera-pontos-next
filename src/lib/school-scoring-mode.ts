@@ -33,6 +33,12 @@ export const SCORING_MODE_INDEXES = [
   { keys: { schoolId: 1, idempotencyKey: 1 } as const, options: { name: "school_scoring_mode_idempotency", unique: true } },
 ] as const;
 
+export async function ensureScoringModeIndexes(db: ServiceDb): Promise<void> {
+  await db.collection(SCORING_MODE_COLLECTION).createIndexes(
+    SCORING_MODE_INDEXES.map((index) => ({ key: index.keys, ...index.options })),
+  );
+}
+
 export function automaticActivityScoringEnabled(
   environment: { readonly AUTOMATIC_ACTIVITY_SCORING_ENABLED?: string } = process.env as { readonly AUTOMATIC_ACTIVITY_SCORING_ENABLED?: string },
 ): boolean {

@@ -2,6 +2,7 @@
 
 import ClassEducatorAssignment from "@/components/ClassEducatorAssignment";
 import ScoringModeSettings from "@/components/ScoringModeSettings";
+import ActivityAdjustmentPanel from "@/components/ActivityAdjustmentPanel";
 import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { StudentCredentialActions } from "@/components/StudentCredentialActions";
@@ -1455,6 +1456,7 @@ export default function SchoolPage() {
         </div>
 
         <ScoringModeSettings role={currentUser?.role} schoolId={schoolId} />
+        <ActivityAdjustmentPanel role={currentUser?.role} schoolId={schoolId} />
 
         {/* =====================================================
             WHATSAPP DA UNIDADE

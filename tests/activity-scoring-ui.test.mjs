@@ -34,7 +34,8 @@ test("school scoring configuration is embedded and fail-closed", async () => {
   const [school, settings, service] = await Promise.all([read("src/app/schools/[id]/page.tsx"), read("src/components/ScoringModeSettings.tsx"), read("src/lib/school-scoring-mode.ts")]);
   assert.match(school, /<ScoringModeSettings role=\{currentUser\?\.role\} schoolId=\{schoolId\}/);
   assert.match(settings, /window\.confirm/);
-  assert.match(settings, /verificações técnicas/);
+  assert.match(settings, /Ativação em homologação/);
+  assert.match(settings, /ainda não foi liberada neste ambiente/);
   assert.match(settings, /America\/Sao_Paulo/);
   assert.match(service, /SCORING_MODE_CONFIGURATION_ENABLED === "true"/);
 });
@@ -58,8 +59,20 @@ test("all four automatic-scoring feature flags are documented as disabled by def
 });
 
 test("responsive panels reuse existing navigation instead of adding menu entries", async () => {
-  const [student, review, navigation] = await Promise.all([read("src/components/StudentActivityPanel.tsx"), read("src/components/ActivityReviewPanel.tsx"), read("src/components/AppNavigation.tsx")]);
+  const [student, review, adjustments, navigation] = await Promise.all([read("src/components/StudentActivityPanel.tsx"), read("src/components/ActivityReviewPanel.tsx"), read("src/components/ActivityAdjustmentPanel.tsx"), read("src/components/AppNavigation.tsx")]);
   assert.match(student, /sm:grid-cols/);
   assert.match(review, /lg:grid-cols/);
+  assert.match(adjustments, /lg:grid-cols-2/);
+  assert.match(adjustments, /role === "admin" \|\| role === "super_admin"/);
+  assert.match(adjustments, /justificativa/i);
   assert.doesNotMatch(navigation, /Registrar atividades|Aprovações pendentes|Modo de Pontuação/);
+});
+
+test("administrative adjustment routes stay gated, scoped and free of arbitrary balance input", async () => {
+  const [list, decision, service] = await Promise.all([read("src/app/api/activity-adjustments/route.ts"), read("src/app/api/activity-adjustments/[id]/route.ts"), read("src/lib/activity-adjustment-service.ts")]);
+  assert.match(list, /auth\.role !== "admin" && auth\.role !== "super_admin"/);
+  assert.match(service, /find\(\{ schoolId, status: "open" \}\)/);
+  assert.match(decision, /!activityApprovalsEnabled\(\) \|\| !automaticActivityScoringEnabled\(\)/);
+  assert.match(decision, /decideActivityAdjustment/);
+  assert.doesNotMatch(decision, /body\.(points|balance|pointsDifference)/);
 });

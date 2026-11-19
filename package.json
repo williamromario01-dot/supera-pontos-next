@@ -6,6 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "test": "node --test tests/*.test.mjs",
+    "indexes:activity:staging": "node scripts/ensure-activity-indexes.mjs",
     "start": "next start",
     "lint": "eslint ."
   },

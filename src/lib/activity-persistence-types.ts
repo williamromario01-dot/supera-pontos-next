@@ -10,7 +10,7 @@ export const ACTIVITY_COLLECTIONS = {
 } as const;
 
 export type ActivityStatus = "pending" | "approved" | "corrected" | "rejected";
-export type ActivityAuditEventType = "submitted" | "approved" | "corrected" | "rejected";
+export type ActivityAuditEventType = "submitted" | "approved" | "corrected" | "rejected" | "adjustment_cancelled";
 
 export interface ActivityBookReference {
   readonly bookId: string | null;
@@ -120,12 +120,16 @@ export interface ActivityAdjustmentPendency {
   readonly requestedApprovedQuantity: number;
   readonly requiredPointsReversal: number;
   readonly balanceAtRequest: number;
+  readonly activityRevisionAtRequest: number;
+  readonly ledgerRevisionAtRequest: number;
   readonly status: "open" | "resolved" | "cancelled";
   readonly createdAt: Date;
   readonly updatedAt: Date;
   readonly resolvedAt: Date | null;
   readonly resolvedBy: ObjectId | null;
   readonly resolutionNote: string | null;
+  readonly resolutionIdempotencyKey: string | null;
+  readonly resolutionAction: "resolve" | "cancel" | null;
 }
 
 export interface ActivitySubmissionPersistencePlan {

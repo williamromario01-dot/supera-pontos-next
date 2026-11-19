@@ -304,12 +304,16 @@ async function processInTransaction(
       requestedApprovedQuantity: input.approvedQuantity,
       requiredPointsReversal: -pointsDifference,
       balanceAtRequest: currentBalance,
+      activityRevisionAtRequest: activity.revision,
+      ledgerRevisionAtRequest: ledger.revision,
       status: "open",
       createdAt: now,
       updatedAt: now,
       resolvedAt: null,
       resolvedBy: null,
       resolutionNote: null,
+      resolutionIdempotencyKey: null,
+      resolutionAction: null,
     };
     await pendencies.insertOne(pendingAdjustment, { session });
     return {

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import path from "node:path";
+import { execFileSync } from "node:child_process";
 import { after, before, beforeEach, test } from "node:test";
 import { MongoClient, ObjectId } from "mongodb";
 import { MongoMemoryReplSet } from "mongodb-memory-server";
@@ -9,6 +10,7 @@ import {
   ActivityApprovalNotFoundError,
   processActivityApproval,
 } from "../src/lib/activity-approval-service.ts";
+import { decideActivityAdjustment } from "../src/lib/activity-adjustment-service.ts";
 import {
   ACTIVITY_PERSISTENCE_INDEXES,
   ActivityPersistenceConflictError,
@@ -19,7 +21,13 @@ import {
   ActivitySubmissionModeError,
   submitActivity,
 } from "../src/lib/activity-submission-service.ts";
-import { SCORING_MODE_COLLECTION, SCORING_MODE_INDEXES } from "../src/lib/school-scoring-mode.ts";
+import {
+  ensureScoringModeIndexes,
+  getEffectiveSchoolScoringMode,
+  scheduleSchoolScoringMode,
+  SCORING_MODE_COLLECTION,
+  SCORING_MODE_INDEXES,
+} from "../src/lib/school-scoring-mode.ts";
 import { periodForWeekStart } from "../src/lib/weekly-management-report-core.ts";
 import { loadRoute } from "./helpers/load-route.mjs";
 
@@ -51,9 +59,7 @@ function requestWithSession(url, token, body) {
 
 async function createIndexes() {
   await ensureActivityPersistenceIndexes(db);
-  await db.collection(SCORING_MODE_COLLECTION).createIndexes(
-    SCORING_MODE_INDEXES.map((index) => ({ key: index.keys, ...index.options })),
-  );
+  await ensureScoringModeIndexes(db);
 }
 
 async function seedSchool({ automatic = true } = {}) {
@@ -171,6 +177,31 @@ test("temporary replica set creates every declared index and enforces unique ide
   );
 });
 
+test("controlled staging command creates and verifies indexes only in an isolated database", async () => {
+  const stagingDatabase = "superpontos_activity_homolog";
+  const output = execFileSync(process.execPath, ["scripts/ensure-activity-indexes.mjs"], {
+    cwd: process.cwd(),
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      NODE_ENV: "development",
+      ACTIVITY_INDEX_SETUP_ALLOWED: "true",
+      MONGODB_ACTIVITY_STAGING_URI: replicaSet.getUri(),
+      MONGODB_ACTIVITY_STAGING_DB: stagingDatabase,
+      MONGODB_URI: "mongodb://production.invalid/never-used",
+    },
+  });
+  assert.match(output, /Verified 13 automatic-scoring indexes/);
+  const stagingDb = client.db(stagingDatabase);
+  for (const expected of [...ACTIVITY_PERSISTENCE_INDEXES, ...SCORING_MODE_INDEXES.map((index) => ({
+    collection: SCORING_MODE_COLLECTION, options: index.options,
+  }))]) {
+    const indexes = await stagingDb.collection(expected.collection).indexes();
+    assert.ok(indexes.some((index) => index.name === expected.options.name));
+  }
+  await stagingDb.dropDatabase();
+});
+
 test("simultaneous submissions are idempotent and permissions isolate schools and profiles", async () => {
   const ids = await seedSchool();
   const results = await Promise.allSettled([
@@ -244,6 +275,54 @@ test("concurrent approval, idempotency, corrections and insufficient-balance pen
   const unchanged = await db.collection("activityRecords").findOne({ _id: submitted.activity._id });
   assert.equal(unchanged.revision, 2);
   assert.equal(unchanged.approvedQuantity, 5);
+
+  await db.collection("users").updateOne({ _id: ids.studentId }, { $set: { points: 50 } });
+  const decisionInput = {
+    pendencyId: pending.adjustmentPendencyId, schoolId: ids.schoolId, actorId: ids.educatorId,
+    actorRole: "admin", action: "resolve", justification: "Saldo recomposto e estorno revisado",
+    idempotencyKey: "resolve-pendency-integration", now: new Date("2026-11-19T14:00:00Z"),
+  };
+  const competingDecision = { ...decisionInput, idempotencyKey: "resolve-pendency-competing" };
+  const resolutionRace = await Promise.allSettled([
+    decideActivityAdjustment(client, db, decisionInput),
+    decideActivityAdjustment(client, db, competingDecision),
+  ]);
+  assert.equal(resolutionRace.filter((result) => result.status === "fulfilled").length, 1);
+  assert.equal(resolutionRace.filter((result) => result.status === "rejected").length, 1);
+  const resolved = resolutionRace.find((result) => result.status === "fulfilled").value;
+  assert.equal(resolved.status, "resolved");
+  assert.equal(resolved.pointsDifference, -40);
+  assert.equal(resolved.resultingBalance, 10);
+  assert.equal((await db.collection("activityAdjustmentPendencies").findOne({ _id: pending.adjustmentPendencyId })).status, "resolved");
+  assert.equal((await db.collection("activityRecords").findOne({ _id: submitted.activity._id })).approvedQuantity, 1);
+  assert.equal((await db.collection("weeklyScoreLedgers").findOne({ _id: submitted.ledger._id })).creditedPoints, 10);
+  assert.equal((await db.collection("pointEvents").countDocuments({ administrativeAdjustment: true, points: -40 })), 1);
+  const winningKey = resolved.idempotencyKey ?? (
+    await db.collection("activityAdjustmentPendencies").findOne({ _id: pending.adjustmentPendencyId })
+  ).resolutionIdempotencyKey;
+  assert.equal((await decideActivityAdjustment(client, db, { ...decisionInput, idempotencyKey: winningKey })).duplicate, true);
+});
+
+test("administrative cancellation is audited, idempotent and never changes balance or history", async () => {
+  const ids = await seedSchool();
+  const submitted = await submitActivity(client, db, submission(ids));
+  await processActivityApproval(client, db, approval(ids, submitted.activity._id));
+  await db.collection("users").updateOne({ _id: ids.studentId }, { $set: { points: 0 } });
+  const pending = await processActivityApproval(client, db, approval(ids, submitted.activity._id, {
+    decision: "corrected", approvedQuantity: 1, expectedActivityRevision: 1,
+    idempotencyKey: "cancel-pendency-request", justification: "Correção administrativa solicitada",
+  }));
+  const beforeEvents = await db.collection("pointEvents").countDocuments();
+  const cancelled = await decideActivityAdjustment(client, db, {
+    pendencyId: pending.adjustmentPendencyId, schoolId: ids.schoolId, actorId: ids.educatorId,
+    actorRole: "super_admin", action: "cancel", justification: "Solicitação considerada indevida",
+    idempotencyKey: "cancel-pendency-decision", now: new Date("2026-11-19T14:00:00Z"),
+  });
+  assert.equal(cancelled.status, "cancelled");
+  assert.equal((await db.collection("users").findOne({ _id: ids.studentId })).points, 0);
+  assert.equal(await db.collection("pointEvents").countDocuments(), beforeEvents);
+  assert.equal(await db.collection("activityAuditEvents").countDocuments({ type: "adjustment_cancelled" }), 1);
+  assert.equal((await db.collection("activityRecords").findOne({ _id: submitted.activity._id })).approvedQuantity, 10);
 });
 
 test("automatic weekly report separates quantities, proportional points, bonuses and statuses", async () => {
@@ -415,4 +494,49 @@ test("forced rollback leaves no partial balance and legacy mode remains the defa
   }
   assert.equal((await db.collection("users").findOne({ _id: ids.studentId })).points, 0);
   assert.equal((await db.collection("pointEvents").countDocuments()), 0);
+});
+
+test("fictitious pilot returns to legacy on Monday without rewriting automatic history", async () => {
+  const ids = await seedSchool();
+  const submitted = await submitActivity(client, db, submission(ids, {
+    reportedQuantity: 15,
+    idempotencyKey: "pilot-fictitious-submission",
+  }));
+  await processActivityApproval(client, db, approval(ids, submitted.activity._id, {
+    approvedQuantity: 15,
+    idempotencyKey: "pilot-fictitious-approval",
+  }));
+  await db.collection("pointEvents").insertOne({
+    _id: new ObjectId(), companyId: ids.companyId, schoolId: ids.schoolId,
+    studentId: ids.studentId, categoryId: ids.categoryId, source: "special_bonus",
+    points: 100, idempotencyKey: "pilot-special-bonus-100",
+    createdAt: new Date("2026-11-20T12:00:00Z"),
+  });
+
+  const period = periodForWeekStart("2026-11-16");
+  const closed = await closeWeeklyReport(db, ids.schoolId, period, new Date("2026-11-23T12:00:00Z"));
+  assert.equal(closed.report.reportVersion, 2);
+  assert.equal(closed.report.summary.pointsAwarded, 100, "quantity above goal remains capped");
+  assert.equal(closed.report.summary.specialBonusPoints, 100);
+  const historicalReport = JSON.stringify(closed.report);
+  const historicalEvents = await db.collection("pointEvents").countDocuments({ schoolId: ids.schoolId });
+
+  const scheduled = await scheduleSchoolScoringMode(client, db, {
+    companyId: ids.companyId, schoolId: ids.schoolId, actorId: ids.educatorId,
+    actorRole: "admin", futureMode: "legacy", idempotencyKey: "pilot-return-to-legacy",
+    now: new Date("2026-11-24T12:00:00Z"),
+  });
+  assert.equal(scheduled.change.effectiveAt.toISOString(), "2026-11-30T03:00:00.000Z");
+  assert.equal(await getEffectiveSchoolScoringMode(db, ids.schoolId, new Date("2026-11-30T02:59:59Z")), "automatic");
+  assert.equal(await getEffectiveSchoolScoringMode(db, ids.schoolId, new Date("2026-11-30T03:00:00Z")), "legacy");
+  assert.equal(await getEffectiveSchoolScoringMode(db, ids.otherSchoolId, new Date("2026-12-01T12:00:00Z")), "legacy");
+  await assert.rejects(
+    () => submitActivity(client, db, submission(ids, {
+      activityAt: new Date("2026-12-01T12:00:00Z"), now: new Date("2026-12-01T13:00:00Z"),
+      idempotencyKey: "pilot-after-return-to-legacy",
+    })),
+    ActivitySubmissionModeError,
+  );
+  assert.equal(await db.collection("pointEvents").countDocuments({ schoolId: ids.schoolId }), historicalEvents);
+  assert.equal(JSON.stringify(await db.collection("weeklyReports").findOne({ _id: closed.report._id })), historicalReport);
 });

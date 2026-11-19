@@ -75,8 +75,8 @@ export default function ScoringModeSettings({ role, schoolId }: { role?: string;
           <div className="flex items-center gap-2 text-slate-500"><Loader2 className="animate-spin" />Carregando configuração...</div>
         ) : !available ? (
           <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-800">
-            <div className="flex gap-2 font-bold"><AlertTriangle />Ativação indisponível</div>
-            <p className="mt-2 text-sm">As verificações técnicas, os índices e os testes transacionais obrigatórios ainda estão pendentes. O modo tradicional permanece ativo.</p>
+            <div className="flex gap-2 font-bold"><AlertTriangle />Ativação em homologação</div>
+            <p className="mt-2 text-sm">A pontuação automática está em homologação controlada e ainda não foi liberada neste ambiente. O modo tradicional permanece ativo.</p>
           </div>
         ) : (
           <>
