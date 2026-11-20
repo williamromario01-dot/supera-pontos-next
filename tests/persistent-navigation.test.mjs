@@ -53,6 +53,23 @@ test("shared navigation is fixed, responsive, accessible and permission filtered
   assert.match(navigation, /visible: user\.role === "super_admin"/);
 });
 
+test("horizontal navigation keeps shared overflow arrows across route changes", async () => {
+  const [dashboard, navigation, horizontal] = await Promise.all([
+    read("src/app/dashboard/page.tsx"),
+    read("src/components/AppNavigation.tsx"),
+    read("src/components/HorizontalNavigation.tsx"),
+  ]);
+  assert.match(dashboard, /<HorizontalNavigation/);
+  assert.match(navigation, /<HorizontalNavigation/);
+  assert.match(horizontal, /usePathname\(\)/);
+  assert.match(horizontal, /ResizeObserver/);
+  assert.match(horizontal, /MutationObserver/);
+  assert.match(horizontal, /scrollBy/);
+  assert.match(horizontal, /state\.overflow/);
+  assert.match(horizontal, /disabled=\{!state\.left\}/);
+  assert.match(horizontal, /disabled=\{!state\.right\}/);
+});
+
 test("educators keep unit evolution access without gaining closed reports", async () => {
   const management = await read("src/components/ManagementReportsClient.tsx");
   assert.match(management, /if \(currentUser\.role === "educator"\) return/);

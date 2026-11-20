@@ -2104,7 +2104,7 @@ export default function SchoolPage() {
                           </p>
                         </div>
 
-                        <StudentCredentialActions role={currentUser?.role} studentId={student.id} />
+                        <StudentCredentialActions role={currentUser?.role} student={student} />
                         {canManageStudents && (
                           <button
                             onClick={() =>

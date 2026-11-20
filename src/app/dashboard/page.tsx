@@ -3,8 +3,9 @@
 import InternalPlatformName from "@/components/InternalPlatformName";
 import ProductsBrandTitle from "@/components/ProductsBrandTitle";
 import StudentActivityPanel from "@/components/StudentActivityPanel";
+import HorizontalNavigation from "@/components/HorizontalNavigation";
 
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import { useRouter } from "next/navigation";
 import { contrastText } from "@/lib/tenant-branding";
 import {
@@ -17,7 +18,6 @@ import {
   LogOut,
   Award,
   ChevronRight,
-  ChevronLeft,
   Medal,
   Brain,
   BookOpen,
@@ -171,71 +171,6 @@ export default function DashboardPage() {
   // NAVEGAÇÃO HORIZONTAL
   // =========================================
 
-  const navRef = useRef<HTMLElement | null>(null);
-
-  const [navCanScrollLeft, setNavCanScrollLeft] =
-    useState(false);
-
-  const [navCanScrollRight, setNavCanScrollRight] =
-    useState(false);
-
-  function updateNavigationButtons() {
-    const nav = navRef.current;
-
-    if (!nav) {
-      return;
-    }
-
-    const canScrollLeft = nav.scrollLeft > 5;
-
-    const canScrollRight =
-      nav.scrollLeft + nav.clientWidth <
-      nav.scrollWidth - 5;
-
-    setNavCanScrollLeft(canScrollLeft);
-    setNavCanScrollRight(canScrollRight);
-  }
-
-  useEffect(() => {
-    if (loading || !user) {
-      return;
-    }
-
-    const nav = navRef.current;
-
-    if (!nav) {
-      return;
-    }
-
-    const handleScroll = () => {
-      updateNavigationButtons();
-    };
-
-    const handleResize = () => {
-      updateNavigationButtons();
-    };
-
-    updateNavigationButtons();
-
-    nav.addEventListener("scroll", handleScroll, {
-      passive: true,
-    });
-
-    window.addEventListener("resize", handleResize);
-
-    const resizeObserver = new ResizeObserver(() => {
-      updateNavigationButtons();
-    });
-
-    resizeObserver.observe(nav);
-
-    return () => {
-      nav.removeEventListener("scroll", handleScroll);
-      window.removeEventListener("resize", handleResize);
-      resizeObserver.disconnect();
-    };
-  }, [loading, user]);
-
   useEffect(() => {
     if (loading || !user) {
       return;
@@ -377,27 +312,6 @@ export default function DashboardPage() {
   // =========================================
   // AVANÇAR NA NAVEGAÇÃO
   // =========================================
-
-  function scrollNavigation(direction: "left" | "right") {
-    const nav = navRef.current;
-
-    if (!nav) {
-      return;
-    }
-
-    const amount = Math.max(
-      220,
-      Math.floor(nav.clientWidth * 0.7)
-    );
-
-    nav.scrollBy({
-      left:
-        direction === "right"
-          ? amount
-          : -amount,
-      behavior: "smooth",
-    });
-  }
 
   function getFirstName(name: string) {
     return name.trim().split(" ")[0];
@@ -605,16 +519,7 @@ export default function DashboardPage() {
                 NAVEGAÇÃO DESKTOP
                 ===================================== */}
 
-            <div className="hidden md:flex items-center flex-1 min-w-0 relative">
-
-              <nav
-                ref={navRef}
-                onScroll={updateNavigationButtons}
-                className="flex items-center gap-1 overflow-x-auto pr-10 min-w-0 scrollbar-hide"
-              >
-
-                {user && ["super_admin", "company_admin", "admin", "educator"].includes(user.role) && <button onClick={() => router.push("/users/credentials")} className="flex-shrink-0 rounded-xl px-4 py-2.5 text-sm font-bold text-slate-500 hover:bg-slate-100">Credenciais dos usuários</button>}
-
+            <HorizontalNavigation ariaLabel="Navegação principal" className="hidden min-w-0 flex-1 md:block" navClassName="flex items-center gap-1">
 
                 {canManageSchools && (
                   <button
@@ -780,39 +685,7 @@ export default function DashboardPage() {
                   </>
                 )}
 
-              </nav>
-
-              {/* =====================================
-                  BOTÕES DE NAVEGAÇÃO
-                  ===================================== */}
-
-              {navCanScrollLeft && (
-                <button
-                  onClick={() =>
-                    scrollNavigation("left")
-                  }
-                  className="absolute left-0 z-10 w-8 h-8 rounded-lg bg-white/95 border border-slate-200 shadow-sm flex items-center justify-center text-slate-400 hover:text-orange-500 hover:border-orange-200 transition"
-                  title="Voltar opções"
-                  aria-label="Voltar opções"
-                >
-                  <ChevronLeft size={16} />
-                </button>
-              )}
-
-              {navCanScrollRight && (
-                <button
-                  onClick={() =>
-                    scrollNavigation("right")
-                  }
-                  className="absolute right-0 z-10 w-8 h-8 rounded-lg bg-white/95 border border-slate-200 shadow-sm flex items-center justify-center text-slate-400 hover:text-orange-500 hover:border-orange-200 transition"
-                  title="Ver mais opções"
-                  aria-label="Ver mais opções"
-                >
-                  <ChevronRight size={16} />
-                </button>
-              )}
-
-            </div>
+            </HorizontalNavigation>
 
             {/* =====================================
                 USUÁRIO
@@ -878,8 +751,6 @@ export default function DashboardPage() {
             <div className="md:hidden pb-4 border-t border-slate-100 pt-3">
 
               <div className="grid gap-2">
-
-                {user && ["super_admin", "company_admin", "admin", "educator"].includes(user.role) && <button onClick={() => { setMenuOpen(false); router.push("/users/credentials"); }} className="rounded-xl px-4 py-3 text-left font-bold text-slate-600 hover:bg-slate-100">Credenciais dos usuários</button>}
 
                 {canManageSchools && (
                   <button
