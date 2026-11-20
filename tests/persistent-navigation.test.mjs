@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import { navigationOverflowState } from "../src/lib/horizontal-navigation.ts";
 
 const read = path => readFile(path, "utf8");
 
@@ -66,8 +67,18 @@ test("horizontal navigation keeps shared overflow arrows across route changes", 
   assert.match(horizontal, /MutationObserver/);
   assert.match(horizontal, /scrollBy/);
   assert.match(horizontal, /state\.overflow/);
-  assert.match(horizontal, /disabled=\{!state\.left\}/);
-  assert.match(horizontal, /disabled=\{!state\.right\}/);
+  assert.match(horizontal, /state\.left &&/);
+  assert.match(horizontal, /state\.right &&/);
+  assert.doesNotMatch(horizontal, /disabled=\{!state\.(left|right)\}/);
+  assert.match(horizontal, /w-max min-w-full/);
+  assert.doesNotMatch(navigation, /justify-end/);
+});
+
+test("overflow arrows represent the real hidden direction at start, middle and end", () => {
+  assert.deepEqual(navigationOverflowState(0, 500, 500), { overflow: false, left: false, right: false });
+  assert.deepEqual(navigationOverflowState(0, 500, 900), { overflow: true, left: false, right: true });
+  assert.deepEqual(navigationOverflowState(200, 500, 900), { overflow: true, left: true, right: true });
+  assert.deepEqual(navigationOverflowState(400, 500, 900), { overflow: true, left: true, right: false });
 });
 
 test("educators keep unit evolution access without gaining closed reports", async () => {

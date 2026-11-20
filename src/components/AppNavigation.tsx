@@ -71,7 +71,7 @@ export default function AppNavigation() {
           </> : <School size={20}/>}</span>
           <span className="max-w-44 truncate font-black text-slate-800"><InternalPlatformName displayName={branding.displayName}/></span>
         </Link>
-        <HorizontalNavigation ariaLabel="Navegação principal" className="hidden min-w-0 flex-1 md:block" navClassName="flex items-center justify-end gap-1">{items.map(item => navLink(item))}</HorizontalNavigation>
+        <HorizontalNavigation ariaLabel="Navegação principal" className="hidden min-w-0 flex-1 overflow-visible md:block" navClassName="gap-1">{items.map(item => navLink(item))}</HorizontalNavigation>
         <button type="button" aria-label={open ? "Fechar menu" : "Abrir menu"} aria-expanded={open} aria-controls="mobile-app-navigation" onClick={() => setOpen(value => !value)} className="flex h-11 w-11 items-center justify-center rounded-xl text-slate-600 hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-[var(--brand-primary)] md:hidden">{open ? <X/> : <Menu/>}</button>
       </div>
       {open && <nav id="mobile-app-navigation" aria-label="Navegação principal" className="max-h-[calc(100dvh-4rem-env(safe-area-inset-bottom))] overflow-y-auto border-t border-slate-200 bg-white px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-xl md:hidden"><div className="mx-auto grid max-w-7xl gap-1">{items.map(item => navLink(item, true))}</div></nav>}

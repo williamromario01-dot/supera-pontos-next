@@ -519,7 +519,7 @@ export default function DashboardPage() {
                 NAVEGAÇÃO DESKTOP
                 ===================================== */}
 
-            <HorizontalNavigation ariaLabel="Navegação principal" className="hidden min-w-0 flex-1 md:block" navClassName="flex items-center gap-1">
+            <HorizontalNavigation ariaLabel="Navegação principal" className="hidden min-w-0 flex-1 overflow-visible md:block" navClassName="gap-1">
 
                 {canManageSchools && (
                   <button
