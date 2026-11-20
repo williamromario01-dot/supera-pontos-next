@@ -3,6 +3,7 @@
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import ActivityReviewPanel from "@/components/ActivityReviewPanel";
+import LearningBooksSettings from "@/components/LearningBooksSettings";
 import {
   ArrowLeft,
   Award,
@@ -51,6 +52,7 @@ interface School {
   id: string;
   name: string;
 }
+type LearningAttention = { id: string; studentId: string; bookName: string; metrics: { status: string } };
 
 function PointsPageContent() {
   const router = useRouter();
@@ -60,6 +62,7 @@ function PointsPageContent() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [schools, setSchools] = useState<School[]>([]);
   const [selectedSchoolId, setSelectedSchoolId] = useState("");
+  const [learningAttention, setLearningAttention] = useState<LearningAttention[]>([]);
 
   // Usuário logado
   const [currentUser, setCurrentUser] =
@@ -294,6 +297,18 @@ function PointsPageContent() {
   useEffect(() => {
     void loadData();
   }, [loadData]);
+
+  useEffect(() => {
+    if (!currentUser || ["student", "company_admin"].includes(currentUser.role)) return;
+    if (currentUser.role === "super_admin" && !selectedSchoolId) return;
+    const query = currentUser.role === "super_admin" ? `?schoolId=${encodeURIComponent(selectedSchoolId)}` : "";
+    let active = true;
+    fetch(`/api/learning/assignments${query}`, { cache: "no-store", credentials: "include" })
+      .then(async (response) => response.ok ? response.json() : { assignments: [] })
+      .then((body) => { if (active) setLearningAttention(body.assignments ?? []); })
+      .catch(() => { if (active) setLearningAttention([]); });
+    return () => { active = false; };
+  }, [currentUser, selectedSchoolId]);
 
   // =========================
   // BUSCA DE ALUNOS
@@ -683,6 +698,7 @@ function PointsPageContent() {
       )}
 
       <ActivityReviewPanel role={currentUser?.role} schoolId={selectedSchoolId || currentUser?.schoolId || undefined} students={students} categories={categories} />
+      <LearningBooksSettings role={currentUser?.role} schoolId={selectedSchoolId || currentUser?.schoolId || undefined} categories={categories} students={students} />
 
       <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
         {loading ? (
@@ -814,6 +830,9 @@ function PointsPageContent() {
                                     )}{" "}
                                     pontos
                                   </p>
+                                  {learningAttention.filter((item) => item.studentId === student.id && !["regular", "insufficient_data"].includes(item.metrics.status)).map((item) => (
+                                    <p key={item.id} className="mt-0.5 flex items-center gap-1 text-xs font-medium text-rose-600"><span aria-hidden="true">●</span>{item.bookName}</p>
+                                  ))}
                                 </div>
 
                                 <ChevronDown

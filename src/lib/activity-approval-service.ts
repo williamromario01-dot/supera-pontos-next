@@ -13,6 +13,7 @@ import {
   type ActivityRecord,
   type WeeklyScoreLedger,
 } from "./activity-persistence-types.ts";
+import { LEARNING_COLLECTIONS } from "./learning-rhythm-model.ts";
 import {
   ActivityPersistenceConflictError,
   ActivityPersistenceScopeError,
@@ -369,6 +370,17 @@ async function processInTransaction(
     pointEventId,
   };
   await audits.insertOne(auditEvent, { session });
+  // O progresso de livro é uma dimensão pedagógica separada dos pontos. A mesma
+  // decisão idempotente que atualiza a atividade aplica apenas o delta aprovado.
+  if (activity.book?.bookId && ObjectId.isValid(activity.book.bookId)) {
+    await db.collection(LEARNING_COLLECTIONS.assignments).updateOne({
+      schoolId: activity.schoolId, studentId: activity.studentId,
+      bookId: new ObjectId(activity.book.bookId), categoryId: activity.categoryId, active: { $ne: false },
+    }, {
+      $inc: { completedQuestions: plan.auditEvent.quantityDelta },
+      $set: { lastValidActivityAt: now, updatedAt: now },
+    }, { session });
+  }
   return {
     state: "applied",
     duplicate: false,

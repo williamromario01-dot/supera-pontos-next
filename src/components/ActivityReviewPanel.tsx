@@ -6,6 +6,7 @@ import { Check, ClipboardCheck, Loader2, RotateCcw, X } from "lucide-react";
 type Student = { id: string; name: string; className?: string };
 type Category = { id: string; name: string; weeklyGoal?: number; defaultPoints?: number };
 type Activity = { id: string; studentId: string; categoryId: string; reportedQuantity: number; approvedQuantity: number | null; pageReached: number | null; activityAt: string; revision: number };
+type BookAssignment = { id: string; studentId: string; bookId: string; bookName: string; categoryId: string };
 
 export default function ActivityReviewPanel({ role, schoolId, students, categories }: { role?: string; schoolId?: string; students: Student[]; categories: Category[] }) {
   const [visible, setVisible] = useState(false);
@@ -20,6 +21,8 @@ export default function ActivityReviewPanel({ role, schoolId, students, categori
   const [categoryId, setCategoryId] = useState("");
   const [reported, setReported] = useState("");
   const [page, setPage] = useState("");
+  const [bookAssignmentId, setBookAssignmentId] = useState("");
+  const [bookAssignments, setBookAssignments] = useState<BookAssignment[]>([]);
   const query = role === "super_admin" && schoolId ? `?schoolId=${encodeURIComponent(schoolId)}` : "";
 
   const load = useCallback(async () => {
@@ -32,6 +35,8 @@ export default function ActivityReviewPanel({ role, schoolId, students, categori
         setVisible(true);
         setItems(activities);
         setQuantities(Object.fromEntries(activities.map((item) => [item.id, String(item.reportedQuantity)])));
+        const booksResponse = await fetch(`/api/learning/assignments${query}`, { credentials: "include", cache: "no-store" });
+        if (booksResponse.ok) setBookAssignments((await booksResponse.json()).assignments ?? []);
       }
     } catch {
       setError("Não foi possível carregar as aprovações.");
@@ -103,13 +108,14 @@ export default function ActivityReviewPanel({ role, schoolId, students, categori
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json", "idempotency-key": crypto.randomUUID() },
-        body: JSON.stringify({ studentId, categoryId, activityAt: new Date().toISOString(), reportedQuantity: Number(reported), pageReached: page ? Number(page) : null }),
+        body: JSON.stringify({ studentId, categoryId, activityAt: new Date().toISOString(), reportedQuantity: Number(reported), pageReached: page ? Number(page) : null, book: bookAssignmentId ? (() => { const assignment = bookAssignments.find((item) => item.id === bookAssignmentId); return assignment ? { bookId: assignment.bookId, title: assignment.bookName, isbn: null } : null; })() : null }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Não foi possível registrar.");
       setMessage("Atividade registrada e enviada para aprovação. Nenhum ponto foi concedido ainda.");
       setReported("");
       setPage("");
+      setBookAssignmentId("");
       await load();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Falha no registro.");
@@ -133,11 +139,12 @@ export default function ActivityReviewPanel({ role, schoolId, students, categori
         {role === "educator" && (
           <div className="mt-5 rounded-2xl bg-slate-50 p-4">
             <h3 className="font-bold text-slate-800">Registrar atividade para aluno</h3>
-            <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+            <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
               <select aria-label="Aluno" value={studentId} onChange={(event) => setStudentId(event.target.value)} className="min-h-11 rounded-xl border p-3"><option value="">Aluno</option>{students.map((student) => <option key={student.id} value={student.id}>{student.name}</option>)}</select>
               <select aria-label="Categoria" value={categoryId} onChange={(event) => setCategoryId(event.target.value)} className="min-h-11 rounded-xl border p-3"><option value="">Categoria</option>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select>
               <input aria-label="Quantidade realizada" type="number" min="0.01" inputMode="decimal" value={reported} onChange={(event) => setReported(event.target.value)} placeholder="Quantidade" className="min-h-11 rounded-xl border p-3" />
               <input aria-label="Página alcançada" type="number" min="0" inputMode="numeric" value={page} onChange={(event) => setPage(event.target.value)} placeholder="Página" className="min-h-11 rounded-xl border p-3" />
+              <select aria-label="Livro vinculado" value={bookAssignmentId} onChange={(event) => setBookAssignmentId(event.target.value)} className="min-h-11 rounded-xl border p-3"><option value="">Sem livro</option>{bookAssignments.filter((item) => item.studentId === studentId && item.categoryId === categoryId).map((item) => <option key={item.id} value={item.id}>{item.bookName}</option>)}</select>
               <button type="button" onClick={register} disabled={busy === "register"} className="min-h-11 rounded-xl bg-slate-900 px-4 py-3 font-bold text-white disabled:opacity-50">{busy === "register" ? "Registrando..." : "Registrar"}</button>
             </div>
           </div>

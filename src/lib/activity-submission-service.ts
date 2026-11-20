@@ -11,6 +11,7 @@ import {
 } from "./activity-persistence.ts";
 import { getActivityWeek } from "./weekly-calendar.ts";
 import { requireSchoolScoringMode, ScoringModeConflictError } from "./school-scoring-mode.ts";
+import { LEARNING_COLLECTIONS } from "./learning-rhythm-model.ts";
 
 export type ActivitySubmissionRole = "student" | "educator";
 export class ActivitySubmissionAuthorizationError extends Error {}
@@ -109,6 +110,14 @@ async function submitInTransaction(db: ServiceDb, input: SubmitActivityInput, ac
   if (input.actorRole === "student" && !input.actorId.equals(input.studentId)) throw new ActivitySubmissionAuthorizationError("students can submit only their own activities");
   if (input.actorRole === "educator" && !(await authorizedEducatorStudent(db, input.schoolId, input.actorId, input.studentId, session))) throw new ActivitySubmissionAuthorizationError("educator is not assigned to this student");
   const category = await effectiveCategory(db, input.schoolId, input.categoryId, session);
+  if (activity.book?.bookId) {
+    if (!ObjectId.isValid(activity.book.bookId)) throw new ActivityPersistenceValidationError("book reference is invalid");
+    const assignment = await db.collection(LEARNING_COLLECTIONS.assignments).findOne({
+      schoolId: input.schoolId, studentId: input.studentId, bookId: new ObjectId(activity.book.bookId),
+      categoryId: input.categoryId, active: { $ne: false },
+    }, { session });
+    if (!assignment) throw new ActivityPersistenceScopeError("book is not actively assigned to this student and category");
+  }
   const plan = buildActivitySubmissionPersistencePlan({
     activity,
     actorId: input.actorId,
