@@ -1,0 +1,6 @@
+import { NextRequest, NextResponse } from "next/server";
+import clientPromise from "@/lib/mongodb";
+import { authenticateRequest } from "@/lib/auth";
+import { canManageCollaboratorClass, COLLABORATOR_COLLECTIONS } from "@/lib/collaborator-development";
+import { COLLABORATOR_DB, collaboratorScope } from "@/lib/collaborator-route";
+export async function GET(request:NextRequest){const a=await authenticateRequest(request);if(!a.authenticated)return NextResponse.json({error:"Não autenticado."},{status:401});if(!canManageCollaboratorClass(a.auth.role))return NextResponse.json({error:"Sem permissão."},{status:403});const db=(await clientPromise).db(COLLABORATOR_DB),scope=await collaboratorScope(request,a.auth,db);if(!scope)return NextResponse.json({error:"Escola não autorizada."},{status:403});const rows=await db.collection(COLLABORATOR_COLLECTIONS.adjustmentPendencies).find({schoolId:scope.schoolId,status:"open"}).sort({createdAt:1}).toArray();return NextResponse.json({pendencies:rows.map(row=>({id:String(row._id),activityId:String(row.activityId),participantId:String(row.participantId),requiredPointsReversal:row.requiredPointsReversal,balanceAtRequest:row.balanceAtRequest,createdAt:row.createdAt}))})}

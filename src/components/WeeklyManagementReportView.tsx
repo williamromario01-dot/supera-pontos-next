@@ -114,6 +114,10 @@ export function WeeklyManagementReportView({ report, previous, history, schoolId
 
     {automatic && <AutomaticActivitySection report={report} />}
 
+    {report.collaboratorDevelopmentMetrics && <Section title="DESENVOLVIMENTO DOS COLABORADORES" description="Indicadores separados dos alunos e preservados no snapshot semanal."><div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{[
+      ["Participantes", report.collaboratorDevelopmentMetrics.participants], ["Educadores", report.collaboratorDevelopmentMetrics.educators], ["Administradores", report.collaboratorDevelopmentMetrics.administrators], ["Livros em andamento", report.collaboratorDevelopmentMetrics.booksInProgress], ["Livros concluídos", report.collaboratorDevelopmentMetrics.booksCompleted], ["Questões aprovadas", report.collaboratorDevelopmentMetrics.approvedQuestions], ["Atividades pendentes", report.collaboratorDevelopmentMetrics.pendingActivities], ["Pontos recebidos", report.collaboratorDevelopmentMetrics.pointsReceived], ["Pontos de atenção", report.collaboratorDevelopmentMetrics.attentionBooks], ["Acima de 4,5 meses", report.collaboratorDevelopmentMetrics.aboveDesiredTerm], ["Acima de 6 meses", report.collaboratorDevelopmentMetrics.aboveAdministrativeLimit],
+    ].map(([label, value]) => <div key={String(label)} className="rounded-2xl border border-slate-200 p-4"><p className="text-xs text-slate-500">{label}</p><p className="mt-1 text-2xl font-black">{value}</p></div>)}</div></Section>}
+
     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
       <Kpi icon={<Users size={19}/>} label="Alunos ativos" value={number.format(report.summary.activeStudents)} />
       <Kpi icon={<TrendingUp size={19}/>} label="Evoluíram" value={number.format(report.summary.evolvedStudents)} detail={`${percent(report.summary.evolvedAmongAllActiveStudentsPercentage)} dos alunos ativos`} variation={<Variation current={report.summary.evolvedAmongAllActiveStudentsPercentage} previous={comparablePrevious?.summary.evolvedAmongAllActiveStudentsPercentage} kind="percentagePoints" positive />} />

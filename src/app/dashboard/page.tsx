@@ -4,6 +4,7 @@ import InternalPlatformName from "@/components/InternalPlatformName";
 import ProductsBrandTitle from "@/components/ProductsBrandTitle";
 import StudentActivityPanel from "@/components/StudentActivityPanel";
 import StudentLearningRhythmPanel from "@/components/StudentLearningRhythmPanel";
+import CollaboratorDevelopmentPanel from "@/components/CollaboratorDevelopmentPanel";
 import HorizontalNavigation from "@/components/HorizontalNavigation";
 
 import { useEffect, useState, type CSSProperties } from "react";
@@ -1995,6 +1996,7 @@ export default function DashboardPage() {
 
         <StudentActivityPanel role={user.role} />
         <StudentLearningRhythmPanel role={user.role} />
+        <CollaboratorDevelopmentPanel role={user.role} schoolId={user.schoolId} userId={user.id} />
 
         <footer className="py-8 text-center">
 

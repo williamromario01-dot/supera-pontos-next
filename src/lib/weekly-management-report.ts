@@ -4,6 +4,9 @@ import { ObjectId, type Db, type Document } from "mongodb";
 import { getCategoryScopeFilter } from "@/lib/category-scope";
 import { getEffectiveSchoolScoringMode } from "@/lib/school-scoring-mode";
 import { type ActivityRecord, type WeeklyScoreLedger } from "@/lib/activity-persistence-types";
+import { COLLABORATOR_COLLECTIONS } from "@/lib/collaborator-development";
+import { LEARNING_COLLECTIONS } from "@/lib/learning-rhythm-model";
+import { calculateLearningRhythm } from "@/lib/learning-rhythm";
 import {
   WEEKLY_REPORT_TIME_ZONE,
   WEEKLY_REPORT_FIRST_PROTECTED_WEEK,
@@ -231,12 +234,36 @@ export async function buildWeeklyReportSnapshot(db: Db, schoolId: ObjectId, peri
     ? currentLedgers.reduce((total, ledger) => total + Number(ledger.creditedPoints || 0), 0)
     : pedagogicalEvents.reduce((total, event) => total + Number(event.points || 0), 0);
 
+  // Snapshot separado: nunca mistura colaboradores com métricas/rankings de alunos.
+  let collaboratorClasses: Document[] = [], collaboratorAssignments: Document[] = [], collaboratorActivities: Document[] = [];
+  try {
+    [collaboratorClasses, collaboratorAssignments, collaboratorActivities] = await Promise.all([
+      db.collection(COLLABORATOR_COLLECTIONS.classes).find({ schoolId, active: { $ne: false }, createdAt: { $lt: period.nextWeekStartAt } }).toArray(),
+      db.collection(COLLABORATOR_COLLECTIONS.assignments).find({ schoolId, active: { $ne: false }, createdAt: { $lt: period.nextWeekStartAt } }).toArray(),
+      db.collection(COLLABORATOR_COLLECTIONS.activities).find({ schoolId, activityAt: { $lt: period.nextWeekStartAt } }).toArray(),
+    ]);
+  } catch { /* Compatibilidade com adaptadores legados sem as novas coleções. */ }
+  const collaboratorIds = [...new Set(collaboratorClasses.flatMap((item) => item.participantIds ?? []).map(String))];
+  const collaboratorUsers = collaboratorIds.length ? await db.collection("users").find({ _id: { $in: collaboratorIds.filter(ObjectId.isValid).map((value) => new ObjectId(value)) } }, { projection: { role: 1 } }).toArray() : [];
+  let collaboratorBooks: Document[] = [];
+  try { collaboratorBooks = collaboratorAssignments.length ? await db.collection(LEARNING_COLLECTIONS.books).find({ _id: { $in: collaboratorAssignments.map((item) => item.bookId) }, schoolId }).toArray() : []; } catch { collaboratorBooks = []; }
+  const collaboratorBookMap = new Map(collaboratorBooks.map((item) => [String(item._id), item]));
+  const collaboratorRhythms = collaboratorAssignments.flatMap((assignment) => { const book = collaboratorBookMap.get(String(assignment.bookId)); return book ? [calculateLearningRhythm({ startDate: assignment.startDate, totalQuestions: book.totalQuestions, completedQuestions: assignment.completedQuestions ?? 0, studyDaysPerWeek: assignment.studyDaysPerWeek, pauses: assignment.pauses ?? [], asOf: period.weekEnd })] : []; });
+  const collaboratorDevelopmentMetrics = {
+    participants: collaboratorIds.length, educators: collaboratorUsers.filter((item) => item.role === "educator").length,
+    administrators: collaboratorUsers.filter((item) => item.role !== "educator").length,
+    booksInProgress: collaboratorRhythms.filter((item) => item.remainingQuestions > 0).length, booksCompleted: collaboratorRhythms.filter((item) => item.remainingQuestions === 0).length,
+    approvedQuestions: collaboratorActivities.reduce((total, item) => total + Number(item.approvedQuantity ?? 0), 0), pendingActivities: collaboratorActivities.filter((item) => item.status === "pending").length,
+    pointsReceived: collaboratorActivities.reduce((total, item) => total + Number(item.pointsGranted ?? 0), 0), attentionBooks: collaboratorRhythms.filter((item) => !["regular", "insufficient_data"].includes(item.status)).length,
+    aboveDesiredTerm: collaboratorRhythms.filter((item) => ["desired_exceeded", "administrative_limit_exceeded"].includes(item.status)).length, aboveAdministrativeLimit: collaboratorRhythms.filter((item) => item.status === "administrative_limit_exceeded").length,
+  };
+
   return {
     _id: reportDocumentId(schoolId.toString(), period.weekStart), companyId: school.companyId, schoolId,
     companyName: company ? name(company.tradeName || company.legalName, "Empresa") : null, schoolName: name(school.name, "Unidade"), weekStart: period.weekStart, weekEnd: period.weekEnd,
     periodStartAt: period.startAt, nextWeekStartAt: period.nextWeekStartAt, scheduledCloseAt: scheduledCloseAt(period), executedAt: now, closedAt: now, status: "CLOSED", reportVersion: WEEKLY_REPORT_VERSION, generatedBy, timezone: WEEKLY_REPORT_TIME_ZONE, scoringMode,
     summary: { activeStudents: students.length, activeEducators: educators.length, activeClasses: classes.length, pointsAwarded, specialBonusPoints, approvedQuantity: allCategoryRows.reduce((total, row) => total + row.realized, 0), pendingActivities: unitActivityCounts.pendingActivities, approvedActivities: unitActivityCounts.approvedActivities, correctedActivities: unitActivityCounts.correctedActivities, rejectedActivities: unitActivityCounts.rejectedActivities, pointsRedeemed: redemptions.reduce((total, item) => total + Number(item.pointsSpent || 0), 0), redemptions: redemptions.length, comparableStudents, evolvedStudents, maintainedStudents: statusCount("MAINTAINED"), declinedStudents: statusCount("DECLINED"), insufficientDataStudents: statusCount("INSUFFICIENT_DATA"), evolvedAmongAllActiveStudentsPercentage: percentage(evolvedStudents, students.length), evolvedAmongComparableStudentsPercentage: percentage(evolvedStudents, comparableStudents), studentsWithPedagogicalRecords: studentsWithRecords, studentsWithoutPedagogicalRecords: students.length - studentsWithRecords, pedagogicalCoveragePercentage: percentage(studentsWithRecords, students.length) },
-    studentMetrics, categoryMetrics, educatorMetrics, classMetrics,
+    studentMetrics, categoryMetrics, educatorMetrics, classMetrics, collaboratorDevelopmentMetrics,
     referralMetrics: { available: true, total: referrals.length, byStatus: countStatuses(referrals, "status"), byAttendanceStatus: countStatuses(referrals, "attendanceStatus") },
     salesMetrics: { available: false, reason: "O sistema não persiste vendas concluídas; o contato via WhatsApp não comprova uma venda." },
     redemptionMetrics: { available: true, count: redemptions.length, pointsSpent: redemptions.reduce((total, item) => total + Number(item.pointsSpent || 0), 0), items: redemptions.map((item) => ({ redemptionId: id(item._id), studentId: id(item.studentId), productId: id(item.productId), productName: name(item.productName, "Produto"), pointsSpent: Number(item.pointsSpent || 0), status: name(item.status, "unknown"), createdAt: item.createdAt })) },
