@@ -176,6 +176,10 @@ export default function SchoolPage() {
   const [showCreateClass, setShowCreateClass] = useState(false);
   const [newClassName, setNewClassName] = useState("");
   const [creatingClass, setCreatingClass] = useState(false);
+  const [editingClass, setEditingClass] = useState<ClassItem | null>(null);
+  const [editedClassName, setEditedClassName] = useState("");
+  const [savingClass, setSavingClass] = useState(false);
+  const [deletingClassId, setDeletingClassId] = useState<string | null>(null);
 
   const [admins, setAdmins] = useState<StaffMember[]>([]);
   const [educators, setEducators] = useState<StaffMember[]>([]);
@@ -866,6 +870,66 @@ export default function SchoolPage() {
       );
     } finally {
       setCreatingClass(false);
+    }
+  }
+
+  function openEditClass(classItem: ClassItem) {
+    setEditingClass(classItem);
+    setEditedClassName(classItem.name);
+  }
+
+  async function handleRenameClass(event: React.FormEvent) {
+    event.preventDefault();
+    if (!editingClass) return;
+
+    const classId = getClassId(editingClass);
+    const name = editedClassName.trim();
+    if (!classId || !name) {
+      alert("Informe um nome válido para a turma.");
+      return;
+    }
+
+    try {
+      setSavingClass(true);
+      const response = await fetch(`/api/classes/${classId}`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Não foi possível alterar o nome da turma.");
+
+      setClasses((current) =>
+        current.map((item) => getClassId(item) === classId ? { ...item, name } : item)
+      );
+      setEditingClass(null);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Não foi possível alterar o nome da turma.");
+    } finally {
+      setSavingClass(false);
+    }
+  }
+
+  async function handleDeleteClass(classItem: ClassItem) {
+    const classId = getClassId(classItem);
+    if (!classId || classItem.studentCount > 0) return;
+    if (!window.confirm(`Deseja excluir a turma ${classItem.name}? Esta ação não poderá ser desfeita.`)) return;
+
+    try {
+      setDeletingClassId(classId);
+      const response = await fetch(`/api/classes/${classId}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Não foi possível excluir a turma.");
+      setClasses((current) => current.filter((item) => getClassId(item) !== classId));
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Não foi possível excluir a turma.");
+      await loadClasses();
+    } finally {
+      setDeletingClassId(null);
     }
   }
 
@@ -1918,17 +1982,40 @@ export default function SchoolPage() {
                           </div>
                         </div>
 
-                        <span
-                          className={`shrink-0 px-2.5 py-1 rounded-full text-xs font-semibold ${
-                            classItem.active
-                              ? "bg-green-100 text-green-700"
-                              : "bg-slate-100 text-slate-500"
-                          }`}
-                        >
-                          {classItem.active
-                            ? "Ativa"
-                            : "Inativa"}
-                        </span>
+                        <div className="flex shrink-0 items-center gap-1">
+                          {canManageClasses && (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => openEditClass(classItem)}
+                                aria-label={`Alterar nome da turma ${classItem.name}`}
+                                title="Alterar nome"
+                                className="rounded-lg p-2 text-slate-400 transition hover:bg-orange-50 hover:text-orange-600"
+                              >
+                                <Pencil className="h-4 w-4" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => void handleDeleteClass(classItem)}
+                                disabled={classItem.studentCount > 0 || deletingClassId === getClassId(classItem)}
+                                aria-label={`Excluir turma ${classItem.name}`}
+                                title={classItem.studentCount > 0 ? "Para excluir esta turma, remova todos os participantes primeiro." : "Excluir turma"}
+                                className="rounded-lg p-2 text-slate-400 transition hover:bg-rose-50 hover:text-rose-600 disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:bg-transparent disabled:hover:text-slate-400"
+                              >
+                                {deletingClassId === getClassId(classItem) ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                              </button>
+                            </>
+                          )}
+                          <span
+                            className={`ml-1 px-2.5 py-1 rounded-full text-xs font-semibold ${
+                              classItem.active
+                                ? "bg-green-100 text-green-700"
+                                : "bg-slate-100 text-slate-500"
+                            }`}
+                          >
+                            {classItem.active ? "Ativa" : "Inativa"}
+                          </span>
+                        </div>
                       </div>
 
                       <div className="mt-5 space-y-3">
@@ -1941,6 +2028,12 @@ export default function SchoolPage() {
                             {classItem.studentCount}
                           </span>
                         </div>
+
+                        {classItem.studentCount > 0 && canManageClasses && (
+                          <p className="text-xs text-slate-500">
+                            Para excluir esta turma, remova todos os participantes primeiro.
+                          </p>
+                        )}
 
 
                       </div>
@@ -2367,6 +2460,35 @@ export default function SchoolPage() {
                     <Loader2 className="h-4 w-4 animate-spin" />
                   )}
 
+                  Salvar
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {editingClass && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-labelledby="edit-class-title">
+          <div className="w-full max-w-lg rounded-2xl bg-white shadow-xl">
+            <div className="flex items-center justify-between border-b border-slate-200 p-5 sm:p-6">
+              <div className="min-w-0">
+                <h2 id="edit-class-title" className="text-xl font-bold text-slate-900">Alterar nome da turma</h2>
+                <p className="mt-1 truncate text-sm text-slate-500">Nome atual: {editingClass.name}</p>
+              </div>
+              <button type="button" onClick={() => setEditingClass(null)} aria-label="Fechar" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg hover:bg-slate-100">
+                <X className="h-5 w-5 text-slate-500" />
+              </button>
+            </div>
+            <form onSubmit={handleRenameClass} className="space-y-5 p-5 sm:p-6">
+              <div>
+                <label htmlFor="edited-class-name" className="mb-1 block text-sm font-medium text-slate-700">Novo nome</label>
+                <input id="edited-class-name" value={editedClassName} onChange={(event) => setEditedClassName(event.target.value)} maxLength={100} autoFocus className="w-full rounded-xl border border-slate-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-orange-500" />
+              </div>
+              <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+                <button type="button" onClick={() => setEditingClass(null)} disabled={savingClass} className="rounded-xl border border-slate-300 px-4 py-2.5 font-medium text-slate-700 hover:bg-slate-50">Cancelar</button>
+                <button type="submit" disabled={savingClass || !editedClassName.trim()} className="inline-flex items-center justify-center gap-2 rounded-xl bg-orange-500 px-5 py-2.5 font-semibold text-white hover:bg-orange-600 disabled:opacity-50">
+                  {savingClass && <Loader2 className="h-4 w-4 animate-spin" />}
                   Salvar
                 </button>
               </div>

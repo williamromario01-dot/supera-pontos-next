@@ -13,7 +13,7 @@ test("existing Turmas interface exposes the complete collaborator administration
   for (const endpoint of ["classes", "assignments", "activities", "adjustments"]) assert.match(panel, new RegExp(`collaborator-development/${endpoint}`));
   assert.match(panel, /classes\/\$\{selected\}\/participants/);
   for (const method of ['"POST"', '"PATCH"', '"DELETE"']) assert.match(panel, new RegExp(method));
-  for (const action of ["Criar turma", "Salvar nome", "Vincular livro", "Aprovar", "Rejeitar", "Resolver", "Cancelar"]) assert.match(panel, new RegExp(action));
+  for (const action of ["Criar turma", "Salvar", "Vincular livro", "Aprovar", "Rejeitar", "Resolver", "Cancelar"]) assert.match(panel, new RegExp(action));
 });
 
 test("point correction creates a pending adjustment instead of a negative balance", async () => {

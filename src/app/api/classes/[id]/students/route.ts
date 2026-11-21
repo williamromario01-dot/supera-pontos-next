@@ -116,6 +116,7 @@ async function getAuthorizedClass(
 
   const turma = await db.collection("classes").findOne({
     _id: classId,
+    archivedAt: { $exists: false },
   });
 
   if (!turma) {
@@ -410,6 +411,7 @@ export async function POST(request: NextRequest, props: RouteContext) {
       {
         _id: classId,
         schoolId: { $in: schoolVariants },
+        archivedAt: { $exists: false },
         studentIds: { $nin: studentObjectIds },
       },
       {
@@ -505,6 +507,7 @@ export async function DELETE(request: NextRequest, props: RouteContext) {
       {
         _id: classId,
         schoolId: { $in: schoolVariants },
+        archivedAt: { $exists: false },
       },
       {
         $pull: {

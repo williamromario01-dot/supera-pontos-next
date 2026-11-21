@@ -96,6 +96,7 @@ async function getClassAndCheckPermission(
 
   const classData = await classes.findOne({
     _id: classObjectId,
+    archivedAt: { $exists: false },
   });
 
   if (!classData) {
@@ -355,6 +356,7 @@ export async function PATCH(
             $ne: classObjectId,
           },
           schoolId: classData.schoolId,
+          archivedAt: { $exists: false },
           name: {
             $regex: `^${name.replace(
               /[.*+?^${}()|[\]\\]/g,
@@ -582,16 +584,43 @@ export async function DELETE(
       return NextResponse.json(
         {
           error:
-            "Não é possível excluir uma turma que possui alunos vinculados.",
+            "Para excluir esta turma, remova todos os participantes primeiro.",
           studentCount: studentIds.length,
         },
         { status: 409 }
       );
     }
 
-    await db.collection("classes").deleteOne({
-      _id: classObjectId,
-    });
+    const archivedAt = new Date();
+    const archiveResult = await db.collection("classes").updateOne(
+      {
+        _id: classObjectId,
+        schoolId: classData.schoolId,
+        archivedAt: { $exists: false },
+        $or: [
+          { studentIds: { $exists: false } },
+          { studentIds: { $size: 0 } },
+        ],
+      },
+      {
+        $set: {
+          active: false,
+          archivedAt,
+          archivedBy: user._id,
+          updatedAt: archivedAt,
+        },
+      }
+    );
+
+    if (archiveResult.matchedCount !== 1) {
+      return NextResponse.json(
+        {
+          error:
+            "Para excluir esta turma, remova todos os participantes primeiro.",
+        },
+        { status: 409 }
+      );
+    }
 
     return NextResponse.json({
       message: "Turma excluída com sucesso.",

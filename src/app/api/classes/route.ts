@@ -86,7 +86,7 @@ export async function GET(request: NextRequest) {
     const db = client.db(DB_NAME);
     const classes = await db
       .collection("classes")
-      .find({ schoolId: schoolObjectId })
+      .find({ schoolId: schoolObjectId, archivedAt: { $exists: false } })
       .sort({ name: 1 })
       .toArray();
 
@@ -272,7 +272,7 @@ export async function POST(request: NextRequest) {
     const existingClasses = await db
       .collection("classes")
       .find(
-        { schoolId: schoolObjectId },
+        { schoolId: schoolObjectId, archivedAt: { $exists: false } },
         { projection: { name: 1 } }
       )
       .toArray();
