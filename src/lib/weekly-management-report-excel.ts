@@ -1,6 +1,7 @@
 import ExcelJS, { type CellValue, type Worksheet } from "exceljs";
 import type { EvolutionStatus, WeeklyReport } from "./weekly-management-report-types.ts";
 import { calculateVariation, immediatelyPrecedes } from "./weekly-management-report-view.ts";
+import { buildPedagogicalEvolution } from "./pedagogical-evolution.ts";
 
 const ORANGE = "FFF97316";
 const DARK = "FF0F172A";
@@ -285,6 +286,27 @@ function addAutomaticActivitySheet(workbook: ExcelJS.Workbook, report: WeeklyRep
   }))));
 }
 
+function addPedagogicalEvolutionSheet(workbook: ExcelJS.Workbook, report: WeeklyReport, previous: WeeklyReport | null) {
+  const evolution = buildPedagogicalEvolution(previous ? [report, previous] : [report]);
+  if (!evolution) return;
+  const sheet = workbook.addWorksheet("Evolução Pedagógica");
+  applyIdentity(sheet, report, 12);
+  sectionTitle(sheet, 8, "EVOLUÇÃO PEDAGÓGICA", 12);
+  sheet.getCell("A9").value = evolution.methodology;
+  sheet.mergeCells("A9:L9");
+  sheet.getCell("A9").alignment = { wrapText: true };
+  addTable(sheet, 11, [
+    { header: "Tipo", key: "type", width: 16 }, { header: "Nome", key: "name", width: 30 }, { header: "Turmas", key: "classes", width: 34 },
+    { header: "Alunos", key: "students", width: 12 }, { header: "Comparáveis", key: "comparable", width: 16 },
+    { header: "% metas anterior", key: "previous", width: 18, format: PERCENT_FORMAT }, { header: "% metas atual", key: "current", width: 18, format: PERCENT_FORMAT },
+    { header: "Variação (p.p.)", key: "delta", width: 16, format: "0.0" }, { header: "Evoluíram", key: "evolved", width: 14 },
+    { header: "Estáveis", key: "stable", width: 14 }, { header: "Queda", key: "declined", width: 14 }, { header: "Sem dados", key: "insufficient", width: 14 },
+  ], [
+    ...evolution.educators.map((item) => ({ type: "Educador", name: item.name, classes: item.classNames.join(", "), students: item.students, comparable: item.comparableStudents, previous: percentValue(item.previousGoalRate), current: percentValue(item.currentGoalRate), delta: item.deltaPercentagePoints, evolved: item.evolvedStudents, stable: item.maintainedStudents, declined: item.declinedStudents, insufficient: item.insufficientDataStudents })),
+    ...evolution.classes.map((item) => ({ type: "Turma", name: item.name, classes: item.classNames.join(", "), students: item.students, comparable: item.comparableStudents, previous: percentValue(item.previousGoalRate), current: percentValue(item.currentGoalRate), delta: item.deltaPercentagePoints, evolved: item.evolvedStudents, stable: item.maintainedStudents, declined: item.declinedStudents, insufficient: item.insufficientDataStudents })),
+  ]);
+}
+
 export function weeklyReportExcelFilename(report: WeeklyReport): string {
   const safeSchool = report.schoolName.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 60) || "Unidade";
   return `SUPERPONTOS_${safeSchool}_${report.weekStart}_a_${report.weekEnd}.xlsx`;
@@ -300,6 +322,7 @@ export async function generateWeeklyManagementReportExcel(input: { report: Weekl
   workbook.calcProperties.fullCalcOnLoad = false;
   addExecutiveSummary(workbook, report, previous);
   addDetailSheets(workbook, report);
+  addPedagogicalEvolutionSheet(workbook, report, previous);
   addAutomaticActivitySheet(workbook, report);
   if (report.attendanceMetrics.available) {
     const attendance = workbook.addWorksheet("Frequência");

@@ -65,7 +65,7 @@ test("produces a valid XLSX exclusively from an immutable v1 CLOSED snapshot", a
   assert.equal(buffer.subarray(0, 2).toString(), "PK");
   assert.deepEqual(report, original);
   const workbook = await loadWorkbook(buffer);
-  assert.deepEqual(workbook.worksheets.map((sheet) => sheet.name), ["Resumo Executivo", "Alunos", "Aluno x Categoria", "Categorias", "Educadores", "Turmas", "Indicações", "Resgates", "Estoque", "Frequência", "Vendas"]);
+  assert.deepEqual(workbook.worksheets.map((sheet) => sheet.name), ["Resumo Executivo", "Alunos", "Aluno x Categoria", "Categorias", "Educadores", "Turmas", "Indicações", "Resgates", "Estoque", "Evolução Pedagógica", "Frequência", "Vendas"]);
   assert.equal(workbook.getWorksheet("Resumo Executivo").getCell("B10").value, 0.5);
   assert.equal(workbook.getWorksheet("Resumo Executivo").getCell("B10").numFmt, "0.0%");
   assert.equal(workbook.getWorksheet("Alunos").getCell("A11").value, "Ana Histórica");
