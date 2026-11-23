@@ -11,6 +11,7 @@ function matches(doc, filter) {
       if ("$in" in value) return value.$in.some(item => equal(doc[key], item));
       if ("$ne" in value) return doc[key] !== value.$ne;
       if ("$gt" in value) return doc[key] > value.$gt;
+      if ("$exists" in value) return value.$exists === Object.hasOwn(doc, key);
     }
     return equal(doc[key], value);
   });

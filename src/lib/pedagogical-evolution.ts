@@ -2,6 +2,9 @@ import type { EvolutionStatus, StudentMetric, WeeklyReport } from "./weekly-mana
 
 export const PEDAGOGICAL_STABILITY_MARGIN_PP = 10;
 export const PEDAGOGICAL_HISTORY_WEEKS = 12;
+export const PEDAGOGICAL_MAX_HISTORY_WEEKS = 104;
+
+export type PedagogicalHistoryPoint = { weekStart: string; percentage: number | null; deltaPercentagePoints: number | null };
 
 export type AttentionStatus =
   | "EVOLUTION"
@@ -13,6 +16,7 @@ export type AttentionStatus =
   | "INSUFFICIENT_DATA";
 
 export type PedagogicalFilters = {
+  studentId?: string;
   educatorId?: string;
   classId?: string;
   categoryId?: string;
@@ -34,7 +38,8 @@ export type EvolutionStudent = {
   attentionStatus: AttentionStatus;
   declineStreak: number;
   categoryMetrics: StudentMetric["categoryMetrics"];
-  history: Array<{ weekStart: string; percentage: number | null; deltaPercentagePoints: number | null }>;
+  history: PedagogicalHistoryPoint[];
+  categoryHistory: Record<string, PedagogicalHistoryPoint[]>;
 };
 
 export type EvolutionGroup = {
@@ -51,7 +56,8 @@ export type EvolutionGroup = {
   maintainedStudents: number;
   declinedStudents: number;
   insufficientDataStudents: number;
-  history: Array<{ weekStart: string; percentage: number | null }>;
+  history: PedagogicalHistoryPoint[];
+  categoryMetrics: Array<{ categoryId: string; categoryName: string; previousGoalRate: number | null; currentGoalRate: number | null; deltaPercentagePoints: number | null }>;
 };
 
 const percent = (part: number, total: number) => total > 0 ? part / total * 100 : null;
@@ -104,7 +110,12 @@ function attentionStatus(status: EvolutionStatus, streak: number, hadPriorAttent
   return "PREVENTIVE_ATTENTION";
 }
 
-function groupMetric(id: string, name: string, classIds: string[], classNames: string[], students: EvolutionStudent[]): EvolutionGroup {
+function goalRate(students: EvolutionStudent[], categoryId?: string, previous = false) {
+  const opportunities = students.flatMap((student) => student.categoryMetrics.filter((metric) => (!categoryId || metric.categoryId === categoryId) && metric.performancePercentage !== null && metric.previousPerformancePercentage !== null));
+  return percent(opportunities.filter((metric) => cap(previous ? metric.previousPerformancePercentage : metric.performancePercentage)! >= 100).length, opportunities.length);
+}
+
+function groupMetric(id: string, name: string, classIds: string[], classNames: string[], students: EvolutionStudent[], history: PedagogicalHistoryPoint[]): EvolutionGroup {
   const comparable = students.filter((student) => student.deltaPercentagePoints !== null);
   const opportunities = students.flatMap((student) => student.categoryMetrics.filter((metric) => metric.performancePercentage !== null && metric.previousPerformancePercentage !== null));
   const currentReached = opportunities.filter((metric) => cap(metric.performancePercentage)! >= 100).length;
@@ -120,11 +131,28 @@ function groupMetric(id: string, name: string, classIds: string[], classNames: s
     maintainedStudents: comparable.filter((student) => student.evolutionStatus === "MAINTAINED").length,
     declinedStudents: comparable.filter((student) => student.evolutionStatus === "DECLINED").length,
     insufficientDataStudents: students.length - comparable.length,
-    history: [...new Set(students.flatMap((student) => student.history.map((item) => item.weekStart)))].sort().map((weekStart) => {
-      const values = students.map((student) => student.history.find((item) => item.weekStart === weekStart)?.percentage ?? null).filter((value): value is number => value !== null);
-      return { weekStart, percentage: mean(values) };
+    history,
+    categoryMetrics: [...new Map(students.flatMap((student) => student.categoryMetrics.map((metric) => [metric.categoryId, metric.categoryName] as const))).entries()].map(([categoryId, categoryName]) => {
+      const current = goalRate(students, categoryId);
+      const prior = goalRate(students, categoryId, true);
+      return { categoryId, categoryName, previousGoalRate: prior, currentGoalRate: current, deltaPercentagePoints: current === null || prior === null ? null : current - prior };
     }),
   };
+}
+
+function buildGroupHistory(reports: WeeklyReport[], educatorId?: string, classId?: string, categoryId?: string): PedagogicalHistoryPoint[] {
+  const chronological = [...reports].sort((a, b) => a.weekStart.localeCompare(b.weekStart));
+  return chronological.map((report, index) => {
+    const eligibleClasses = new Set(report.classMetrics.filter((item) => (!educatorId || item.educatorId === educatorId) && (!classId || item.classId === classId)).map((item) => item.classId));
+    const opportunities = report.studentMetrics.filter((student) => student.classIds.some((id) => eligibleClasses.has(id))).flatMap((student) => student.categoryMetrics.filter((metric) => (!categoryId || metric.categoryId === categoryId) && metric.performancePercentage !== null));
+    const percentage = percent(opportunities.filter((metric) => cap(metric.performancePercentage)! >= 100).length, opportunities.length);
+    const previousPercentage = index > 0 ? chronological[index - 1] : null;
+    if (!previousPercentage || percentage === null) return { weekStart: report.weekStart, percentage, deltaPercentagePoints: null };
+    const priorClasses = new Set(previousPercentage.classMetrics.filter((item) => (!educatorId || item.educatorId === educatorId) && (!classId || item.classId === classId)).map((item) => item.classId));
+    const priorOpportunities = previousPercentage.studentMetrics.filter((student) => student.classIds.some((id) => priorClasses.has(id))).flatMap((student) => student.categoryMetrics.filter((metric) => (!categoryId || metric.categoryId === categoryId) && metric.performancePercentage !== null));
+    const priorRate = percent(priorOpportunities.filter((metric) => cap(metric.performancePercentage)! >= 100).length, priorOpportunities.length);
+    return { weekStart: report.weekStart, percentage, deltaPercentagePoints: priorRate === null ? null : percentage - priorRate };
+  });
 }
 
 export function buildPedagogicalEvolution(reports: WeeklyReport[], filters: PedagogicalFilters = {}) {
@@ -138,6 +166,7 @@ export function buildPedagogicalEvolution(reports: WeeklyReport[], filters: Peda
   const search = filters.search?.trim().toLocaleLowerCase("pt-BR") ?? "";
 
   const students: EvolutionStudent[] = current.studentMetrics.flatMap((student) => {
+    if (filters.studentId && student.studentId !== filters.studentId) return [];
     const scopedClassIds = student.classIds.filter((classId) => allowedClassIds.has(classId));
     if ((filters.educatorId || filters.classId) && scopedClassIds.length === 0) return [];
     if (search && !student.studentName.toLocaleLowerCase("pt-BR").includes(search)) return [];
@@ -160,12 +189,18 @@ export function buildPedagogicalEvolution(reports: WeeklyReport[], filters: Peda
       previousPercentage, currentPercentage, deltaPercentagePoints: delta, evolutionStatus,
       attentionStatus: attentionStatus(evolutionStatus, streak, hadPriorAttention), declineStreak: streak,
       categoryMetrics: categories,
-      history: ordered.slice(0, PEDAGOGICAL_HISTORY_WEEKS).reverse().map((report) => {
+      history: ordered.slice().reverse().map((report) => {
         const historical = report.studentMetrics.find((item) => item.studentId === student.studentId);
         const percentage = studentPercentage(historical, filters.categoryId);
         const prior = historical ? studentPreviousPercentage(historical, filters.categoryId) : null;
         return { weekStart: report.weekStart, percentage, deltaPercentagePoints: percentage === null || prior === null ? null : percentage - prior };
       }),
+      categoryHistory: Object.fromEntries(current.categoryMetrics.map((category) => [category.categoryId, ordered.slice().reverse().map((report) => {
+        const historical = report.studentMetrics.find((item) => item.studentId === student.studentId);
+        const percentage = studentPercentage(historical, category.categoryId);
+        const prior = historical ? studentPreviousPercentage(historical, category.categoryId) : null;
+        return { weekStart: report.weekStart, percentage, deltaPercentagePoints: percentage === null || prior === null ? null : percentage - prior };
+      })])),
     };
     if (filters.situation && filters.situation !== "ALL" && row.attentionStatus !== filters.situation) return [];
     return [row];
@@ -174,10 +209,11 @@ export function buildPedagogicalEvolution(reports: WeeklyReport[], filters: Peda
   const educators = current.educatorMetrics.flatMap((educator) => {
     if (filters.educatorId && educator.educatorId !== filters.educatorId) return [];
     const members = students.filter((student) => student.educatorIds.includes(educator.educatorId));
-    return [groupMetric(educator.educatorId, educator.educatorName, educator.classIds, educator.classNames, members)];
+    const scopedClasses = classes.filter((item) => item.educatorId === educator.educatorId && (!filters.classId || item.classId === filters.classId));
+    return [groupMetric(educator.educatorId, educator.educatorName, scopedClasses.map((item) => item.classId), scopedClasses.map((item) => item.className), members, buildGroupHistory(ordered, educator.educatorId, filters.classId, filters.categoryId))];
   }).sort((a, b) => (b.deltaPercentagePoints ?? -Infinity) - (a.deltaPercentagePoints ?? -Infinity));
 
-  const classMetrics = classes.filter((item) => allowedClassIds.has(item.classId)).map((item) => groupMetric(item.classId, item.className, [item.classId], [item.className], students.filter((student) => student.classIds.includes(item.classId))));
+  const classMetrics = classes.filter((item) => allowedClassIds.has(item.classId)).map((item) => groupMetric(item.classId, item.className, [item.classId], [item.className], students.filter((student) => student.classIds.includes(item.classId)), buildGroupHistory(ordered, undefined, item.classId, filters.categoryId)));
   const categories = current.categoryMetrics.map((item) => ({ id: item.categoryId, name: item.categoryName }));
   const comparable = students.filter((student) => student.deltaPercentagePoints !== null);
   const positive = comparable.filter((student) => (student.deltaPercentagePoints ?? 0) > 0);

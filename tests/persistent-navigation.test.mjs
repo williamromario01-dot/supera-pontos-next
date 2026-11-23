@@ -84,6 +84,6 @@ test("overflow arrows represent the real hidden direction at start, middle and e
 test("educators keep unit evolution access without gaining closed reports", async () => {
   const management = await read("src/components/ManagementReportsClient.tsx");
   assert.match(management, /if \(currentUser\.role === "educator"\) return/);
-  assert.match(management, /relatórios semanais fechados permanecem disponíveis apenas para administradores/);
+  assert.match(management, /relatórios semanais fechados permanecem disponíveis apenas para administradores/i);
   assert.match(management, /\["admin", "educator"\]\.includes\(user\.role\)/);
 });
