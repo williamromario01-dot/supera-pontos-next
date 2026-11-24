@@ -6,6 +6,7 @@ import { useState, type ReactNode } from "react";
 import type { ReportListItem, WeeklyReport } from "@/lib/weekly-management-report-types";
 import BookTrackingPanel from "@/components/BookTrackingPanel";
 import PedagogicalEvolutionDashboard from "@/components/PedagogicalEvolutionDashboard";
+import AttendanceMonitoring from "@/components/AttendanceMonitoring";
 import { calculateVariation, immediatelyPrecedes, isoWeekNumber } from "@/lib/weekly-management-report-view";
 
 const number = new Intl.NumberFormat("pt-BR");
@@ -90,7 +91,7 @@ function AutomaticActivitySection({ report }: { report: WeeklyReport }) {
 }
 
 export function WeeklyManagementReportView({ report, previous, history, schoolId, detailMode = false }: { report: WeeklyReport | null; previous: WeeklyReport | null; history: ReportListItem[]; schoolId?: string; detailMode?: boolean }) {
-  if (!report) return <div className="space-y-6">{!detailMode && <BookTrackingPanel schoolId={schoolId} />}<EmptyState /></div>;
+  if (!report) return <div className="space-y-6">{!detailMode && <AttendanceMonitoring schoolId={schoolId} />}{!detailMode && <BookTrackingPanel schoolId={schoolId} />}<EmptyState /></div>;
   const comparablePrevious = previous && immediatelyPrecedes(previous.weekStart, report.weekStart) ? previous : null;
   const goalReached = report.studentMetrics.filter((student) => student.goalReached === true).length;
   const previousGoalReached = comparablePrevious?.studentMetrics.filter((student) => student.goalReached === true).length;
@@ -106,6 +107,7 @@ export function WeeklyManagementReportView({ report, previous, history, schoolId
   const referralLabels: Record<string, string> = { pending: "Novas", contacted: "Em contato", approved: "Aceitas", scheduled: "Agendadas", rejected: "Não convertidas" };
 
   return <div className="space-y-6">
+    {!detailMode && <AttendanceMonitoring schoolId={schoolId} />}
     {!detailMode && <BookTrackingPanel schoolId={schoolId} />}
     <section className="overflow-hidden rounded-3xl bg-slate-900 p-6 text-white shadow-xl sm:p-8"><div className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between"><div><p className="text-xs font-black uppercase tracking-[0.2em] text-orange-400">Relatório semanal</p><h1 className="mt-2 text-3xl font-black sm:text-4xl">Semana {isoWeekNumber(report.weekStart)}</h1><p className="mt-2 text-sm text-slate-300">{date(report.weekStart)} a {date(report.weekEnd)}</p><p className="mt-4 text-sm text-slate-400">{report.schoolName}{report.companyName ? ` · ${report.companyName}` : ""}</p><ExcelDownloadButton reportId={report._id} schoolId={schoolId} /></div><dl className="grid grid-cols-2 gap-3 text-sm sm:min-w-72"><div className="rounded-2xl bg-white/10 p-4"><dt className="text-slate-400">Fechado em</dt><dd className="mt-1 font-bold">{dateTime(report.closedAt)}</dd></div><div className="rounded-2xl bg-white/10 p-4"><dt className="text-slate-400">Status</dt><dd className="mt-1 font-bold text-emerald-300">Fechado</dd></div><div className="col-span-2 text-right text-xs text-slate-500">Versão do relatório: {report.reportVersion}</div></dl></div></section>
 

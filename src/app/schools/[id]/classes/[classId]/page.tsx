@@ -45,6 +45,13 @@ interface ClassData {
   availableStudents: Student[];
 }
 
+interface FrequencyAlertItem {
+  studentId: string;
+  consecutiveAbsences: number;
+  annualAlert: "NORMAL" | "PREVENTIVE" | "ATTENTION" | "PRIORITY";
+  allowanceRemaining: number;
+}
+
 function getRouteParam(
   value: string | string[] | undefined
 ): string {
@@ -90,6 +97,8 @@ export default function ClassManagementPage() {
   const [categoriesError, setCategoriesError] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [frequencyAlerts, setFrequencyAlerts] =
+    useState<Record<string, FrequencyAlertItem>>({});
   const [currentRole, setCurrentRole] = useState<string>();
 
   // ============================================================
@@ -230,6 +239,10 @@ export default function ClassManagementPage() {
     }
 
     void loadClass();
+    fetch(`/api/classes/${encodeURIComponent(classId)}/attendance?schoolId=${encodeURIComponent(schoolId)}&alerts=1`, { credentials: "include", cache: "no-store" })
+      .then(async (response) => response.ok ? response.json() : { students: [] })
+      .then((body) => setFrequencyAlerts(Object.fromEntries((body.students || []).map((item: FrequencyAlertItem) => [item.studentId, item]))))
+      .catch(() => setFrequencyAlerts({}));
     fetch("/api/auth/me", { credentials: "include" }).then((response) => response.ok ? response.json() : null).then((body) => setCurrentRole(body?.user?.role)).catch(() => undefined);
   }, [classId, schoolId, router, loadClass]);
 
@@ -1139,6 +1152,16 @@ export default function ClassManagementPage() {
                                 </span>
 
                               </div>
+
+                              {frequencyAlerts[student.id]?.consecutiveAbsences === 1 && (
+                                <p className="ml-6 mt-1 text-xs font-semibold text-red-600">1 falta consecutiva</p>
+                              )}
+                              {(frequencyAlerts[student.id]?.consecutiveAbsences || 0) >= 2 && (
+                                <p className="ml-6 mt-1 text-xs font-black uppercase text-red-700">PONTO DE ATENÇÃO — {frequencyAlerts[student.id].consecutiveAbsences} faltas consecutivas</p>
+                              )}
+                              {frequencyAlerts[student.id] && frequencyAlerts[student.id].annualAlert !== "NORMAL" && (
+                                <p className="ml-6 mt-1 text-xs font-semibold text-amber-700">Alerta anual: {frequencyAlerts[student.id].annualAlert === "PREVENTIVE" ? "preventivo" : frequencyAlerts[student.id].annualAlert === "ATTENTION" ? "limite atingido" : "limite excedido"} · saldo {frequencyAlerts[student.id].allowanceRemaining}</p>
+                              )}
 
                               <span className="block text-xs text-gray-500 mt-1 ml-6">
                                 Clique para pontuação rápida

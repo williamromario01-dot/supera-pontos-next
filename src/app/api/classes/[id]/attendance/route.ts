@@ -6,6 +6,7 @@ import { authenticateRequest, hasSchoolAccess } from "@/lib/auth";
 import { getOperationalAccessForAuth, subscriptionPastDueResponseForAccess } from "@/lib/subscription-access";
 import { isSchoolArchived } from "@/lib/schools";
 import { validAttendanceDate, validatePresentStudentIds } from "@/lib/attendance-core";
+import { buildFrequencyMonitoring, type FrequencyConfiguration } from "@/lib/attendance-monitoring";
 import { isProtectedWeeklyDate } from "@/lib/weekly-management-report-core";
 
 type Context = { params: Promise<{ id: string }> };
@@ -37,7 +38,22 @@ export async function GET(request: NextRequest, context: Context) {
   try {
     const result = await access(request, context);
     if ("error" in result) return result.error;
-    const { db, classData, schoolId } = result;
+    const { db, classData, schoolId, auth, school } = result;
+    if (request.nextUrl.searchParams.get("alerts") === "1") {
+      if (classData.classType === "collaborators") return NextResponse.json({ error: "Alertas de frequência não se aplicam a turmas de colaboradores." }, { status: 400 });
+      if (auth.role === "educator" && String(classData.educatorId || "") !== String(auth.userId)) return NextResponse.json({ error: "Alertas disponíveis somente nas turmas atribuídas ao educador." }, { status: 403 });
+      const year = Number(request.nextUrl.searchParams.get("year") || new Date().getFullYear());
+      const configurations = (Array.isArray(school.frequencyConfigurations) ? school.frequencyConfigurations : []) as FrequencyConfiguration[];
+      const configuration = configurations.find((item) => item.year === year);
+      if (!configuration) return NextResponse.json({ configuration: null, students: [], message: "Frequência anual ainda não configurada." });
+      const studentIds = (Array.isArray(classData.studentIds) ? classData.studentIds : []).map(String).filter(ObjectId.isValid);
+      const [records, students] = await Promise.all([
+        db.collection("attendanceSessions").find({ schoolId: { $in: [schoolId, String(schoolId)] }, classId: { $in: [classData._id, String(classData._id)] }, date: { $gte: `${year}-01-01`, $lte: `${year}-12-31` }, $or: [{ status: "FINALIZED" }, { status: { $exists: false } }] }).toArray(),
+        db.collection("users").find({ _id: { $in: studentIds.map((id: string) => new ObjectId(id)) }, schoolId: { $in: [schoolId, String(schoolId)] }, role: "student" }).project({ name: 1, enrollmentDate: 1, enrolledAt: 1, admissionDate: 1 }).sort({ name: 1 }).toArray(),
+      ]);
+      const report = buildFrequencyMonitoring({ configuration, sessions: records.map((item) => ({ ...item, classId: String(item.classId) })) as never, classes: [{ id: String(classData._id), name: String(classData.name), studentIds }], students: students.map((item) => ({ id: String(item._id), name: String(item.name), enrollmentDate: item.enrollmentDate || item.enrolledAt || item.admissionDate })) });
+      return NextResponse.json({ configuration, students: report.students.map(({ history, ...student }) => ({ ...student, recentHistory: history.slice(-8) })) }, { headers: { "Cache-Control": "no-store" } });
+    }
     const date = request.nextUrl.searchParams.get("date");
     const session = request.nextUrl.searchParams.get("session")?.trim();
     if (!validAttendanceDate(date) || !session || session.length > 80) return NextResponse.json({ error: "Informe data válida e identificação da sessão." }, { status: 400 });
