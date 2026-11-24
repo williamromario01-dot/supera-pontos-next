@@ -14,6 +14,7 @@ import {
   type WeeklyScoreLedger,
 } from "./activity-persistence-types.ts";
 import { LEARNING_COLLECTIONS } from "./learning-rhythm-model.ts";
+import { categoryBelongsToSchool, isProtectedLegacyCategory } from "./category-scope.ts";
 import {
   ActivityPersistenceConflictError,
   ActivityPersistenceScopeError,
@@ -74,6 +75,16 @@ type ServiceDb = Pick<Db, "collection">;
 
 function sameId(left: unknown, right: ObjectId): boolean {
   return left instanceof ObjectId ? left.equals(right) : String(left) === right.toHexString();
+}
+
+function idVariants(id: ObjectId): [ObjectId, ObjectId] {
+  return [id, id.toHexString() as unknown as ObjectId];
+}
+
+function normalizeId(value: unknown, field: string): ObjectId {
+  if (value instanceof ObjectId) return value;
+  if (typeof value === "string" && ObjectId.isValid(value)) return new ObjectId(value);
+  throw new ActivityPersistenceScopeError(`${field} is not a valid identifier`);
 }
 
 function requireMatched(result: { matchedCount: number }, message: string): void {
@@ -218,8 +229,15 @@ export async function processActivityApprovalInTransaction(
     return resultFromAudit(duplicate, ledger, Number(student.points ?? 0));
   }
 
-  const activity = await activities.findOne({ _id: input.activityId, schoolId: { $in: [input.schoolId, input.schoolId.toHexString() as unknown as ObjectId] } }, { session });
-  if (!activity) throw new ActivityApprovalNotFoundError("activity was not found in the selected school");
+  const storedActivity = await activities.findOne({ _id: input.activityId, schoolId: { $in: idVariants(input.schoolId) } }, { session });
+  if (!storedActivity) throw new ActivityApprovalNotFoundError("activity was not found in the selected school");
+  const activity: ActivityRecord = {
+    ...storedActivity,
+    companyId: normalizeId(storedActivity.companyId, "activity companyId"),
+    schoolId: normalizeId(storedActivity.schoolId, "activity schoolId"),
+    studentId: normalizeId(storedActivity.studentId, "activity studentId"),
+    categoryId: normalizeId(storedActivity.categoryId, "activity categoryId"),
+  };
   authorize(input, activity);
   if (activity.revision !== input.expectedActivityRevision) {
     throw new ActivityPersistenceConflictError("activity was concurrently modified");
@@ -235,19 +253,29 @@ export async function processActivityApprovalInTransaction(
 
   const student = await users.findOne({
     _id: activity.studentId,
-    companyId: activity.companyId,
-    schoolId: input.schoolId,
+    companyId: { $in: idVariants(activity.companyId) },
+    schoolId: { $in: idVariants(input.schoolId) },
     role: "student",
     active: { $ne: false },
   }, { session });
   if (!student) throw new ActivityPersistenceScopeError("student is not active in the activity school and company");
-  const category = await categories.findOne({ _id: activity.categoryId, schoolId: { $in: [input.schoolId, input.schoolId.toHexString()] }, active: { $ne: false } }, { session });
-  if (!category) throw new ActivityPersistenceScopeError("category is not active in the activity school");
+  const storedCategory = await categories.findOne({ _id: { $in: idVariants(activity.categoryId) } }, { session });
+  if (!storedCategory || !categoryBelongsToSchool(storedCategory, input.schoolId)) {
+    throw new ActivityPersistenceScopeError("category is outside the activity school");
+  }
+  const categoryOverride = isProtectedLegacyCategory(storedCategory)
+    ? await db.collection("categoryOverrides").findOne({
+      schoolId: { $in: idVariants(input.schoolId) },
+      categoryId: { $in: idVariants(activity.categoryId) },
+    }, { session })
+    : null;
+  const category: Document = { ...storedCategory, ...categoryOverride, _id: storedCategory._id };
+  if (category.active === false) throw new ActivityPersistenceScopeError("category is inactive for the activity school");
 
   let ledger = await ledgers.findOne({
-    schoolId: input.schoolId,
-    studentId: activity.studentId,
-    categoryId: activity.categoryId,
+    schoolId: { $in: idVariants(input.schoolId) },
+    studentId: { $in: idVariants(activity.studentId) },
+    categoryId: { $in: idVariants(activity.categoryId) },
     weekStart: activity.weekStart,
   }, { session });
   if (!ledger) {
@@ -335,8 +363,13 @@ export async function processActivityApprovalInTransaction(
     };
   }
 
-  requireMatched(await activities.updateOne(plan.activityFilter, plan.activityUpdate, { session }), "activity was concurrently modified");
-  requireMatched(await ledgers.updateOne(plan.ledgerFilter, {
+  requireMatched(await activities.updateOne({ ...plan.activityFilter, schoolId: { $in: idVariants(input.schoolId) } }, plan.activityUpdate, { session }), "activity was concurrently modified");
+  requireMatched(await ledgers.updateOne({
+    ...plan.ledgerFilter,
+    schoolId: { $in: idVariants(input.schoolId) },
+    studentId: { $in: idVariants(activity.studentId) },
+    categoryId: { $in: idVariants(activity.categoryId) },
+  }, {
     ...plan.ledgerUpdate,
     $set: { ...(plan.ledgerUpdate.$set as Document), creditedPoints: plan.nextLedger.calculatedPoints },
   }, { session }), "weekly ledger was concurrently modified");
@@ -359,7 +392,7 @@ export async function processActivityApprovalInTransaction(
       idempotencyKey: input.idempotencyKey.trim(),
       compensating: pointsDifference < 0,
     }, { session });
-    const balanceFilter: Document = { _id: activity.studentId, companyId: activity.companyId, schoolId: input.schoolId, role: "student", active: { $ne: false } };
+    const balanceFilter: Document = { _id: activity.studentId, companyId: { $in: idVariants(activity.companyId) }, schoolId: { $in: idVariants(input.schoolId) }, role: "student", active: { $ne: false } };
     if (pointsDifference < 0) balanceFilter.points = { $gte: -pointsDifference };
     requireMatched(await users.updateOne(balanceFilter, { $inc: { points: pointsDifference }, $set: { updatedAt: now } }, { session }), "student balance changed or is insufficient");
   }

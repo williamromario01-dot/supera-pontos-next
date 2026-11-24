@@ -182,8 +182,13 @@ try {
   for (const [quantity, pageReached] of [[5, 50], [4, 90], [2, 120]]) {
     await student.page.getByLabel("Quantidade realizada").fill(String(quantity));
     await student.page.getByLabel("Página alcançada").fill(String(pageReached));
+    const submissionResponse = student.page.waitForResponse((response) => response.url().endsWith("/api/activity-submissions") && response.request().method() === "POST");
     await student.page.getByRole("button", { name: /Enviar para aprovação/i }).click();
+    const response = await submissionResponse;
+    if (!response.ok()) throw new Error(`Activity submission failed: ${response.status()} ${await response.text()}`);
     await student.page.getByRole("status").waitFor({ state: "visible" });
+    await student.page.getByRole("button", { name: /Enviar para aprovação/i }).waitFor({ state: "visible" });
+    await student.page.waitForFunction(() => [...document.querySelectorAll("button")].some((button) => /Enviar para aprovação/i.test(button.textContent ?? "") && !button.disabled));
   }
   report.actions.push("student submitted three activities through the rendered form");
   await capture(student.page, "student", "desktop", devices.desktop, studentPanel);
@@ -196,6 +201,7 @@ try {
   const educatorPanel = educator.page.getByRole("heading", { name: "Aprovações pendentes" });
   await educatorPanel.waitFor({ state: "visible", timeout: 60_000 });
   const pending = educator.page.locator("article").filter({ has: educator.page.getByRole("button", { name: "Aprovar" }) });
+  await waitForCount(pending, 3);
   if (await pending.count() !== 3) throw new Error(`Expected 3 pending activities, found ${await pending.count()}.`);
   await capture(educator.page, "educator", "desktop", devices.desktop, educatorPanel);
   await pending.first().getByRole("button", { name: "Aprovar" }).click();
@@ -228,7 +234,7 @@ try {
     await login(session.page, "Educador", "educador.visual@homolog.local");
     await navigate(session.page, `${baseURL}/points`);
     const heading = session.page.getByRole("heading", { name: "Aprovações pendentes" });
-    await session.page.getByRole("heading", { name: "Registrar atividade para aluno" }).waitFor({ state: "visible" });
+    await session.page.getByRole("heading", { name: "Registrar atividade realizada em sala" }).waitFor({ state: "visible" });
     await capture(session.page, "educator", device, viewport, heading);
     if (session.finish().length) throw new Error(`Critical browser error in educator ${device}.`);
     await session.context.close();

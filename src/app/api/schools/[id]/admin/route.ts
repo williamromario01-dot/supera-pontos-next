@@ -82,7 +82,7 @@ export async function GET(request: NextRequest, props: { params: Promise<{ id: s
       );
     }
 
-    if (user.role !== "super_admin" && user.role !== "company_admin") {
+    if (!["super_admin", "company_admin", "admin"].includes(String(user.role))) {
       return NextResponse.json(
         { error: "Acesso n?o autorizado para consultar este administrador." },
         { status: 403 }
@@ -118,13 +118,16 @@ export async function GET(request: NextRequest, props: { params: Promise<{ id: s
     ) {
       return NextResponse.json({ error: "Unidade n?o encontrada." }, { status: 404 });
     }
+    if (user.role === "admin" && String(user.schoolId) !== String(schoolId)) {
+      return NextResponse.json({ error: "Unidade n?o encontrada." }, { status: 404 });
+    }
 
     const adminDocuments = await db
       .collection("users")
       .find(
         {
           role: "admin",
-          schoolId,
+          schoolId: { $in: [schoolId, schoolId.toHexString()] },
         },
         {
           projection: {
@@ -164,7 +167,7 @@ export async function POST(request: NextRequest, props: { params: Promise<{ id: 
       );
     }
 
-    if (user.role !== "super_admin" && user.role !== "company_admin") {
+    if (!["super_admin", "company_admin", "admin"].includes(String(user.role))) {
       return NextResponse.json(
         { error: "Acesso n?o autorizado para criar administradores." },
         { status: 403 }
@@ -244,6 +247,9 @@ export async function POST(request: NextRequest, props: { params: Promise<{ id: 
     ) {
       return NextResponse.json({ error: "Unidade n?o encontrada." }, { status: 404 });
     }
+    if (user.role === "admin" && String(user.schoolId) !== String(schoolId)) {
+      return NextResponse.json({ error: "Unidade n?o encontrada." }, { status: 404 });
+    }
 
     if (school.active === false) {
       return NextResponse.json(
@@ -265,7 +271,7 @@ export async function POST(request: NextRequest, props: { params: Promise<{ id: 
 
     const adminCount = await db.collection("users").countDocuments({
       role: "admin",
-      schoolId,
+      schoolId: { $in: [schoolId, schoolId.toHexString()] },
     });
 
     if (adminCount >= MAX_ADMINS_PER_SCHOOL) {

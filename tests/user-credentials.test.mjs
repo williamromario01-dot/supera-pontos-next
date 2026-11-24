@@ -40,6 +40,7 @@ function fixture(actorRole = "company_admin", targetRole = "admin", { otherCompa
     return {
       findOne: async filter => clone(state[name].find(row => matches(row, filter)) ?? null),
       find: filter => ({ sort() { return this; }, toArray: async () => clone(state[name].filter(row => matches(row, filter))) }),
+      countDocuments: async filter => state[name].filter(row => matches(row, filter)).length,
       listIndexes: () => ({ toArray: async () => indexesAvailable ? name === "companies" ? [{ name: "uniq_company_cnpj", unique: true, key: { cnpj: 1 }, partialFilterExpression: { cnpj: { $type: "string" } } }] : [{ name: "unique_email", unique: true, key: { email: 1 } }] : [] }),
       updateOne: async (filter, update) => {
         const row = state[name].find(row => matches(row, filter));
@@ -64,6 +65,7 @@ function fixture(actorRole = "company_admin", targetRole = "admin", { otherCompa
     state: () => state, actor, target, db, mocks, request, hashCalls,
     withoutIndexes: () => { indexesAvailable = false; },
     patch: (body, route = genericRoute, company = id(10)) => loadRoute(route, mocks).PATCH(request(body), { params: Promise.resolve({ id: route === passwordRoute ? String(company) : String(target._id), userId: String(target._id) }) }),
+    removeAdmin: () => loadRoute("src/app/api/admins/[id]/route.ts", mocks).DELETE(request(null, "DELETE"), { params: Promise.resolve({ id: String(target._id) }) }),
     list: () => loadRoute("src/app/api/users/credentials/route.ts", mocks).GET(request(null, "GET")),
   };
 }
@@ -217,6 +219,28 @@ test("legacy name/activation capability is preserved without giving it to new ac
   assert.equal((await response.json()).administrator.name, "Updated Name");
   const company = fixture();
   assert.equal((await company.patch({ name: "New Name", email: "updated@example.test" }, "src/app/api/admins/[id]/route.ts")).status, 400);
+});
+test("unit admin can rename and revoke another admin only inside the same school", async () => {
+  const f = fixture("admin", "admin");
+  const renamed = await f.patch({ name: "Nome atualizado" }, "src/app/api/admins/[id]/route.ts");
+  assert.equal(renamed.status, 200, JSON.stringify(await renamed.json()));
+  assert.equal(f.state().users[1].name, "Nome atualizado");
+  const removed = await f.removeAdmin();
+  assert.equal(removed.status, 200, JSON.stringify(await removed.json()));
+  assert.equal(f.state().users[1].active, false);
+  assert.equal(f.state().sessions.some(row => equal(row.userId, f.target._id)), false);
+
+  const foreign = fixture("admin", "admin", { otherSchool: true });
+  assert.equal((await foreign.patch({ name: "Bloqueado" }, "src/app/api/admins/[id]/route.ts")).status, 404);
+  assert.equal((await foreign.removeAdmin()).status, 404);
+});
+test("unit admin cannot revoke the last active administrator", async () => {
+  const f = fixture("admin", "admin");
+  f.state().users[0].active = false;
+  const response = await f.removeAdmin();
+  assert.equal(response.status, 409);
+  assert.match((await response.json()).error, /pelo menos um administrador ativo/);
+  assert.equal(f.state().users[1].active, true);
 });
 test("legacy operational guard remains enforced for the legacy credential paths", async () => {
   const f = fixture();

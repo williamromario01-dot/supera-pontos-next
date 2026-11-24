@@ -46,12 +46,13 @@ export function serializeActivity(row: object) {
 
 export function activityRouteError(error: unknown) {
   if (error instanceof ActivityPersistenceValidationError) return NextResponse.json({ error: error.message }, { status: 400 });
-  if (error instanceof ActivitySubmissionAuthorizationError || error instanceof ActivityPersistenceScopeError) return NextResponse.json({ error: "Operação não autorizada." }, { status: 403 });
-  if (error instanceof ActivitySubmissionNotFoundError) return NextResponse.json({ error: "Registro não encontrado." }, { status: 404 });
+  if (error instanceof ActivitySubmissionAuthorizationError) return NextResponse.json({ error: "Usuário sem permissão para esta atividade." }, { status: 403 });
+  if (error instanceof ActivityPersistenceScopeError) return NextResponse.json({ error: "A atividade não pertence à escola selecionada." }, { status: 403 });
+  if (error instanceof ActivitySubmissionNotFoundError) return NextResponse.json({ error: "Atividade não encontrada." }, { status: 404 });
   if (error instanceof ActivitySubmissionClosedWeekError || error instanceof ActivityPersistenceConflictError) return NextResponse.json({ error: error.message }, { status: 409 });
   if (error instanceof ActivitySubmissionModeError) return NextResponse.json({ error: "A escola utiliza o modo tradicional de pontuaÃ§Ã£o." }, { status: 409 });
-  if (error instanceof ActivityApprovalAuthorizationError) return NextResponse.json({ error: "OperaÃ§Ã£o nÃ£o autorizada." }, { status: 403 });
-  if (error instanceof ActivityApprovalNotFoundError) return NextResponse.json({ error: "Registro nÃ£o encontrado." }, { status: 404 });
+  if (error instanceof ActivityApprovalAuthorizationError) return NextResponse.json({ error: "Usuário sem permissão para esta atividade." }, { status: 403 });
+  if (error instanceof ActivityApprovalNotFoundError) return NextResponse.json({ error: "Atividade não encontrada." }, { status: 404 });
   if (error instanceof ActivityApprovalClosedWeekError || error instanceof ActivityApprovalDisabledError) return NextResponse.json({ error: error.message }, { status: 409 });
   console.error("Activity submission error", error);
   return NextResponse.json({ error: "Não foi possível processar a atividade." }, { status: 500 });

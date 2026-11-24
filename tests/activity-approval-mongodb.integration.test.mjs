@@ -234,6 +234,23 @@ test("simultaneous submissions are idempotent and permissions isolate schools an
   assert.equal((await db.collection("users").findOne({ _id: ids.studentId })).points, 0);
 });
 
+test("legacy string identifiers complete an approval transaction without duplicate credit", async () => {
+  const ids = await seedSchool();
+  const submitted = await submitActivity(client, db, submission(ids));
+  await Promise.all([
+    db.collection("activityRecords").updateOne({ _id: submitted.activity._id }, { $set: {
+      companyId: String(ids.companyId), schoolId: String(ids.schoolId),
+      studentId: String(ids.studentId), categoryId: String(ids.categoryId),
+    } }),
+    db.collection("users").updateOne({ _id: ids.studentId }, { $set: { companyId: String(ids.companyId), schoolId: String(ids.schoolId) } }),
+    db.collection("categories").updateOne({ _id: ids.categoryId }, { $set: { schoolId: String(ids.schoolId) } }),
+  ]);
+  const result = await processActivityApproval(client, db, approval(ids, submitted.activity._id, { idempotencyKey: "legacy-string-approval" }));
+  assert.equal(result.pointsDifference, 100);
+  assert.equal((await db.collection("users").findOne({ _id: ids.studentId })).points, 100);
+  assert.equal(await db.collection("pointEvents").countDocuments({ activityRecordId: submitted.activity._id }), 1);
+});
+
 test("concurrent approval, idempotency, corrections and insufficient-balance pendency stay consistent", async () => {
   const ids = await seedSchool();
   const submitted = await submitActivity(client, db, submission(ids));

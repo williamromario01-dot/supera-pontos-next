@@ -64,7 +64,7 @@ export async function PATCH(request: NextRequest, props: { params: Promise<{ id:
       );
     }
 
-    if (!["super_admin", "company_admin"].includes(authenticatedUser.role)) {
+    if (!["super_admin", "company_admin", "admin"].includes(authenticatedUser.role)) {
       return NextResponse.json(
         {
           error:
@@ -106,6 +106,10 @@ export async function PATCH(request: NextRequest, props: { params: Promise<{ id:
       );
     }
     if (authenticatedUser.role === "company_admin" && (!authenticatedUser.companyId || String(administrator.companyId) !== String(authenticatedUser.companyId))) {
+      return NextResponse.json({ error: "Administrador não encontrado." }, { status: 404 });
+    }
+
+    if (authenticatedUser.role === "admin" && String(administrator.schoolId) !== String(authenticatedUser.schoolId)) {
       return NextResponse.json({ error: "Administrador não encontrado." }, { status: 404 });
     }
 
@@ -158,7 +162,9 @@ export async function PATCH(request: NextRequest, props: { params: Promise<{ id:
       }
 
       if (body.active === false) {
-        const activeAdmins = await users.countDocuments({ role: "admin", schoolId: administrator.schoolId, active: { $ne: false } });
+        const administratorSchoolId = String(administrator.schoolId);
+        const schoolVariants = ObjectId.isValid(administratorSchoolId) ? [new ObjectId(administratorSchoolId), administratorSchoolId] : [administrator.schoolId];
+        const activeAdmins = await users.countDocuments({ role: "admin", schoolId: { $in: schoolVariants }, active: { $ne: false } });
         if (activeAdmins <= 1) return NextResponse.json({ error: "A unidade deve manter pelo menos um administrador ativo." }, { status: 409 });
       }
       updateData.active = body.active;
@@ -256,7 +262,7 @@ export async function DELETE(request: NextRequest, props: { params: Promise<{ id
       );
     }
 
-    if (!["super_admin", "company_admin"].includes(authenticatedUser.role)) {
+    if (!["super_admin", "company_admin", "admin"].includes(authenticatedUser.role)) {
       return NextResponse.json(
         {
           error:
@@ -300,7 +306,15 @@ export async function DELETE(request: NextRequest, props: { params: Promise<{ id
     if (authenticatedUser.role === "company_admin" && (!authenticatedUser.companyId || String(administrator.companyId) !== String(authenticatedUser.companyId))) {
       return NextResponse.json({ error: "Administrador não encontrado." }, { status: 404 });
     }
-    const activeAdmins = await users.countDocuments({ role: "admin", schoolId: administrator.schoolId, active: { $ne: false } });
+    if (authenticatedUser.role === "admin" && String(administrator.schoolId) !== String(authenticatedUser.schoolId)) {
+      return NextResponse.json({ error: "Administrador não encontrado." }, { status: 404 });
+    }
+    if (String(administrator._id) === String(authenticatedUser._id)) {
+      return NextResponse.json({ error: "Você não pode revogar o próprio acesso administrativo." }, { status: 409 });
+    }
+    const administratorSchoolId = String(administrator.schoolId);
+    const schoolVariants = ObjectId.isValid(administratorSchoolId) ? [new ObjectId(administratorSchoolId), administratorSchoolId] : [administrator.schoolId];
+    const activeAdmins = await users.countDocuments({ role: "admin", schoolId: { $in: schoolVariants }, active: { $ne: false } });
     if (administrator.active !== false && activeAdmins <= 1) return NextResponse.json({ error: "A unidade deve manter pelo menos um administrador ativo." }, { status: 409 });
 
     // Encerra todas as sessões do administrador

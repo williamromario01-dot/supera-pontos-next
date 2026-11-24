@@ -222,7 +222,9 @@ export default function SchoolPage() {
 
   const canManageClasses = canManageStudents;
 
-  const canManageAdmins = currentUser?.role === "super_admin";
+  const canManageAdmins =
+    currentUser?.role === "super_admin" ||
+    currentUser?.role === "admin";
 
   const canManageEducators =
     currentUser?.role === "super_admin" ||
@@ -558,7 +560,7 @@ export default function SchoolPage() {
       loaders.push(loadWhatsApp());
     }
 
-    if (user.role === "super_admin") {
+    if (user.role === "super_admin" || user.role === "admin") {
       loaders.push(loadAdmins());
     }
 
@@ -954,10 +956,7 @@ export default function SchoolPage() {
   ) {
     event.preventDefault();
 
-    if (
-      !adminName.trim() ||
-      !adminEmail.trim()
-    ) {
+    if (!adminName.trim() || (!editingAdmin && !adminEmail.trim())) {
       alert(
         "Informe nome e e-mail do administrador."
       );
@@ -989,16 +988,7 @@ export default function SchoolPage() {
       setSavingAdmin(true);
 
       if (editingAdmin) {
-        const body: Record<string, string> = {
-          name: adminName.trim(),
-          email: adminEmail
-            .trim()
-            .toLowerCase(),
-        };
-
-        if (adminPassword) {
-          body.password = adminPassword;
-        }
+        const body: Record<string, string> = { name: adminName.trim() };
 
         const response = await fetch(
           `/api/admins/${editingAdmin.id}`,
@@ -2286,7 +2276,7 @@ export default function SchoolPage() {
                 />
               </div>
 
-              <div>
+              {!editingAdmin && <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">
                   E-mail
                 </label>
@@ -2301,9 +2291,9 @@ export default function SchoolPage() {
                   }
                   className="w-full px-4 py-3 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
-              </div>
+              </div>}
 
-              <div>
+              {!editingAdmin && <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">
                   {editingAdmin
                     ? "Nova senha (opcional)"
@@ -2320,7 +2310,7 @@ export default function SchoolPage() {
                   }
                   className="w-full px-4 py-3 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
-              </div>
+              </div>}
 
               <div className="flex justify-end gap-3 pt-2">
                 <button

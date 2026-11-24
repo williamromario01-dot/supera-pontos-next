@@ -17,7 +17,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
   if (!activitySubmissionsEnabled() || !activityApprovalsEnabled() || !automaticActivityScoringEnabled()) return activitySubmissionsDisabledResponse();
   try {
     const authenticated = await authenticateRequest(request);
-    if (!authenticated.authenticated) return NextResponse.json({ error: "NÃ£o autenticado." }, { status: 401 });
+    if (!authenticated.authenticated) return NextResponse.json({ error: authenticated.reason === "expired_session" ? "Sessão expirada." : "Não autenticado." }, { status: 401 });
     const auth = authenticated.auth;
     if (!(["educator", "admin", "super_admin"] as string[]).includes(auth.role)) return NextResponse.json({ error: "Perfil sem permissÃ£o para revisar atividades." }, { status: 403 });
     const { id } = await context.params;
@@ -36,7 +36,8 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
     if (!access.canPerformOperationalMutation) return NextResponse.json(subscriptionPastDueResponseForAccess(access), { status: 403 });
     const school = await db.collection("schools").findOne({ _id: schoolId, active: { $ne: false } }, { projection: { companyId: 1 } });
     if (!school) throw new ActivityApprovalNotFoundError("school not found");
-    if (auth.role !== "super_admin" && (!auth.schoolId?.equals(schoolId) || (auth.companyId && String(auth.companyId) !== String(school.companyId)))) throw new ActivityApprovalAuthorizationError("actor is outside the selected school or company");
+    if (auth.role !== "super_admin" && !auth.schoolId?.equals(schoolId)) throw new ActivityApprovalAuthorizationError("actor is outside the selected school");
+    if (auth.role !== "super_admin" && auth.companyId && school.companyId && String(auth.companyId) !== String(school.companyId)) throw new ActivityApprovalAuthorizationError("actor is outside the selected company");
     const activity = await db.collection(ACTIVITY_COLLECTIONS.records).findOne({ _id: new ObjectId(id), schoolId: { $in: variants(schoolId) } }, { projection: { studentId: 1, companyId: 1 } });
     if (!activity || !ObjectId.isValid(String(activity.studentId))) throw new ActivityApprovalNotFoundError("activity not found");
     if (school.companyId && activity.companyId && String(school.companyId) !== String(activity.companyId)) throw new ActivityApprovalAuthorizationError("activity company differs from school company");

@@ -119,6 +119,18 @@ test("simple approval atomically credits the proportional difference", async () 
   assert.equal(f.state.activityAuditEvents.length, 1);
 });
 
+test("legacy activity identifiers stored as strings are normalized inside the transaction", async () => {
+  const f = fixture();
+  f.activity.companyId = String(f.companyId);
+  f.activity.schoolId = String(f.schoolId);
+  f.activity.studentId = String(f.studentId);
+  f.activity.categoryId = String(f.categoryId);
+  const result = await processActivityApproval(f.client, f.db, f.input());
+  assert.equal(result.pointsDifference, 30);
+  assert.equal(f.state.users[0].points, 30);
+  assert.equal(f.state.pointEvents.length, 1);
+});
+
 test("automatic approval fails closed when activation is off or school is legacy", async () => {
   const disabled = fixture();
   await assert.rejects(() => processActivityApproval(disabled.client, disabled.db, disabled.input({ automaticScoringEnabled: false })), ActivityApprovalDisabledError);
