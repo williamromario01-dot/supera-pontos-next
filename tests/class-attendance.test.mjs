@@ -124,8 +124,8 @@ test("concurrent duplicate inserts cannot create two calls, while another sessio
   assert.equal(f.calls[0].options.unique, true);
 });
 
-test("attendance denies unauthorized roles, unassigned educator and foreign roster", async () => {
-  for (const role of ["company_admin", "student", "educator"]) {
+test("attendance denies unauthorized roles and foreign roster", async () => {
+  for (const role of ["company_admin", "student"]) {
     const f = fixture(role); assert.equal((await f.route.POST(f.request(f.body()), f.context)).status, 403);
   }
   const f = fixture(); const body = f.body(); body.presentStudentIds[0] = String(new ObjectId());
@@ -153,6 +153,37 @@ test("frequency counts only recorded opportunities, with names, dates and separa
   const summary = summarizeAttendance([session]);
   assert.equal(summary.totalSessions, 1); assert.equal(summary.presences, 1); assert.equal(summary.absences, 1); assert.equal(summary.percentage, 50);
   assert.equal(summary.absentees[0].studentName, "Bia"); assert.equal(summary.absentees[0].date, "2026-10-28");
+});
+
+test("another active educator in the same unit records attendance without replacing the titular educator", async () => {
+  const f = fixture("educator");
+  f.data.users[2].name = "Daiane";
+  const titularId = new ObjectId();
+  f.data.users.push({ _id: titularId, name: "William", schoolId: f.schoolId, companyId: f.companyId, role: "educator", active: true });
+  f.data.classes[0].educatorId = titularId;
+  assert.equal((await f.route.POST(f.request(f.body()), f.context)).status, 200);
+  const record = f.data.attendanceSessions[0];
+  assert.equal(String(record.responsibleEducatorId), String(titularId));
+  assert.equal(record.responsibleEducatorName, "William");
+  assert.equal(String(record.recordedByEducatorId), String(f.educatorId));
+  assert.equal(record.recordedByEducatorName, "Daiane");
+  assert.ok(record.recordedAt instanceof Date);
+  assert.equal(record.audit[0].actorName, "Daiane");
+
+  const correction = { ...f.body(), version: 1, reason: "Conferência", presentStudentIds: record.students.map(student => student.studentId) };
+  assert.equal((await f.route.PATCH(f.request(correction), f.context)).status, 200);
+  assert.equal(record.recordedByEducatorName, "Daiane");
+  assert.equal(record.responsibleEducatorName, "William");
+  assert.equal(record.audit[1].actorName, "Daiane");
+});
+
+test("attendance blocks educators from another unit, company, or inactive account", async () => {
+  for (const changes of [{ schoolId: new ObjectId() }, { companyId: new ObjectId() }, { active: false }]) {
+    const f = fixture("educator");
+    Object.assign(f.data.users[2], changes);
+    assert.equal((await f.route.POST(f.request(f.body()), f.context)).status, 403);
+    assert.equal(f.data.attendanceSessions.length, 0);
+  }
 });
 
 test("unfinalized calls create no absences and all active classes remain visible", async () => {

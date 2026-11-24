@@ -138,12 +138,18 @@ export async function submitActivityInTransaction(db: ServiceDb, input: SubmitAc
 }
 
 export async function activityVisibilityFilter(db: ServiceDb, input: { actorId: ObjectId; actorRole: "student" | "educator" | "admin" | "super_admin"; schoolId: ObjectId; pendingOnly?: boolean }) {
-  const filter: Document = { schoolId: input.schoolId };
+  const filter: Document = { schoolId: { $in: variants(input.schoolId) } };
   if (input.pendingOnly) filter.status = "pending";
   if (input.actorRole === "student") filter.studentId = input.actorId;
   if (input.actorRole === "educator") {
     const classes = await db.collection("classes").find({ schoolId: { $in: variants(input.schoolId) }, educatorId: { $in: variants(input.actorId) }, active: { $ne: false } }, { projection: { studentIds: 1 } }).toArray();
-    filter.studentId = { $in: [...new Map(classes.flatMap((row) => Array.isArray(row.studentIds) ? row.studentIds : []).filter((id) => ObjectId.isValid(String(id))).map((id) => [String(id), new ObjectId(String(id))])).values()] };
+    const studentIds = [...new Set(classes.flatMap((row) => Array.isArray(row.studentIds) ? row.studentIds : []).filter((id) => ObjectId.isValid(String(id))).map(String))];
+    filter.studentId = { $in: studentIds.flatMap((id) => [new ObjectId(id), id]) };
   }
   return filter;
+}
+
+export async function canReviewActivityStudent(db: ServiceDb, input: { actorId: ObjectId; actorRole: "educator" | "admin" | "super_admin"; schoolId: ObjectId; studentId: ObjectId }): Promise<boolean> {
+  if (input.actorRole === "admin" || input.actorRole === "super_admin") return true;
+  return authorizedEducatorStudent(db, input.schoolId, input.actorId, input.studentId);
 }

@@ -23,9 +23,14 @@ async function access(request: NextRequest, context: Context) {
   if (!hasSchoolAccess(auth, schoolId) || (auth.role === "super_admin" && request.nextUrl.searchParams.get("schoolId") !== String(schoolId))) return { error: NextResponse.json({ error: "Selecione a unidade autorizada." }, { status: 403 }) };
   const school = await db.collection("schools").findOne({ _id: schoolId });
   if (!school || (auth.role !== "super_admin" && auth.companyId && String(auth.companyId) !== String(school.companyId))) return { error: NextResponse.json({ error: "Unidade não autorizada." }, { status: 403 }) };
-  // Educadores registram apenas nas turmas sob sua responsabilidade.
-  if (auth.role === "educator" && String(classData.educatorId) !== String(auth.userId)) return { error: NextResponse.json({ error: "Somente o educador responsável pode registrar esta chamada." }, { status: 403 }) };
-  return { db, auth, classData, schoolId, school };
+  let actor = auth.user;
+  if (auth.role === "educator") {
+    const companyFilter = school.companyId ? { companyId: { $in: [school.companyId, String(school.companyId)] } } : {};
+    const educator = await db.collection("users").findOne({ _id: auth.userId, role: "educator", schoolId: { $in: [schoolId, String(schoolId)] }, active: { $ne: false }, ...companyFilter });
+    if (!educator) return { error: NextResponse.json({ error: "Educador sem vínculo ativo com esta unidade." }, { status: 403 }) };
+    actor = educator;
+  }
+  return { db, auth, actor, classData, schoolId, school };
 }
 
 export async function GET(request: NextRequest, context: Context) {
@@ -48,7 +53,7 @@ async function save(request: NextRequest, context: Context, correction: boolean)
   try {
     const result = await access(request, context);
     if ("error" in result) return result.error;
-    const { db, auth, classData, schoolId, school } = result;
+    const { db, auth, actor, classData, schoolId, school } = result;
     const operational = await getOperationalAccessForAuth(db, auth);
     if (!operational.canPerformOperationalMutation) return NextResponse.json(subscriptionPastDueResponseForAccess(operational), { status: 403 });
     if (isSchoolArchived(school) || school.active === false || classData.active === false) return NextResponse.json({ error: "Turma ou unidade inativa." }, { status: 409 });
@@ -76,8 +81,9 @@ async function save(request: NextRequest, context: Context, correction: boolean)
     const presentIds = new Set(body.presentStudentIds as string[]);
     const students = expected.map((student) => ({ ...student, present: presentIds.has(student.studentId) }));
     const now = new Date();
+    const actorName = String(actor.name || "Usuário não identificado");
     if (existing) {
-      const updated = await collection.updateOne({ ...filter, version: body.version }, { $set: { students, status: "FINALIZED", finalizedAt: now, finalizedBy: auth.userId, updatedAt: now, audit: [...existing.audit, { actorId: auth.userId, at: now, reason: body.reason.trim(), before: existing.students, after: students }] }, $inc: { version: 1 } });
+      const updated = await collection.updateOne({ ...filter, version: body.version }, { $set: { students, status: "FINALIZED", finalizedAt: now, finalizedBy: auth.userId, finalizedByName: actorName, updatedAt: now, audit: [...existing.audit, { actorId: auth.userId, actorName, at: now, reason: body.reason.trim(), before: existing.students, after: students }] }, $inc: { version: 1 } });
       if (!updated.modifiedCount) return NextResponse.json({ error: "Outra pessoa alterou esta chamada. Recarregue." }, { status: 409 });
     } else {
       const transaction = (await clientPromise).startSession();
@@ -89,7 +95,7 @@ async function save(request: NextRequest, context: Context, correction: boolean)
           let category = categoryId ? await db.collection("categories").findOne({ _id: new ObjectId(categoryId) }, { session: transaction }) : null;
           const responsibleEducator = classData.educatorId ? await db.collection("users").findOne({ _id: new ObjectId(String(classData.educatorId)), role: "educator", schoolId: { $in: [schoolId, String(schoolId)] } }, { projection: { name: 1 }, session: transaction }) : null;
           if (category && isSharedCategory(category)) category = { ...category, ...await categoryOverride(db, schoolId, category._id, transaction), _id: category._id };
-          await collection.insertOne({ ...filter, companyId: school.companyId ?? null, className: String(classData.name), categoryId: categoryId ? new ObjectId(categoryId) : null, categoryName: category?.name ?? null, responsibleEducatorId: responsibleEducator?._id ?? null, responsibleEducatorName: responsibleEducator?.name ? String(responsibleEducator.name) : null, students, status: "FINALIZED", finalizedAt: now, finalizedBy: auth.userId, version: 1, createdAt: now, updatedAt: now, createdBy: auth.userId, audit: [{ actorId: auth.userId, at: now, reason: "Chamada finalizada", after: students }] }, { session: transaction });
+          await collection.insertOne({ ...filter, companyId: school.companyId ?? null, className: String(classData.name), categoryId: categoryId ? new ObjectId(categoryId) : null, categoryName: category?.name ?? null, responsibleEducatorId: responsibleEducator?._id ?? null, responsibleEducatorName: responsibleEducator?.name ? String(responsibleEducator.name) : null, recordedByEducatorId: auth.userId, recordedByEducatorName: actorName, recordedAt: now, students, status: "FINALIZED", finalizedAt: now, finalizedBy: auth.userId, finalizedByName: actorName, version: 1, createdAt: now, updatedAt: now, createdBy: auth.userId, audit: [{ actorId: auth.userId, actorName, at: now, reason: "Chamada finalizada", after: students }] }, { session: transaction });
         });
       } finally { await transaction.endSession(); }
     }

@@ -218,7 +218,7 @@ export async function processActivityApprovalInTransaction(
     return resultFromAudit(duplicate, ledger, Number(student.points ?? 0));
   }
 
-  const activity = await activities.findOne({ _id: input.activityId, schoolId: input.schoolId }, { session });
+  const activity = await activities.findOne({ _id: input.activityId, schoolId: { $in: [input.schoolId, input.schoolId.toHexString() as unknown as ObjectId] } }, { session });
   if (!activity) throw new ActivityApprovalNotFoundError("activity was not found in the selected school");
   authorize(input, activity);
   if (activity.revision !== input.expectedActivityRevision) {
