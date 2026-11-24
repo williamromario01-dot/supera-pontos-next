@@ -3,7 +3,7 @@
 import { useContext, useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BarChart3, CalendarDays, GraduationCap, History, Menu, School, ShoppingBag, Tags, Trophy, Users, X } from "lucide-react";
+import { BarChart3, CalendarDays, GraduationCap, History, Menu, School, ShoppingBag, Tags, Trophy, UserPlus, Users, X } from "lucide-react";
 import InternalPlatformName from "@/components/InternalPlatformName";
 import { TenantBrandingContext } from "@/components/TenantTheme";
 import HorizontalNavigation from "@/components/HorizontalNavigation";
@@ -45,7 +45,8 @@ export default function AppNavigation() {
     { href: "/schools", label: "Unidades", icon: School, visible: user.role === "super_admin" },
     { href: `${unitHref}#turmas`, label: "Turmas", icon: GraduationCap, visible: operational },
     { href: "/students", label: "Alunos", icon: Users, visible: operational },
-    { href: "/history", label: "Histórico", icon: History, visible: user.role !== "company_admin" },
+    { href: "/referrals", label: "Indicação", icon: UserPlus, visible: operational },
+    { href: "/history", label: "Histórico", icon: History, visible: !["company_admin", "admin", "educator"].includes(user.role) },
     { href: "/ranking", label: "Ranking", icon: Trophy, visible: user.role !== "company_admin" },
     { href: "/management-reports#evolucao-unidade", label: "Gestão & Relatórios", icon: BarChart3, visible: user.role === "admin" || user.role === "educator" },
     { href: "/categories", label: "Categorias", icon: Tags, visible: operational },

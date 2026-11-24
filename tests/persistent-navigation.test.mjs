@@ -37,6 +37,39 @@ test("points navigation uses the neutral menu style", async () => {
   assert.match(navigation, /aria-current=\{active\(item\.href\) \? "page"/);
 });
 
+test("dashboard hides staff scoring, educator and history buttons and places referral after students", async () => {
+  const dashboard = await read("src/app/dashboard/page.tsx");
+  const desktopStudents = dashboard.indexOf("<Users size={17}");
+  const desktopReferral = dashboard.indexOf("<UserPlus size={17}");
+  const mobileStudents = dashboard.indexOf("<Users size={18}");
+  const mobileReferral = dashboard.indexOf("<UserPlus size={18}");
+  const cardStudents = dashboard.indexOf("<Users size={21}");
+  const cardReferral = dashboard.indexOf("<UserPlus size={21}");
+
+  assert.match(dashboard, /const isUnitStaff = user\?\.role === "admin" \|\| user\?\.role === "educator"/);
+  assert.equal((dashboard.match(/canManagePoints && !isUnitStaff/g) ?? []).length, 3);
+  assert.equal((dashboard.match(/!isUnitStaff && <button/g) ?? []).length, 3);
+  assert.doesNotMatch(dashboard, />\s*Educadores\s*</);
+  assert.ok(desktopStudents >= 0 && desktopStudents < desktopReferral);
+  assert.ok(mobileStudents >= 0 && mobileStudents < mobileReferral);
+  assert.ok(cardStudents >= 0 && cardStudents < cardReferral);
+  assert.equal((dashboard.match(/>\s*Indicação\s*</g) ?? []).length, 3);
+});
+
+test("shared navigation applies the same staff menu on every authenticated page", async () => {
+  const navigation = await read("src/components/AppNavigation.tsx");
+  const students = navigation.indexOf('label: "Alunos"');
+  const referral = navigation.indexOf('label: "Indicação"');
+
+  assert.ok(students >= 0 && students < referral);
+  assert.match(navigation, /href: "\/referrals", label: "Indicação", icon: UserPlus, visible: operational/);
+  assert.match(navigation, /!\["company_admin", "admin", "educator"\]\.includes\(user\.role\)/);
+  assert.doesNotMatch(navigation, /label: "Pontuação"/);
+  assert.doesNotMatch(navigation, /label: "Educadores"/);
+  assert.match(navigation, /label: "Histórico", icon: History/);
+  assert.match(navigation, /\["admin", "educator", "student"\]\.includes\(user\.role\)/);
+});
+
 test("shared navigation is fixed, responsive, accessible and permission filtered", async () => {
   const [layout, navigation] = await Promise.all([
     read("src/app/layout.tsx"),

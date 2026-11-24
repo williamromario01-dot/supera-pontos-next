@@ -37,7 +37,6 @@ import {
   ShoppingBag,
   ShoppingCart,
   GraduationCap,
-  UserCheck,
   CalendarDays,
   Palette,
 } from "lucide-react";
@@ -398,14 +397,6 @@ export default function DashboardPage() {
     ? `${ownUnitPath}#turmas`
     : "/schools";
 
-  const canManageEducators =
-    user?.role === "admin" &&
-    Boolean(ownUnitPath);
-
-  const educatorsPath = ownUnitPath
-    ? `${ownUnitPath}#educadores`
-    : "";
-
   const canAccessManagementReports =
     user?.role === "admin" ||
     user?.role === "educator";
@@ -425,6 +416,8 @@ export default function DashboardPage() {
     user?.role === "educator" ||
     user?.role === "admin" ||
     user?.role === "super_admin";
+
+  const isUnitStaff = user?.role === "admin" || user?.role === "educator";
 
   const canAccessStores =
     user?.role === "student" ||
@@ -581,7 +574,19 @@ export default function DashboardPage() {
                   </button>
                 )}
 
-                {canManagePoints && (
+                {canAccessReferrals && (
+                  <button
+                    onClick={() =>
+                      router.push("/referrals")
+                    }
+                    className="flex-shrink-0 flex items-center gap-2 px-4 py-2.5 rounded-xl text-slate-500 hover:bg-slate-100 text-sm font-bold transition"
+                  >
+                    <UserPlus size={17} />
+                    Indicação
+                  </button>
+                )}
+
+                {canManagePoints && !isUnitStaff && (
                   <button
                     onClick={() =>
                       router.push("/points")
@@ -593,7 +598,7 @@ export default function DashboardPage() {
                   </button>
                 )}
 
-                <button
+                {!isUnitStaff && <button
                   onClick={() =>
                     router.push("/history")
                   }
@@ -601,7 +606,7 @@ export default function DashboardPage() {
                 >
                   <History size={17} />
                   Histórico
-                </button>
+                </button>}
 
                 <button
                   onClick={() =>
@@ -623,18 +628,6 @@ export default function DashboardPage() {
                   </button>
                 )}
 
-                {canManageEducators && (
-                  <button
-                    onClick={() =>
-                      router.push(educatorsPath)
-                    }
-                    className="flex-shrink-0 flex items-center gap-2 px-4 py-2.5 rounded-xl text-slate-500 hover:bg-slate-100 text-sm font-bold transition"
-                  >
-                    <UserCheck size={17} />
-                    Educadores
-                  </button>
-                )}
-
                 {canManageCategories && (
                   <button
                     onClick={() =>
@@ -644,18 +637,6 @@ export default function DashboardPage() {
                   >
                     <Tags size={17} />
                     Categorias
-                  </button>
-                )}
-
-                {canAccessReferrals && (
-                  <button
-                    onClick={() =>
-                      router.push("/referrals")
-                    }
-                    className="flex-shrink-0 flex items-center gap-2 px-4 py-2.5 rounded-xl text-slate-500 hover:bg-slate-100 text-sm font-bold transition"
-                  >
-                    <UserPlus size={17} />
-                    Indicações
                   </button>
                 )}
 
@@ -819,7 +800,20 @@ export default function DashboardPage() {
                   </button>
                 )}
 
-                {canManagePoints && (
+                {canAccessReferrals && (
+                  <button
+                    onClick={() => {
+                      setMenuOpen(false);
+                      router.push("/referrals");
+                    }}
+                    className="flex items-center gap-3 px-4 py-3 rounded-xl text-slate-600 hover:bg-slate-100 font-bold text-sm"
+                  >
+                    <UserPlus size={18} />
+                    Indicação
+                  </button>
+                )}
+
+                {canManagePoints && !isUnitStaff && (
                   <button
                     onClick={() => {
                       setMenuOpen(false);
@@ -832,7 +826,7 @@ export default function DashboardPage() {
                   </button>
                 )}
 
-                <button
+                {!isUnitStaff && <button
                   onClick={() => {
                     setMenuOpen(false);
                     router.push("/history");
@@ -841,7 +835,7 @@ export default function DashboardPage() {
                 >
                   <History size={18} />
                   Histórico
-                </button>
+                </button>}
 
                 <button
                   onClick={() => {
@@ -867,19 +861,6 @@ export default function DashboardPage() {
                   </button>
                 )}
 
-                {canManageEducators && (
-                  <button
-                    onClick={() => {
-                      setMenuOpen(false);
-                      router.push(educatorsPath);
-                    }}
-                    className="flex items-center gap-3 px-4 py-3 rounded-xl text-slate-600 hover:bg-slate-100 font-bold text-sm"
-                  >
-                    <UserCheck size={18} />
-                    Educadores
-                  </button>
-                )}
-
                 {canManageCategories && (
                   <button
                     onClick={() => {
@@ -890,19 +871,6 @@ export default function DashboardPage() {
                   >
                     <Tags size={18} />
                     Categorias
-                  </button>
-                )}
-
-                {canAccessReferrals && (
-                  <button
-                    onClick={() => {
-                      setMenuOpen(false);
-                      router.push("/referrals");
-                    }}
-                    className="flex items-center gap-3 px-4 py-3 rounded-xl text-slate-600 hover:bg-slate-100 font-bold text-sm"
-                  >
-                    <UserPlus size={18} />
-                    Indicações
                   </button>
                 )}
 
@@ -1570,7 +1538,7 @@ export default function DashboardPage() {
 
             {/* HISTÓRICO */}
 
-            <button
+            {!isUnitStaff && <button
               onClick={() =>
                 router.push("/history")
               }
@@ -1594,7 +1562,7 @@ export default function DashboardPage() {
                 <ChevronRight size={14} />
               </div>
 
-            </button>
+            </button>}
 
             {/* RANKING */}
 
@@ -1682,6 +1650,36 @@ export default function DashboardPage() {
               </button>
             )}
 
+            {/* INDICAÇÃO */}
+
+            {canAccessReferrals && (
+              <button
+                onClick={() =>
+                  router.push("/referrals")
+                }
+                className="group bg-white border border-slate-200 rounded-2xl p-5 text-left hover:border-orange-200 hover:shadow-md transition"
+              >
+
+                <div className="w-11 h-11 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center mb-4">
+                  <UserPlus size={21} />
+                </div>
+
+                <h3 className="font-black text-slate-800">
+                  Indicação
+                </h3>
+
+                <p className="text-xs text-slate-400 mt-1">
+                  Envie indicações e acompanhe as aprovações.
+                </p>
+
+                <div className="mt-4 flex items-center gap-1 text-xs font-bold text-orange-500">
+                  Acessar
+                  <ChevronRight size={14} />
+                </div>
+
+              </button>
+            )}
+
             {/* UNIDADE */}
 
             {canAccessOwnUnit && (
@@ -1732,36 +1730,6 @@ export default function DashboardPage() {
 
                 <p className="text-xs text-slate-400 mt-1">
                   Consulte as turmas já cadastradas na unidade.
-                </p>
-
-                <div className="mt-4 flex items-center gap-1 text-xs font-bold text-orange-500">
-                  Acessar
-                  <ChevronRight size={14} />
-                </div>
-
-              </button>
-            )}
-
-            {/* EDUCADORES */}
-
-            {canManageEducators && (
-              <button
-                onClick={() =>
-                  router.push(educatorsPath)
-                }
-                className="group bg-white border border-slate-200 rounded-2xl p-5 text-left hover:border-orange-200 hover:shadow-md transition"
-              >
-
-                <div className="w-11 h-11 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center mb-4">
-                  <UserCheck size={21} />
-                </div>
-
-                <h3 className="font-black text-slate-800">
-                  Educadores
-                </h3>
-
-                <p className="text-xs text-slate-400 mt-1">
-                  Gerencie os educadores da sua unidade.
                 </p>
 
                 <div className="mt-4 flex items-center gap-1 text-xs font-bold text-orange-500">
@@ -1834,7 +1802,7 @@ export default function DashboardPage() {
 
             {/* PONTUAÇÃO */}
 
-            {canManagePoints && (
+            {canManagePoints && !isUnitStaff && (
               <button
                 onClick={() =>
                   router.push("/points")
@@ -1856,36 +1824,6 @@ export default function DashboardPage() {
 
                 <div className="mt-4 flex items-center gap-1 text-xs font-bold text-orange-500">
                   Lançar pontos
-                  <ChevronRight size={14} />
-                </div>
-
-              </button>
-            )}
-
-            {/* INDICAÇÕES */}
-
-            {canAccessReferrals && (
-              <button
-                onClick={() =>
-                  router.push("/referrals")
-                }
-                className="group bg-white border border-slate-200 rounded-2xl p-5 text-left hover:border-orange-200 hover:shadow-md transition"
-              >
-
-                <div className="w-11 h-11 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center mb-4">
-                  <UserPlus size={21} />
-                </div>
-
-                <h3 className="font-black text-slate-800">
-                  Indicações
-                </h3>
-
-                <p className="text-xs text-slate-400 mt-1">
-                  Envie indicações e acompanhe as aprovações.
-                </p>
-
-                <div className="mt-4 flex items-center gap-1 text-xs font-bold text-orange-500">
-                  Acessar
                   <ChevronRight size={14} />
                 </div>
 
