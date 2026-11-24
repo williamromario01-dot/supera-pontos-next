@@ -64,12 +64,11 @@ export async function PATCH(request: NextRequest, props: { params: Promise<{ id:
       );
     }
 
-    // Somente o super administrador pode gerenciar administradores
-    if (authenticatedUser.role !== "super_admin") {
+    if (!["super_admin", "company_admin"].includes(authenticatedUser.role)) {
       return NextResponse.json(
         {
           error:
-            "Somente o super administrador pode editar administradores.",
+            "Este perfil não pode editar administradores.",
         },
         { status: 403 }
       );
@@ -105,6 +104,9 @@ export async function PATCH(request: NextRequest, props: { params: Promise<{ id:
         { error: "Administrador não encontrado." },
         { status: 404 }
       );
+    }
+    if (authenticatedUser.role === "company_admin" && (!authenticatedUser.companyId || String(administrator.companyId) !== String(authenticatedUser.companyId))) {
+      return NextResponse.json({ error: "Administrador não encontrado." }, { status: 404 });
     }
 
     let body: Record<string, unknown>;
@@ -155,6 +157,10 @@ export async function PATCH(request: NextRequest, props: { params: Promise<{ id:
         );
       }
 
+      if (body.active === false) {
+        const activeAdmins = await users.countDocuments({ role: "admin", schoolId: administrator.schoolId, active: { $ne: false } });
+        if (activeAdmins <= 1) return NextResponse.json({ error: "A unidade deve manter pelo menos um administrador ativo." }, { status: 409 });
+      }
       updateData.active = body.active;
 
       // Se desativado, encerra imediatamente
@@ -250,12 +256,11 @@ export async function DELETE(request: NextRequest, props: { params: Promise<{ id
       );
     }
 
-    // Somente o super administrador pode excluir administradores
-    if (authenticatedUser.role !== "super_admin") {
+    if (!["super_admin", "company_admin"].includes(authenticatedUser.role)) {
       return NextResponse.json(
         {
           error:
-            "Somente o super administrador pode excluir administradores.",
+            "Este perfil não pode revogar administradores.",
         },
         { status: 403 }
       );
@@ -292,20 +297,22 @@ export async function DELETE(request: NextRequest, props: { params: Promise<{ id
         { status: 404 }
       );
     }
+    if (authenticatedUser.role === "company_admin" && (!authenticatedUser.companyId || String(administrator.companyId) !== String(authenticatedUser.companyId))) {
+      return NextResponse.json({ error: "Administrador não encontrado." }, { status: 404 });
+    }
+    const activeAdmins = await users.countDocuments({ role: "admin", schoolId: administrator.schoolId, active: { $ne: false } });
+    if (administrator.active !== false && activeAdmins <= 1) return NextResponse.json({ error: "A unidade deve manter pelo menos um administrador ativo." }, { status: 409 });
 
     // Encerra todas as sessões do administrador
     await sessions.deleteMany({
       userId: administrator._id,
     });
 
-    // Exclui o administrador
-    await users.deleteOne({
-      _id: administrator._id,
-    });
+    await users.updateOne({ _id: administrator._id }, { $set: { active: false, accessRevokedAt: new Date(), accessRevokedBy: authenticatedUser._id, updatedAt: new Date() } });
 
     return NextResponse.json({
       message:
-        "Administrador excluído com sucesso.",
+        "Acesso do administrador revogado com sucesso.",
     });
   } catch (error) {
     console.error(

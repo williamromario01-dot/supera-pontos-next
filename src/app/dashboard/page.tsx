@@ -160,7 +160,7 @@ export default function DashboardPage() {
   const [rankings, setRankings] = useState<RankingCategory[]>([]);
   const [weekly, setWeekly] = useState<WeeklyData | null>(null);
   const [agendaSummary, setAgendaSummary] = useState<{ total: number; next: { title: string; date: string; startTime: string } | null }>({ total: 0, next: null });
-  const [weeklyGoals, setWeeklyGoals] = useState<Array<{ categoryId: string; categoryName: string; description: string }>>([]);
+  const [weeklyGoals, setWeeklyGoals] = useState<Array<{ categoryId: string; categoryName: string; goal: number; unit: string; realized?: number }>>([]);
   const [branding, setBranding] = useState<TenantBranding | null>(null);
   const [canEditUnitBranding, setCanEditUnitBranding] = useState(false);
 
@@ -1056,7 +1056,7 @@ export default function DashboardPage() {
           <div className="min-h-40 overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5"><div className="flex items-center justify-between"><div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50"><Trophy className="h-5 w-5 text-blue-600" /></div><span className="text-[10px] font-black tracking-wider text-slate-400">SEMANA</span></div><p className="mt-4 text-2xl font-black text-slate-800 sm:text-3xl">{currentPoints.toLocaleString("pt-BR")}</p><p className="mt-1 text-xs text-slate-500">{isUnitWeekly ? "pontos da unidade nesta semana" : "pontos nesta semana"}</p></div>
           <div className="min-h-40 overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5"><div className="flex items-center justify-between"><div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-50"><TrendingUp className="h-5 w-5 text-emerald-600" /></div><span className="text-[10px] font-black tracking-wider text-slate-400">EVOLUÇÃO</span></div><p className="mt-4 text-2xl font-black text-slate-800 sm:text-3xl">{evolution > 0 ? "+" : ""}{evolution.toFixed(0)}%</p><p className="mt-1 text-xs text-slate-500">comparado à semana anterior</p></div>
           <button onClick={() => router.push("/planner")} className="min-h-40 overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:border-orange-300 hover:shadow-md sm:p-5"><div className="flex items-center justify-between"><div className="flex h-10 w-10 items-center justify-center rounded-xl bg-orange-50"><CalendarDays className="h-5 w-5 text-orange-600" /></div><span className="text-[10px] font-black tracking-wider text-slate-400">AGENDA</span></div><p className="mt-4 text-lg font-black text-slate-800">{agendaSummary.total} {agendaSummary.total === 1 ? "compromisso" : "compromissos"}</p><p className="mt-1 truncate text-xs text-slate-500">{agendaSummary.next ? `Próxima: ${agendaSummary.next.title} • ${agendaSummary.next.startTime}` : "Nenhum compromisso próximo"}</p></button>
-          <button onClick={() => user.role === "student" ? router.push("/planner") : router.push("/weekly-goals")} className="min-h-40 overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:border-orange-300 hover:shadow-md sm:p-5"><div className="flex items-center justify-between"><div className="flex h-10 w-10 items-center justify-center rounded-xl bg-purple-50"><Target className="h-5 w-5 text-purple-600" /></div><span className="text-[10px] font-black tracking-wider text-slate-400">META DA SEMANA</span></div>{weeklyGoals.length ? <div className="mt-3 grid grid-cols-2 gap-2">{weeklyGoals.slice(0, 4).map((item) => <div key={item.categoryId} className="min-w-0"><p className="truncate text-[11px] font-black text-slate-700">{item.categoryName}</p><p className="line-clamp-2 text-[10px] leading-tight text-slate-500">{item.description}</p></div>)}</div> : <p className="mt-4 text-xs text-slate-500">Meta da semana ainda não definida.</p>}</button>
+          <button onClick={() => user.role === "student" ? router.push("/planner") : router.push("/weekly-goals")} className="min-h-40 overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:border-orange-300 hover:shadow-md sm:p-5"><div className="flex items-center justify-between"><div className="flex h-10 w-10 items-center justify-center rounded-xl bg-purple-50"><Target className="h-5 w-5 text-purple-600" /></div><span className="text-[10px] font-black tracking-wider text-slate-400">META DA SEMANA</span></div>{weeklyGoals.length ? <div className="mt-3 grid grid-cols-2 gap-2">{weeklyGoals.slice(0, 4).map((item) => <div key={item.categoryId} className="min-w-0"><p className="truncate text-[11px] font-black text-slate-700">{item.categoryName}</p><p className="line-clamp-2 text-[10px] leading-tight text-slate-500">{item.realized ?? 0} de {item.goal} {item.unit} · {item.goal > 0 ? Math.min(100, Math.round(((item.realized ?? 0) / item.goal) * 100)) : 0}%</p></div>)}</div> : <p className="mt-4 text-xs text-slate-500">Meta da semana ainda não definida.</p>}</button>
         </section>
 
         {/* =========================================
@@ -1157,6 +1157,9 @@ export default function DashboardPage() {
 
           </section>
         )}
+
+        <StudentActivityPanel role={user.role} />
+        <StudentLearningRhythmPanel role={user.role} />
 
         {/* =========================================
             CONTEÚDO PRINCIPAL
@@ -1994,8 +1997,6 @@ export default function DashboardPage() {
             FOOTER
         ========================================= */}
 
-        <StudentActivityPanel role={user.role} />
-        <StudentLearningRhythmPanel role={user.role} />
         <CollaboratorDevelopmentPanel role={user.role} schoolId={user.schoolId} userId={user.id} />
 
         <footer className="py-8 text-center">

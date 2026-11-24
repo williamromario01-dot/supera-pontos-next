@@ -158,7 +158,7 @@ export async function processActivityApproval(
   let outcome: ActivityApprovalResult | null = null;
   try {
     await session.withTransaction(async () => {
-      outcome = await processInTransaction(db, input, now, session);
+      outcome = await processActivityApprovalInTransaction(db, input, now, session);
     });
   } finally {
     await session.endSession();
@@ -167,7 +167,7 @@ export async function processActivityApproval(
   return outcome;
 }
 
-async function processInTransaction(
+export async function processActivityApprovalInTransaction(
   db: ServiceDb,
   input: ActivityApprovalInput,
   now: Date,

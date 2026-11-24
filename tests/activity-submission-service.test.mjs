@@ -43,7 +43,7 @@ function fixture(options = {}) {
     users: [{ _id: studentId, companyId, schoolId, role: "student", active: true, points: 77 }],
     classes: [{ _id: new ObjectId(), schoolId, educatorId, studentIds: [studentId], active: true }],
     categories: [{ _id: categoryId, schoolId, active: true, weeklyGoal: 10, defaultPoints: 100 }],
-    categoryOverrides: [], activityRecords: [], weeklyScoreLedgers: [], activityAuditEvents: [], pointEvents: [],
+    categoryOverrides: [], weeklyGoals: [], activityRecords: [], weeklyScoreLedgers: [], activityAuditEvents: [], pointEvents: [],
     schoolScoringModeChanges: [{ _id: new ObjectId(), companyId, schoolId, previousMode: "legacy", futureMode: "automatic", requestedBy: educatorId, requestedByRole: "admin", requestedAt: new Date("2026-11-15T12:00:00Z"), effectiveAt: new Date("2026-11-16T03:00:00Z"), idempotencyKey: "submission-mode-fixture" }],
   };
   let queue = Promise.resolve();

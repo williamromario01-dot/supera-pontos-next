@@ -12,6 +12,7 @@ import {
 import { getActivityWeek } from "./weekly-calendar.ts";
 import { requireSchoolScoringMode, ScoringModeConflictError } from "./school-scoring-mode.ts";
 import { LEARNING_COLLECTIONS } from "./learning-rhythm-model.ts";
+import { resolveWeeklyGoal } from "./weekly-goal-resolution.ts";
 
 export type ActivitySubmissionRole = "student" | "educator";
 export class ActivitySubmissionAuthorizationError extends Error {}
@@ -57,7 +58,7 @@ async function authorizedEducatorStudent(db: ServiceDb, schoolId: ObjectId, educ
   }, { projection: { _id: 1 }, session }));
 }
 
-async function effectiveCategory(db: ServiceDb, schoolId: ObjectId, categoryId: ObjectId, session: ClientSession): Promise<Document> {
+async function effectiveCategory(db: ServiceDb, schoolId: ObjectId, studentId: ObjectId, categoryId: ObjectId, weekStart: string, session: ClientSession): Promise<Document> {
   const category = await db.collection("categories").findOne({ _id: categoryId }, { session });
   if (!category || !categoryBelongsToSchool(category, schoolId)) throw new ActivityPersistenceScopeError("category is outside the selected school");
   const override = isProtectedLegacyCategory(category)
@@ -65,7 +66,10 @@ async function effectiveCategory(db: ServiceDb, schoolId: ObjectId, categoryId: 
     : null;
   const effective: Document = { ...category, ...override, _id: category._id };
   if (effective.active === false) throw new ActivityPersistenceScopeError("category is inactive for the selected school");
-  if (typeof effective.weeklyGoal !== "number" || !Number.isFinite(effective.weeklyGoal) || effective.weeklyGoal <= 0) throw new ActivityPersistenceValidationError("effective weeklyGoal must be positive");
+  const weeklyGoal = await resolveWeeklyGoal(db as Pick<Db, "collection">, { schoolId, studentId, categoryId, weekStart, category: effective, session });
+  effective.weeklyGoal = weeklyGoal.targetQuantity;
+  effective.weeklyGoalUnit = weeklyGoal.unit;
+  effective.weeklyGoalSource = weeklyGoal.source;
   if (!Number.isSafeInteger(effective.defaultPoints) || effective.defaultPoints < 0) throw new ActivityPersistenceValidationError("effective defaultPoints must be a non-negative integer");
   return effective;
 }
@@ -81,13 +85,13 @@ export async function submitActivity(client: ServiceClient, db: ServiceDb, input
   const session = client.startSession();
   let result: SubmitActivityResult | null = null;
   try {
-    await session.withTransaction(async () => { result = await submitInTransaction(db, input, activity, now, session); });
+    await session.withTransaction(async () => { result = await submitActivityInTransaction(db, input, activity, now, session); });
   } finally { await session.endSession(); }
   if (!result) throw new ActivityPersistenceConflictError("activity submission transaction produced no result");
   return result;
 }
 
-async function submitInTransaction(db: ServiceDb, input: SubmitActivityInput, activity: ActivityRecord, now: Date, session: ClientSession): Promise<SubmitActivityResult> {
+export async function submitActivityInTransaction(db: ServiceDb, input: SubmitActivityInput, activity: ActivityRecord, now: Date, session: ClientSession): Promise<SubmitActivityResult> {
   const activities = db.collection<ActivityRecord>(ACTIVITY_COLLECTIONS.records);
   const ledgers = db.collection<WeeklyScoreLedger>(ACTIVITY_COLLECTIONS.ledgers);
   const school = await db.collection("schools").findOne({ _id: input.schoolId, companyId: input.companyId, active: { $ne: false }, status: { $ne: "archived" } }, { session });
@@ -109,7 +113,7 @@ async function submitInTransaction(db: ServiceDb, input: SubmitActivityInput, ac
   if (!student) throw new ActivitySubmissionNotFoundError("student was not found in the selected school");
   if (input.actorRole === "student" && !input.actorId.equals(input.studentId)) throw new ActivitySubmissionAuthorizationError("students can submit only their own activities");
   if (input.actorRole === "educator" && !(await authorizedEducatorStudent(db, input.schoolId, input.actorId, input.studentId, session))) throw new ActivitySubmissionAuthorizationError("educator is not assigned to this student");
-  const category = await effectiveCategory(db, input.schoolId, input.categoryId, session);
+  const category = await effectiveCategory(db, input.schoolId, input.studentId, input.categoryId, activity.weekStart, session);
   if (activity.book?.bookId) {
     if (!ObjectId.isValid(activity.book.bookId)) throw new ActivityPersistenceValidationError("book reference is invalid");
     const assignment = await db.collection(LEARNING_COLLECTIONS.assignments).findOne({

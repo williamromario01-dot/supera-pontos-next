@@ -2,6 +2,7 @@
 
 import ClassAttendance from "@/components/ClassAttendance";
 import ClassEducatorAssignment from "@/components/ClassEducatorAssignment";
+import ActivityReviewPanel from "@/components/ActivityReviewPanel";
 import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
@@ -89,6 +90,7 @@ export default function ClassManagementPage() {
   const [categoriesError, setCategoriesError] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [currentRole, setCurrentRole] = useState<string>();
 
   // ============================================================
   // PONTUAÇÃO RÁPIDA
@@ -228,6 +230,7 @@ export default function ClassManagementPage() {
     }
 
     void loadClass();
+    fetch("/api/auth/me", { credentials: "include" }).then((response) => response.ok ? response.json() : null).then((body) => setCurrentRole(body?.user?.role)).catch(() => undefined);
   }, [classId, schoolId, router, loadClass]);
 
   // ============================================================
@@ -1480,6 +1483,8 @@ export default function ClassManagementPage() {
                                 </button>
 
                               </div>
+
+                              <ActivityReviewPanel role={currentRole} schoolId={classData.schoolId} students={[student]} categories={categories} fixedStudentId={student.id} embedded />
 
                             </div>
 
