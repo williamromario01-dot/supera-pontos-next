@@ -5,6 +5,8 @@ import { authenticateRequest } from "@/lib/auth";
 import { resolveWeeklyReportSchool } from "@/lib/weekly-management-report-access";
 import { buildFrequencyMonitoring, validFrequencyConfiguration, type FrequencyConfiguration } from "@/lib/attendance-monitoring";
 import type { AttendanceSession } from "@/lib/attendance-core";
+import { LEARNING_COLLECTIONS } from "@/lib/learning-rhythm-model";
+import { calculateLearningRhythm } from "@/lib/learning-rhythm";
 
 const DB_NAME = "supera_pontos";
 const variants = (id: ObjectId) => [id, id.toString()];
@@ -28,17 +30,21 @@ export async function GET(request: NextRequest) {
     const configurations = (Array.isArray(result.school.frequencyConfigurations) ? result.school.frequencyConfigurations : []) as FrequencyConfiguration[];
     const configuration = configurations.find((item) => item.year === requestedYear) || null;
     if (!configuration) return NextResponse.json({ configuration: null, report: null, message: "Configure a frequência para este ano." }, { headers: { "Cache-Control": "no-store" } });
-    const [sessions, classes, students] = await Promise.all([
+    const [sessions, classes, students, assignments] = await Promise.all([
       result.db.collection("attendanceSessions").find({ schoolId: { $in: variants(result.schoolId) }, date: { $gte: `${requestedYear}-01-01`, $lte: `${requestedYear}-12-31` }, $or: [{ status: "FINALIZED" }, { status: { $exists: false } }] }).project({ classId: 1, className: 1, date: 1, session: 1, students: 1, responsibleEducatorId: 1, responsibleEducatorName: 1 }).toArray(),
-      result.db.collection("classes").find({ schoolId: { $in: variants(result.schoolId) } }).project({ name: 1, studentIds: 1, classType: 1 }).toArray(),
+      result.db.collection("classes").find({ schoolId: { $in: variants(result.schoolId) } }).project({ name: 1, studentIds: 1, classType: 1, educatorId: 1 }).toArray(),
       result.db.collection("users").find({ schoolId: { $in: variants(result.schoolId) }, role: "student" }).project({ name: 1, enrollmentDate: 1, enrolledAt: 1, admissionDate: 1 }).sort({ name: 1 }).toArray(),
+      result.db.collection(LEARNING_COLLECTIONS.assignments).find({ schoolId: { $in: variants(result.schoolId) }, active: { $ne: false } }).project({ studentId: 1 }).toArray(),
     ]);
     const report = buildFrequencyMonitoring({
       configuration, sessions: sessions.map((item) => ({ ...item, classId: String(item.classId) })) as unknown as AttendanceSession[],
       classes: classes.map((item) => ({ id: String(item._id), name: String(item.name || "Turma"), classType: item.classType, studentIds: (item.studentIds || []).map(String) })),
       students: students.map((item) => ({ id: String(item._id), name: String(item.name || "Aluno"), enrollmentDate: item.enrollmentDate || item.enrolledAt || item.admissionDate })),
     });
-    return NextResponse.json({ configuration, report }, { headers: { "Cache-Control": "no-store" } });
+    const bookIds = assignments.flatMap((item) => item.bookId instanceof ObjectId ? [item.bookId] : []); const educatorIds = classes.flatMap((item) => item.educatorId instanceof ObjectId ? [item.educatorId] : []); const [books, educators] = await Promise.all([result.db.collection(LEARNING_COLLECTIONS.books).find({ _id: { $in: bookIds }, schoolId: result.schoolId }).toArray(), result.db.collection("users").find({ _id: { $in: educatorIds }, schoolId: { $in: variants(result.schoolId) } }, { projection: { name: 1 } }).toArray()]); const bookMap = new Map(books.map((item) => [String(item._id), item])); const educatorMap = new Map(educators.map((item) => [String(item._id), String(item.name)]));
+    const bookCounts = new Map<string, number>(); const bookAttentionCounts = new Map<string, number>(); const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+    for (const item of assignments) { const key = String(item.studentId); bookCounts.set(key, (bookCounts.get(key) || 0) + 1); const book = bookMap.get(String(item.bookId)); if (book) { const status = calculateLearningRhythm({ startDate: item.startDate, totalQuestions: book.totalQuestions, completedQuestions: item.completedQuestions ?? 0, studyDaysPerWeek: item.studyDaysPerWeek, pauses: item.pauses ?? [], asOf: today }).status; if (!["regular", "insufficient_data"].includes(status)) bookAttentionCounts.set(key, (bookAttentionCounts.get(key) || 0) + 1); } }
+    return NextResponse.json({ configuration, report: { ...report, classMetrics: report.classMetrics.map((metric) => { const source = classes.find((item) => String(item._id) === metric.classId); return { ...metric, educatorId: source?.educatorId ? String(source.educatorId) : null, educatorName: source?.educatorId ? educatorMap.get(String(source.educatorId)) || null : null }; }), students: report.students.map(({ history, ...student }) => ({ ...student, classIds: [...new Set([...history.map((item) => item.classId), ...classes.filter((item) => (item.studentIds || []).some((value: unknown) => String(value) === student.studentId)).map((item) => String(item._id))])], activeBookCount: bookCounts.get(student.studentId) || 0, activeBookAttentionCount: bookAttentionCounts.get(student.studentId) || 0 })) } }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) { console.error("Erro no acompanhamento de frequência", error); return NextResponse.json({ error: "Não foi possível carregar o acompanhamento de frequência." }, { status: 500 }); }
 }
 

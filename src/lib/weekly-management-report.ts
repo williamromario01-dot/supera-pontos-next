@@ -208,11 +208,15 @@ export async function buildWeeklyReportSnapshot(db: Db, schoolId: ObjectId, peri
     return { students: members.length, studentsWithRecords: members.filter((student) => student.hasPedagogicalRecords).length, pedagogicalCoveragePercentage: percentage(members.filter((student) => student.hasPedagogicalRecords).length, members.length), approvedQuantity: rows.reduce((total, row) => total + row.realized, 0), creditedPoints: rows.reduce((total, row) => total + row.creditedPoints, 0), ...sumActivityCounts(rows), goalReachedStudents: members.filter((student) => student.goalReached).length, comparableStudents: comparable.length, evolvedStudents: comparable.filter((student) => student.evolutionStatus === "EVOLVED").length, maintainedStudents: comparable.filter((student) => student.evolutionStatus === "MAINTAINED").length, declinedStudents: comparable.filter((student) => student.evolutionStatus === "DECLINED").length };
   };
 
-  const classMetrics = classes.map((classItem) => ({ classId: id(classItem._id), className: name(classItem.name, "Turma"), educatorId: id(classItem.educatorId) || null, educatorName: educators.find((item) => id(item._id) === id(classItem.educatorId)) ? name(educators.find((item) => id(item._id) === id(classItem.educatorId))!.name, "Educador") : null, ...metricForGroup((Array.isArray(classItem.studentIds) ? classItem.studentIds : []).map(id)) }));
+  const baseClassMetrics = classes.map((classItem) => ({ classId: id(classItem._id), className: name(classItem.name, "Turma"), educatorId: id(classItem.educatorId) || null, educatorName: educators.find((item) => id(item._id) === id(classItem.educatorId)) ? name(educators.find((item) => id(item._id) === id(classItem.educatorId))!.name, "Educador") : null, ...metricForGroup((Array.isArray(classItem.studentIds) ? classItem.studentIds : []).map(id)) }));
   const attendanceMetrics = summarizeAttendanceByClasses(attendanceSessions as unknown as AttendanceSession[], classes.map((classItem) => {
     const educator = educators.find((item) => id(item._id) === id(classItem.educatorId));
     return { classId: id(classItem._id), className: name(classItem.name, "Turma"), educatorId: id(classItem.educatorId) || null, educatorName: educator ? name(educator.name, "Educador") : null };
   }));
+  const classMetrics = baseClassMetrics.map((item) => {
+    const attendance = attendanceMetrics.classAttendance.find((row) => row.classId === item.classId);
+    return { ...item, attendance: attendance && attendance.opportunities > 0 ? { assessed: attendance.opportunities, presences: attendance.presences, absences: attendance.absences, frequencyPercentage: attendance.percentage, absencePercentage: attendance.absences / attendance.opportunities * 100 } : { assessed: 0, presences: 0, absences: 0, frequencyPercentage: null, absencePercentage: null } };
+  });
   const educatorMetrics = educators.map((educator) => {
     const educatorClasses = classes.filter((item) => id(item.educatorId) === id(educator._id));
     const memberIds = [...new Set(educatorClasses.flatMap((item) => (Array.isArray(item.studentIds) ? item.studentIds : []).map(id)))];
@@ -268,6 +272,7 @@ export async function buildWeeklyReportSnapshot(db: Db, schoolId: ObjectId, peri
     salesMetrics: { available: false, reason: "O sistema não persiste vendas concluídas; o contato via WhatsApp não comprova uma venda." },
     redemptionMetrics: { available: true, count: redemptions.length, pointsSpent: redemptions.reduce((total, item) => total + Number(item.pointsSpent || 0), 0), items: redemptions.map((item) => ({ redemptionId: id(item._id), studentId: id(item.studentId), productId: id(item.productId), productName: name(item.productName, "Produto"), pointsSpent: Number(item.pointsSpent || 0), status: name(item.status, "unknown"), createdAt: item.createdAt })) },
     inventoryMetrics: { available: true, snapshotOnly: true, movementAvailable: false, lowStockAvailable: false, reason: "Não há ledger de entradas/ajustes nem limite confiável de estoque baixo.", products: inventoryProducts, outOfStockProducts: inventoryProducts.filter((product) => product.active && product.stock === 0).length },
+    attendancePolicySnapshot: (() => { const policy = (Array.isArray(school.frequencyConfigurations) ? school.frequencyConfigurations : []).find((item: { year?: number }) => item.year === Number(period.weekStart.slice(0, 4))); return policy ? { maximumAbsencePercentage: Number(policy.maximumAbsencePercentage), minimumFrequencyPercentage: 100 - Number(policy.maximumAbsencePercentage) } : null; })(),
     attendanceMetrics: { ...attendanceMetrics, detailsSource: "SNAPSHOT", unidentifiedAbsences: attendanceMetrics.absentees.filter((item) => !item.educatorId).length },
   };
 }

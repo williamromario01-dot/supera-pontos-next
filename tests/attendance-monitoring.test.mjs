@@ -52,7 +52,7 @@ test("44. integração com RGS", async () => assert.match(await readFile("src/co
 test("45. exportação Excel de frequência permanece", async () => assert.match(await readFile("src/lib/weekly-management-report-excel.ts","utf8"),/addWorksheet\("Frequência"\)/));
 test("46. snapshots históricos aceitam campos opcionais", async () => assert.match(await readFile("src/lib/weekly-management-report-attendance.ts","utf8"),/RECOVERED_FROM_ATTENDANCE_SESSIONS/));
 test("47. configurações preservam anos anteriores", async () => assert.match(await readFile("src/app/api/attendance-monitoring/route.ts","utf8"),/filter\(\(item\) => item\.year !== body\.year\)/));
-test("48. barra informa mínimo configurado e marcos", async () => { const text=await readFile("src/components/AttendanceMonitoring.tsx","utf8");assert.match(text,/minimumFrequencyPercentage/);assert.match(text,/0,25,75,79,80,85,100/); });
+test("48. barra adapta a transição ao mínimo configurado", async () => { const text=await readFile("src/components/AttendanceMonitoring.tsx","utf8");assert.match(text,/minimumFrequencyPercentage/);assert.match(text,/linear-gradient/); });
 test("49. ausência de registros retorna Sem dados", () => assert.equal(build([]).overall.frequencyPercentage,null));
 test("50. regras de pontuação não são alteradas pelo módulo", async () => assert.doesNotMatch(await readFile("src/app/api/attendance-monitoring/route.ts","utf8"),/pointEvents|weeklyScoreLedgers/));
 
