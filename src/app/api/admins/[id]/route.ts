@@ -49,8 +49,8 @@ function isValidObjectId(id: string) {
 export async function PATCH(request: NextRequest, props: { params: Promise<{ id: string }> }) {
   const params = await props.params;
   const credentialPayload = await request.clone().json().catch(() => null);
-  if (credentialPayload && ("email" in Object(credentialPayload) || "password" in Object(credentialPayload))) {
-    return changeUserCredentials(request, params.id, { legacyRole: "admin" });
+  if (credentialPayload && ("name" in Object(credentialPayload) || "email" in Object(credentialPayload) || "password" in Object(credentialPayload))) {
+    return changeUserCredentials(request, params.id, { legacyRole: "admin", allowPeerAdminManagement: true });
   }
 
   try {

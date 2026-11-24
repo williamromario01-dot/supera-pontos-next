@@ -2,10 +2,11 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Check, ClipboardCheck, Loader2, RotateCcw, X } from "lucide-react";
+import { activityPointsPresentation, activityStatusPresentation } from "@/lib/activity-history-presentation";
 
 type Student = { id: string; name: string; className?: string };
 type Category = { id: string; name: string; weeklyGoal?: number; defaultPoints?: number };
-type Activity = { id: string; studentId: string; categoryId: string; reportedQuantity: number; approvedQuantity: number | null; pageReached: number | null; activityAt: string; revision: number; status?: string; source?: string; observation?: string | null };
+type Activity = { id: string; studentId: string; categoryId: string; reportedQuantity: number; approvedQuantity: number | null; creditedPoints: number | null; pageReached: number | null; activityAt: string; revision: number; status?: string; source?: string; observation?: string | null };
 type BookAssignment = { id: string; studentId: string; bookId: string; bookName: string; categoryId: string };
 
 export default function ActivityReviewPanel({ role, schoolId, students, categories, fixedStudentId, embedded = false }: { role?: string; schoolId?: string; students: Student[]; categories: Category[]; fixedStudentId?: string; embedded?: boolean }) {
@@ -198,7 +199,11 @@ export default function ActivityReviewPanel({ role, schoolId, students, categori
           <div className="mt-6 border-t pt-5">
             <h3 className="font-black text-slate-900">Histórico de atividades</h3>
             <div className="mt-3 space-y-2">
-              {history.map((item) => <div key={`history-${item.id}`} className="rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-600"><strong className="text-slate-800">{categories.find((category) => category.id === item.categoryId)?.name ?? "Categoria"}</strong> · {new Date(item.activityAt).toLocaleDateString("pt-BR")} · informado {item.reportedQuantity} · aprovado {item.approvedQuantity ?? "—"} · {item.status ?? "pendente"}{item.observation ? ` · ${item.observation}` : ""}</div>)}
+              {history.map((item) => {
+                const points = activityPointsPresentation(item.creditedPoints);
+                const status = activityStatusPresentation(item.status);
+                return <div key={`history-${item.id}`} className="rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-600"><strong className="text-slate-800">{categories.find((category) => category.id === item.categoryId)?.name ?? "Categoria"}</strong> · {new Date(item.activityAt).toLocaleDateString("pt-BR")} · Informado: {item.reportedQuantity} · Aprovado: {item.approvedQuantity ?? "—"} · <strong className={points.className}>{points.label}</strong> · <span className={`rounded-md px-2 py-0.5 font-bold ${status.className}`}>{status.label}</span>{item.observation ? ` · ${item.observation}` : ""}</div>;
+              })}
             </div>
           </div>
         )}

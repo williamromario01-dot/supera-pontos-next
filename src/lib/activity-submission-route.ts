@@ -30,7 +30,7 @@ export function resolveActivitySchool(auth: AuthenticatedUser, requested: unknow
   return auth.schoolId;
 }
 
-export function serializeActivity(row: object) {
+export function serializeActivity(row: object, creditedPoints?: number | null) {
   const value = row as Record<string, unknown>;
   return {
     id: String(value._id),
@@ -38,6 +38,7 @@ export function serializeActivity(row: object) {
     activityAt: value.activityAt, weekStart: value.weekStart, weekEnd: value.weekEnd,
     reportedQuantity: value.reportedQuantity, approvedQuantity: value.approvedQuantity,
     pageReached: value.pageReached, book: value.book, status: value.status,
+    creditedPoints: creditedPoints === undefined ? null : creditedPoints,
     source: value.source ?? "student_submission", observation: value.observation ?? null,
     reviewedByEducatorId: value.reviewedByEducatorId ? String(value.reviewedByEducatorId) : null,
     reviewedAt: value.reviewedAt, revision: value.revision, createdAt: value.createdAt, updatedAt: value.updatedAt,

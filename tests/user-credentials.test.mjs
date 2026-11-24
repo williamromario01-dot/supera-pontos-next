@@ -231,8 +231,39 @@ test("unit admin can rename and revoke another admin only inside the same school
   assert.equal(f.state().sessions.some(row => equal(row.userId, f.target._id)), false);
 
   const foreign = fixture("admin", "admin", { otherSchool: true });
-  assert.equal((await foreign.patch({ name: "Bloqueado" }, "src/app/api/admins/[id]/route.ts")).status, 404);
+  assert.equal((await foreign.patch({ name: "Bloqueado" }, "src/app/api/admins/[id]/route.ts")).status, 403);
   assert.equal((await foreign.removeAdmin()).status, 404);
+});
+test("unit admin can change peer admin name, email or both while preserving identity, password and scope", async () => {
+  const nameOnly = fixture("admin", "admin");
+  const originalId = String(nameOnly.target._id), originalHash = nameOnly.target.passwordHash;
+  assert.equal((await nameOnly.patch({ name: "Somente nome" }, "src/app/api/admins/[id]/route.ts")).status, 200);
+  assert.equal(nameOnly.state().users[1].name, "Somente nome");
+  assert.equal(nameOnly.state().users[1].email, "target@example.test");
+  assert.equal(nameOnly.state().sessions.some(row => equal(row.userId, nameOnly.target._id)), true);
+  assert.equal(nameOnly.state().adminAuditLogs[0].action, "user_name_changed");
+
+  const emailOnly = fixture("admin", "admin");
+  assert.equal((await emailOnly.patch({ email: " NEW.ADMIN@EXAMPLE.TEST " }, "src/app/api/admins/[id]/route.ts")).status, 200);
+  assert.equal(emailOnly.state().users[1].email, "new.admin@example.test");
+  assert.equal(emailOnly.state().sessions.some(row => equal(row.userId, emailOnly.target._id)), false);
+  assert.equal(emailOnly.state().adminAuditLogs[0].action, "user_email_changed");
+
+  const both = fixture("admin", "admin");
+  assert.equal((await both.patch({ name: "Nome e e-mail", email: "both@example.test" }, "src/app/api/admins/[id]/route.ts")).status, 200);
+  assert.equal(both.state().users[1].name, "Nome e e-mail");
+  assert.equal(both.state().users[1].email, "both@example.test");
+  assert.equal(String(both.state().users[1]._id), originalId);
+  assert.equal(both.state().users[1].passwordHash, originalHash);
+  assert.equal(String(both.state().users[1].schoolId), String(both.target.schoolId));
+  assert.equal(String(both.state().users[1].companyId), String(both.target.companyId));
+  assert.deepEqual(both.state().adminAuditLogs.map(row => row.action).sort(), ["user_email_changed", "user_name_changed"]);
+
+  for (const email of ["invalid", "taken@example.test"]) {
+    const invalid = fixture("admin", "admin");
+    const response = await invalid.patch({ email }, "src/app/api/admins/[id]/route.ts");
+    assert.equal(response.status, email === "invalid" ? 400 : 409);
+  }
 });
 test("unit admin cannot revoke the last active administrator", async () => {
   const f = fixture("admin", "admin");

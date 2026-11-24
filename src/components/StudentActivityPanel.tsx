@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { BookOpen, CheckCircle2, Clock3, Loader2, Send, XCircle } from "lucide-react";
+import { activityPointsPresentation, activityStatusPresentation } from "@/lib/activity-history-presentation";
 
 type Category = { id: string; name: string; weeklyGoal?: number; defaultPoints?: number };
 type Activity = {
@@ -12,16 +13,9 @@ type Activity = {
   approvedQuantity: number | null;
   pageReached: number | null;
   status: "pending" | "approved" | "corrected" | "rejected";
+  creditedPoints: number | null;
 };
 type Ledger = { categoryId: string; approvedQuantity: number; calculatedPoints: number; weeklyGoal: number; maximumPoints: number };
-
-const statusLabel = { pending: "Pendente", approved: "Aprovada", corrected: "Corrigida", rejected: "Rejeitada" } as const;
-const statusStyle = {
-  pending: "bg-amber-50 text-amber-700",
-  approved: "bg-emerald-50 text-emerald-700",
-  corrected: "bg-blue-50 text-blue-700",
-  rejected: "bg-rose-50 text-rose-700",
-} as const;
 
 export default function StudentActivityPanel({ role }: { role: string }) {
   const [visible, setVisible] = useState(false);
@@ -157,17 +151,19 @@ export default function StudentActivityPanel({ role }: { role: string }) {
         <h3 className="font-black text-slate-800">Histórico de atividades</h3>
         {activities.length === 0 ? <p className="mt-3 rounded-xl bg-slate-50 p-5 text-sm text-slate-500">Nenhuma atividade registrada.</p> : (
           <div className="mt-3 grid gap-3">
-            {activities.map((activity) => (
-              <article key={activity.id} className="flex flex-col justify-between gap-3 rounded-2xl border p-4 sm:flex-row sm:items-center">
+            {activities.map((activity) => {
+              const points = activityPointsPresentation(activity.creditedPoints);
+              const status = activityStatusPresentation(activity.status);
+              return <article key={activity.id} className="flex flex-col justify-between gap-3 rounded-2xl border p-4 sm:flex-row sm:items-center">
                 <div>
                   <p className="font-bold text-slate-800">{categories.find((item) => item.id === activity.categoryId)?.name ?? "Categoria"}</p>
-                  <p className="text-xs text-slate-500">{new Date(activity.activityAt).toLocaleDateString("pt-BR")} • Informada: {activity.reportedQuantity}{activity.approvedQuantity !== null ? ` • Aprovada: ${activity.approvedQuantity}` : ""}{activity.pageReached !== null ? ` • Página ${activity.pageReached}` : ""}</p>
+                  <p className="text-xs text-slate-500">{new Date(activity.activityAt).toLocaleDateString("pt-BR")} · Informado: {activity.reportedQuantity}{activity.approvedQuantity !== null ? ` · Aprovado: ${activity.approvedQuantity}` : ""} · <span className={`font-bold ${points.className}`}>{points.label}</span>{activity.pageReached !== null ? ` · Página ${activity.pageReached}` : ""}</p>
                 </div>
-                <span className={`inline-flex w-fit items-center gap-1 rounded-lg px-3 py-1 text-xs font-bold ${statusStyle[activity.status]}`}>
-                  {activity.status === "rejected" ? <XCircle size={14} /> : activity.status === "pending" ? <Clock3 size={14} /> : <CheckCircle2 size={14} />} {statusLabel[activity.status]}
+                <span className={`inline-flex w-fit items-center gap-1 rounded-lg px-3 py-1 text-xs font-bold ${status.className}`}>
+                  {activity.status === "rejected" ? <XCircle size={14} /> : activity.status === "pending" ? <Clock3 size={14} /> : <CheckCircle2 size={14} />} {status.label}
                 </span>
-              </article>
-            ))}
+              </article>;
+            })}
           </div>
         )}
       </div>

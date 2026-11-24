@@ -956,7 +956,7 @@ export default function SchoolPage() {
   ) {
     event.preventDefault();
 
-    if (!adminName.trim() || (!editingAdmin && !adminEmail.trim())) {
+    if (!adminName.trim() || !adminEmail.trim()) {
       alert(
         "Informe nome e e-mail do administrador."
       );
@@ -988,7 +988,14 @@ export default function SchoolPage() {
       setSavingAdmin(true);
 
       if (editingAdmin) {
-        const body: Record<string, string> = { name: adminName.trim() };
+        const body: Record<string, string> = {};
+        const normalizedEmail = adminEmail.trim().toLowerCase();
+        if (adminName.trim() !== editingAdmin.name) body.name = adminName.trim();
+        if (normalizedEmail !== editingAdmin.email.toLowerCase()) body.email = normalizedEmail;
+        if (Object.keys(body).length === 0) {
+          alert("Nenhuma alteração foi informada.");
+          return;
+        }
 
         const response = await fetch(
           `/api/admins/${editingAdmin.id}`,
@@ -1010,6 +1017,7 @@ export default function SchoolPage() {
               "Não foi possível atualizar o administrador."
           );
         }
+        alert(data.message || "Administrador atualizado com sucesso.");
       } else {
         const response = await fetch(
           `/api/schools/${schoolId}/admin`,
@@ -1037,6 +1045,7 @@ export default function SchoolPage() {
               "Não foi possível cadastrar o administrador."
           );
         }
+        alert(data.message || "Administrador cadastrado com sucesso.");
       }
 
       setShowAdminForm(false);
@@ -2276,7 +2285,7 @@ export default function SchoolPage() {
                 />
               </div>
 
-              {!editingAdmin && <div>
+              <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">
                   E-mail
                 </label>
@@ -2291,7 +2300,7 @@ export default function SchoolPage() {
                   }
                   className="w-full px-4 py-3 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
-              </div>}
+              </div>
 
               {!editingAdmin && <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">

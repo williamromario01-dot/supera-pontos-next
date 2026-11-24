@@ -13,7 +13,9 @@ test("student activity UI is embedded in the dashboard and never accepts points"
   assert.match(panel, /Página alcançada/);
   assert.match(panel, /Livro atribuído/);
   assert.match(panel, /pontos oficiais só são calculados e concedidos pelo servidor/);
-  assert.match(panel, /Aprovada:/);
+  assert.match(panel, /Aprovado:/);
+  assert.match(panel, /activityPointsPresentation\(activity\.creditedPoints\)/);
+  assert.match(panel, /activityStatusPresentation\(activity\.status\)/);
   assert.doesNotMatch(panel, /body: JSON\.stringify\([^)]*points/s);
   assert.match(categories, /READ_ROLES = \["super_admin", "admin", "educator", "student"\]/);
   assert.match(categories, /hasRequiredRole\(auth, READ_ROLES\)/);
@@ -29,6 +31,8 @@ test("educator workflow stays inside the existing points screen", async () => {
   assert.match(review, /Corrigir/);
   assert.match(review, /Rejeitar/);
   assert.match(review, /pending_adjustment/);
+  assert.match(review, /activityPointsPresentation\(item\.creditedPoints\)/);
+  assert.match(review, /activityStatusPresentation\(item\.status\)/);
   assert.match(review, /O valor oficial será recalculado pelo servidor/);
 });
 

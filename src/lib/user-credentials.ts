@@ -35,9 +35,10 @@ async function userScope(db: Db, user: Document, session?: ClientSession) {
 }
 
 export async function authorizeCredentialTarget(
-  db: Db, auth: AuthenticatedUser, target: Document, expectedCompanyId?: ObjectId, session?: ClientSession,
+  db: Db, auth: AuthenticatedUser, target: Document, expectedCompanyId?: ObjectId, session?: ClientSession, allowPeerAdminManagement = false,
 ) {
-  if (!CREDENTIAL_TARGET_ROLES[auth.role]?.includes(target.role)) throw forbidden();
+  const peerAdminAllowed = allowPeerAdminManagement && auth.role === "admin" && target.role === "admin";
+  if (!CREDENTIAL_TARGET_ROLES[auth.role]?.includes(target.role) && !peerAdminAllowed) throw forbidden();
   const targetScope = await userScope(db, target, session);
   if (expectedCompanyId && !targetScope.companyId?.equals(expectedCompanyId)) throw forbidden();
   if (auth.role !== "super_admin") {
@@ -55,6 +56,7 @@ type Options = {
   expectedCompanyId?: string;
   passwordOnly?: boolean;
   legacyRole?: "admin" | "educator";
+  allowPeerAdminManagement?: boolean;
 };
 
 export async function changeUserCredentials(request: NextRequest, targetId: string, options: Options = {}) {
@@ -76,7 +78,8 @@ export async function changeUserCredentials(request: NextRequest, targetId: stri
     if (Object.keys(payload).some(key => !allowed.includes(key))) throw new CredentialError(400, "Campo não permitido.");
     const changesEmail = "email" in payload;
     const changesPassword = options.legacyRole ? "password" in payload : "newPassword" in payload;
-    if ((!changesEmail && !changesPassword) || ("confirmPassword" in payload && !changesPassword)) throw new CredentialError(400, "Informe a alteração de credenciais.");
+    const changesProfile = options.legacyRole && ("name" in payload || "active" in payload);
+    if ((!changesEmail && !changesPassword && !changesProfile) || ("confirmPassword" in payload && !changesPassword)) throw new CredentialError(400, "Informe a alteração desejada.");
     let email: string | undefined;
     if (changesEmail) {
       if (typeof payload.email !== "string") throw new CredentialError(400, "E-mail inválido.");
@@ -92,7 +95,7 @@ export async function changeUserCredentials(request: NextRequest, targetId: stri
     // Preserve legacy name/activation editing only for the roles that already had that capability.
     const profileChanges: Document = {};
     if (options.legacyRole && ("name" in payload || "active" in payload)) {
-      const legacyProfileAllowed = auth.role === "super_admin" || (options.legacyRole === "educator" && auth.role === "admin");
+      const legacyProfileAllowed = auth.role === "super_admin" || (options.legacyRole === "educator" && auth.role === "admin") || (options.legacyRole === "admin" && options.allowPeerAdminManagement === true && auth.role === "admin");
       if (!legacyProfileAllowed) throw new CredentialError(400, "Envie somente os campos de credenciais.");
       if ("name" in payload) {
         if (typeof payload.name !== "string" || payload.name.trim().length < 2 || payload.name.trim().length > 100) throw new CredentialError(400, "Nome inválido.");
@@ -121,7 +124,8 @@ export async function changeUserCredentials(request: NextRequest, targetId: stri
         const target = await db.collection("users").findOne({ _id: targetUserId }, { session });
         if (!target) throw new CredentialError(404, "Usuário não encontrado.");
         if (options.legacyRole && target.role !== options.legacyRole) throw forbidden();
-        const scope = await authorizeCredentialTarget(db, currentAuth, target, expectedCompanyId, session);
+        if (options.allowPeerAdminManagement && auth.role === "admin" && target.role === "admin" && changesPassword) throw forbidden();
+        const scope = await authorizeCredentialTarget(db, currentAuth, target, expectedCompanyId, session, options.allowPeerAdminManagement === true);
         if (expectedCompanyId && !await db.collection("companies").findOne({ _id: expectedCompanyId }, { session, projection: { _id: 1 } })) {
           throw new CredentialError(404, "Empresa não encontrada.");
         }
@@ -144,14 +148,17 @@ export async function changeUserCredentials(request: NextRequest, targetId: stri
           const result = { ...target, ...update };
           legacyUser = { id: String(targetUserId), name: result.name, email: result.email, role: result.role, schoolId: result.schoolId ? String(result.schoolId) : null, points: result.points || 0, active: result.active !== false, createdAt: result.createdAt, updatedAt: now };
         }
-        await db.collection("sessions").deleteMany({ userId: targetUserId }, { session });
-        await db.collection("passwordResetTokens").deleteMany({ userId: targetUserId }, { session });
+        if (changesEmail || changesPassword) {
+          await db.collection("sessions").deleteMany({ userId: targetUserId }, { session });
+          await db.collection("passwordResetTokens").deleteMany({ userId: targetUserId }, { session });
+        }
         const audit = { actorId: auth.userId, actorRole: auth.role, targetUserId, targetRole: target.role, companyId: scope.companyId, schoolId: scope.schoolId, occurredAt: now };
         if (changesPassword) await db.collection("adminAuditLogs").insertOne({ ...audit, action: "company_user_password_reset" }, { session });
         if (changesEmail) await db.collection("adminAuditLogs").insertOne({ ...audit, action: "user_email_changed", previousEmail: target.email ?? null, newEmail: email }, { session });
+        if (profileChanges.name !== undefined) await db.collection("adminAuditLogs").insertOne({ ...audit, action: "user_name_changed", previousName: target.name ?? null, newName: profileChanges.name }, { session });
       });
     } finally { await session.endSession(); }
-    return NextResponse.json({ message: "Credenciais atualizadas. As sessões anteriores do usuário foram encerradas." , ...(legacyUser ? { [options.legacyRole === "admin" ? "administrator" : "educator"]: legacyUser } : {}) });
+    return NextResponse.json({ message: changesEmail || changesPassword ? "Dados atualizados. As sessões anteriores do usuário foram encerradas." : "Dados atualizados com sucesso.", ...(legacyUser ? { [options.legacyRole === "admin" ? "administrator" : "educator"]: legacyUser } : {}) });
   } catch (error) {
     if (error instanceof CredentialError) return NextResponse.json({ error: error.message }, { status: error.status });
     if (error && typeof error === "object" && "code" in error && error.code === 11000) return NextResponse.json({ error: "E-mail indisponível." }, { status: 409 });
